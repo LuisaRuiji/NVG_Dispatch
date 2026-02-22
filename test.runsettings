@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <TEST_SQLSERVER_CONNECTION_STRING>Server=localhost;Database=NVG_Inventory_Tests;Trusted_Connection=True;TrustServerCertificate=True;</TEST_SQLSERVER_CONNECTION_STRING>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

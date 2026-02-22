@@ -1,0 +1,6 @@
+@NVGInventory_HostAddress = http://localhost:5105
+
+GET {{NVGInventory_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

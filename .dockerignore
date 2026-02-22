@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.git/
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+**/*.user
+**/*.suo
+**/*.log
