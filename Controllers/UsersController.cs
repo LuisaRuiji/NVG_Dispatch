@@ -181,4 +181,28 @@ public sealed class UsersController : ControllerBase
         await _userService.ResetPasswordAsync(userId, request.NewPassword, cancellationToken);
         return NoContent();
     }
+
+    [HttpDelete("{userId:guid}")]
+    [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    public async Task<IActionResult> DeleteUser(Guid userId, CancellationToken cancellationToken)
+    {
+        var isSuperAdmin = User.IsInRole(RoleNames.SuperAdmin);
+        var target = await _userService.GetUserWithRolesAsync(userId, cancellationToken);
+
+        if (target is null)
+        {
+            return NotFound();
+        }
+
+        var targetHasAdmin = target.UserRoles.Any(ur => ur.Role?.Name == RoleNames.Admin);
+        var targetHasSuper = target.UserRoles.Any(ur => ur.Role?.Name == RoleNames.SuperAdmin);
+
+        if (!isSuperAdmin && (targetHasAdmin || targetHasSuper))
+        {
+            return Forbid();
+        }
+
+        await _userService.DeactivateUserAsync(userId, cancellationToken);
+        return NoContent();
+    }
 }

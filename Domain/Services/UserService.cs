@@ -218,6 +218,20 @@ public sealed class UserService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeactivateUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            throw new NotFoundException("User not found.");
+        }
+
+        user.IsActive = false;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<string>> GetRoleNamesAsync(CancellationToken cancellationToken = default)
     {
         return await _dbContext.Roles

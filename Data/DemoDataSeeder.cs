@@ -9,7 +9,9 @@ namespace NVGInventory.Data;
 
 public sealed class DemoDataSeeder
 {
-    public const string DemoPassword = "Demo@123";
+    public const string SuperAdminUsername = "Superadmin";
+    public const string SuperAdminEmail = "Superadmin@nvg.com";
+    public const string SuperAdminPassword = "Super123!";
 
     private readonly InventoryDbContext _dbContext;
     private readonly UserService _userService;
@@ -62,80 +64,17 @@ public sealed class DemoDataSeeder
             await _dbContext.Database.MigrateAsync(cancellationToken);
         }
 
-        var ioUser = await EnsureUserAsync("io_demo", RoleNames.InventoryOfficer, cancellationToken);
-        var managerUser = await EnsureUserAsync("mgr_demo", RoleNames.Manager, cancellationToken);
-        var financeUser = await EnsureUserAsync("fin_demo", RoleNames.HeadOfFinance, cancellationToken);
-        var ceoUser = await EnsureUserAsync("ceo_demo", RoleNames.Ceo, cancellationToken);
-        var driverUser = await EnsureUserAsync("drv_demo", RoleNames.Driver, cancellationToken);
-        var adminUser = await EnsureUserAsync("admin_demo", RoleNames.Admin, cancellationToken);
-        var superAdminUser = await EnsureUserAsync("superadmin_demo", RoleNames.SuperAdmin, cancellationToken);
-
-        var supplierA = await EnsureSupplierAsync(ioUser.Id, "Demo Supplier A", cancellationToken);
-        var supplierB = await EnsureSupplierAsync(ioUser.Id, "Demo Supplier B", cancellationToken);
-
-        var truck1 = await EnsureAssetAsync("TRK-001", AssetType.Truck, cancellationToken);
-        var truck2 = await EnsureAssetAsync("TRK-002", AssetType.Truck, cancellationToken);
-        var trailer1 = await EnsureAssetAsync("TRA-001", AssetType.Trailer, cancellationToken);
-
-        _ = trailer1;
-        _ = adminUser;
-        _ = superAdminUser;
-
-        var inventory = await EnsureInventoryAsync(cancellationToken);
-
-        await SeedBaselinePurchaseOrderAsync(
-            ioUser.Id,
-            managerUser.Id,
-            financeUser.Id,
-            ceoUser.Id,
-            supplierA.Id,
-            inventory,
-            cancellationToken);
-
-        await SeedPurchaseOrdersAsync(
-            ioUser.Id,
-            managerUser.Id,
-            financeUser.Id,
-            ceoUser.Id,
-            supplierA.Id,
-            supplierB.Id,
-            inventory,
-            cancellationToken);
-
-        await SeedMaintenanceRequestsAsync(
-            driverUser.Id,
-            ioUser.Id,
-            managerUser.Id,
-            truck1.Id,
-            inventory,
-            cancellationToken);
-
-        await SeedBorrowRequestAsync(
-            driverUser.Id,
-            ioUser.Id,
-            managerUser.Id,
-            truck2.Id,
-            inventory,
-            cancellationToken);
-
-        await SeedAdjustmentsAsync(
-            ioUser.Id,
-            managerUser.Id,
-            inventory,
-            cancellationToken);
+        await EnsureSuperAdminAsync(cancellationToken);
     }
 
-    private async Task<User> EnsureUserAsync(
-        string username,
-        string roleName,
-        CancellationToken cancellationToken)
+    private async Task<User> EnsureSuperAdminAsync(CancellationToken cancellationToken)
     {
-        var existing = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
+        var existing = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == SuperAdminUsername, cancellationToken);
         User user;
         if (existing is null)
         {
             user = await _userService.CreateUserAsync(
-                new CreateUserCommand(username, DemoPassword, null),
+                new CreateUserCommand(SuperAdminUsername, SuperAdminPassword, SuperAdminEmail),
                 cancellationToken);
         }
         else
@@ -143,7 +82,7 @@ public sealed class DemoDataSeeder
             user = existing;
         }
 
-        await _userService.AssignRoleAsync(user.Id, roleName, cancellationToken);
+        await _userService.AssignRoleAsync(user.Id, RoleNames.SuperAdmin, cancellationToken);
         return user;
     }
 

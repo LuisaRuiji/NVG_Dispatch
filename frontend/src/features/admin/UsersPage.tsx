@@ -33,7 +33,7 @@ export default function UsersPage() {
   const [createUsername, setCreateUsername] = useState("");
   const [createEmail, setCreateEmail] = useState("");
   const [createPassword, setCreatePassword] = useState("");
-  const [createRoles, setCreateRoles] = useState<string[]>([]);
+  const [createRole, setCreateRole] = useState("");
 
   const [manageRoles, setManageRoles] = useState<string[]>([]);
   const [manageActive, setManageActive] = useState(true);
@@ -45,12 +45,12 @@ export default function UsersPage() {
   );
 
   const roleOptions = useMemo(() => {
-    const filtered = roles.filter((role) => role.name === "Admin" || role.name === "SuperAdmin");
-    if (filtered.length > 0) {
-      return filtered;
+    if (isSuperAdmin) {
+      const filtered = roles.filter((role) => role.name === "Admin" || role.name === "SuperAdmin");
+      return filtered.length > 0 ? filtered : [{ name: "Admin" }, { name: "SuperAdmin" }];
     }
-    return [{ name: "Admin" }, { name: "SuperAdmin" }];
-  }, [roles]);
+    return roles.filter((role) => role.name !== "Admin" && role.name !== "SuperAdmin");
+  }, [roles, isSuperAdmin]);
 
   const canAssignSuperAdmin = isSuperAdmin;
 
@@ -106,6 +106,10 @@ export default function UsersPage() {
       show("Username and password are required.", "error");
       return;
     }
+    if (!createRole) {
+      show("Select a role.", "error");
+      return;
+    }
     try {
       setLoading(true);
       const created = await api<{ id: string; username: string }>("/api/users", {
@@ -116,17 +120,15 @@ export default function UsersPage() {
           email: createEmail || null
         })
       });
-      if (createRoles.length > 0) {
-        await api(`/api/users/${created.id}/roles`, {
-          method: "PUT",
-          body: JSON.stringify({ roleNames: createRoles })
-        });
-      }
+      await api(`/api/users/${created.id}/roles`, {
+        method: "PUT",
+        body: JSON.stringify({ roleNames: [createRole] })
+      });
       show("User created.", "success");
       setCreateUsername("");
       setCreateEmail("");
       setCreatePassword("");
-      setCreateRoles([]);
+      setCreateRole("");
       await refreshUsers();
     } catch (e: any) {
       console.error(e);
@@ -194,6 +196,24 @@ export default function UsersPage() {
     }
   }
 
+  async function handleDeleteUser() {
+    if (!selectedUser) return;
+    const confirmed = window.confirm(`Delete ${selectedUser.username}? This will deactivate the account.`);
+    if (!confirmed) return;
+    try {
+      setLoading(true);
+      await api(`/api/users/${selectedUser.id}`, { method: "DELETE" });
+      show("User deleted.", "success");
+      setSelectedId(null);
+      await refreshUsers();
+    } catch (e: any) {
+      console.error(e);
+      show(e?.message ?? "Failed to delete user.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="pb-10">
       <ToastHost toasts={toasts} />
@@ -230,22 +250,19 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <label className="text-xs uppercase text-slate-500">Roles</label>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <label className="text-xs uppercase text-slate-500">Role</label>
+              <select
+                value={createRole}
+                onChange={(e) => setCreateRole(e.target.value)}
+                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+              >
+                <option value="">Select role</option>
                 {roleOptions.map((role) => (
-                  <label key={role.name} className="inline-flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={createRoles.includes(role.name)}
-                      onChange={() =>
-                        toggleRole(role.name, createRoles, setCreateRoles)
-                      }
-                      disabled={!isSuperAdmin && (role.name === "Admin" || (role.name === "SuperAdmin" && !canAssignSuperAdmin))}
-                    />
+                  <option key={role.name} value={role.name}>
                     {role.name}
-                  </label>
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
           </div>
           <button
@@ -330,6 +347,20 @@ export default function UsersPage() {
                   >
                     Reset Password
                   </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase text-slate-500">Delete User</label>
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    onClick={handleDeleteUser}
+                    disabled={loading}
+                    className="rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:text-rose-700 disabled:opacity-60"
+                  >
+                    Delete User
+                  </button>
+                  <span className="text-xs text-slate-500">Marks the account inactive.</span>
                 </div>
               </div>
             </div>
