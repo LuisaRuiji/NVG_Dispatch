@@ -20,7 +20,3 @@ NVGInventory.Tests/
 # Docs (except README.md)
 *.md
 !README.md
-
-# Settings
-appsettings.*.json
-appsettings.json
