@@ -1,7 +1,8 @@
-const defaultBaseUrl = "http://localhost:5000";
+const defaultBaseUrl = import.meta.env.DEV ? "" : window.location.origin;
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()?.replace(/\/+$/, "");
 
 export const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL?.trim() || defaultBaseUrl;
+  configuredApiBaseUrl || defaultBaseUrl;
 
 async function request<T>(
   path: string,

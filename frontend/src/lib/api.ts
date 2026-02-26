@@ -1,6 +1,7 @@
 import { emitToast } from "@/lib/toastBus";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
+const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
+const API_BASE_URL = rawApiBaseUrl.replace(/\/+$/, "");
 
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;

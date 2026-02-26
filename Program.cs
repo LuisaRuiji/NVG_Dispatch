@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.RateLimiting;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -60,7 +61,12 @@ builder.Services.AddDbContext<InventoryDbContext>(options =>
     {
         throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not configured.");
     }
-    options.UseSqlServer(connectionString);
+
+    var resolvedConnectionString = builder.Environment.IsDevelopment()
+        ? ResolveDevelopmentSqlConnectionString(connectionString)
+        : connectionString;
+
+    options.UseSqlServer(resolvedConnectionString);
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddSingleton<JwtTokenService>();
@@ -486,6 +492,120 @@ static int ParseIntArg(string[] args, string name, int defaultValue)
     }
 
     return defaultValue;
+}
+
+static string ResolveDevelopmentSqlConnectionString(string configuredConnectionString)
+{
+    if (!TryParseSqlConnectionString(configuredConnectionString, out var configuredBuilder))
+    {
+        return configuredConnectionString;
+    }
+
+    var candidates = BuildConnectionStringCandidates(configuredBuilder).ToArray();
+    var failures = new List<string>();
+
+    foreach (var candidate in candidates)
+    {
+        if (TryOpenSqlConnection(candidate, out var error))
+        {
+            return candidate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            failures.Add(error);
+        }
+    }
+
+    throw new InvalidOperationException(
+        "Unable to connect to local SQL Server in Development. " +
+        "Set ConnectionStrings__DefaultConnection to your exact SSMS server/instance name. " +
+        $"Tried: {string.Join(", ", candidates.Select(ToSafeConnectionDisplay))}. " +
+        $"Last error: {failures.LastOrDefault() ?? "Unknown SQL connection error."}");
+}
+
+static IEnumerable<string> BuildConnectionStringCandidates(SqlConnectionStringBuilder configuredBuilder)
+{
+    var candidateDataSources = new[]
+    {
+        configuredBuilder.DataSource,
+        "localhost",
+        ".",
+        "(localdb)\\MSSQLLocalDB",
+        "localhost\\SQLEXPRESS",
+        ".\\SQLEXPRESS"
+    };
+
+    var uniqueCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var dataSource in candidateDataSources.Where(source => !string.IsNullOrWhiteSpace(source)))
+    {
+        var candidateBuilder = new SqlConnectionStringBuilder(configuredBuilder.ConnectionString)
+        {
+            DataSource = dataSource,
+            ConnectTimeout = 2,
+            TrustServerCertificate = true,
+            Encrypt = configuredBuilder.Encrypt
+        };
+
+        uniqueCandidates.Add(candidateBuilder.ConnectionString);
+    }
+
+    return uniqueCandidates;
+}
+
+static bool TryOpenSqlConnection(string connectionString, out string? error)
+{
+    try
+    {
+        var probeConnectionString = BuildServerProbeConnectionString(connectionString);
+        using var connection = new SqlConnection(probeConnectionString);
+        connection.Open();
+        error = null;
+        return true;
+    }
+    catch (Exception ex)
+    {
+        error = ex.Message;
+        return false;
+    }
+}
+
+static string BuildServerProbeConnectionString(string connectionString)
+{
+    if (!TryParseSqlConnectionString(connectionString, out var builder))
+    {
+        return connectionString;
+    }
+
+    // Probe instance reachability against master so first-run DB creation is not treated as a connection failure.
+    builder.InitialCatalog = "master";
+    return builder.ConnectionString;
+}
+
+static bool TryParseSqlConnectionString(string connectionString, out SqlConnectionStringBuilder builder)
+{
+    try
+    {
+        builder = new SqlConnectionStringBuilder(connectionString);
+        return true;
+    }
+    catch
+    {
+        builder = new SqlConnectionStringBuilder();
+        return false;
+    }
+}
+
+static string ToSafeConnectionDisplay(string connectionString)
+{
+    if (!TryParseSqlConnectionString(connectionString, out var builder))
+    {
+        return "InvalidConnectionString";
+    }
+
+    var database = string.IsNullOrWhiteSpace(builder.InitialCatalog) ? "<default>" : builder.InitialCatalog;
+    var server = string.IsNullOrWhiteSpace(builder.DataSource) ? "<unknown>" : builder.DataSource;
+    return $"{server}/{database}";
 }
 
 sealed class CountingStream : Stream

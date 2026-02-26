@@ -20,3 +20,10 @@ NVGInventory.Tests/
 # Docs (except README.md)
 *.md
 !README.md
+
+# Build info
+*.tsbuildinfo
+
+# Generated frontend files
+frontend/vite.config.js
+frontend/vite.config.d.ts

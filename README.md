@@ -1,5 +1,12 @@
 # NVGInventory
 
+## Database (Local SQL Server)
+Default dev connection targets `localhost\\SQLEXPRESS`. If your instance name differs, override with:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection="Server=localhost\\YOUR_INSTANCE;Database=NVG_Inventory;Trusted_Connection=True;TrustServerCertificate=True;"
+```
+
 ## Tests (SQL Server)
 Integration tests run against a real SQL Server database. Set the env var before running:
 
