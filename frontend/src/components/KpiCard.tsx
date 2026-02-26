@@ -9,7 +9,7 @@ type Props = {
 export default function KpiCard({ title, value, subtitle }: Props) {
   const display = value === null ? "—" : value;
   return (
-    <Card className="border-border bg-white shadow-sm">
+    <Card className="border-border bg-white shadow-sm hover-lift fade-up">
       <CardContent className="p-5">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>
         <p className="mt-2 text-2xl font-semibold text-foreground">{display}</p>

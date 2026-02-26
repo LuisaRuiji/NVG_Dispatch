@@ -21,4 +21,5 @@ public sealed class InventoryItem
 
     public ICollection<RequestLine> RequestLines { get; set; } = new List<RequestLine>();
     public ICollection<StockLog> StockLogs { get; set; } = new List<StockLog>();
+    public ICollection<KitComponent> KitComponents { get; set; } = new List<KitComponent>();
 }

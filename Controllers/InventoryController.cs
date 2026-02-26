@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NVGInventory.Contracts;
+using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Services;
 
 namespace NVGInventory.Controllers;
@@ -30,7 +31,8 @@ public sealed class InventoryController : ControllerBase
                 request.Quantity,
                 request.ReorderLevel,
                 request.Location,
-                request.UnitValue),
+                request.UnitValue,
+                request.IsKit ?? false),
             cancellationToken);
 
         return Ok(new InventoryItemResponse(
@@ -38,10 +40,22 @@ public sealed class InventoryController : ControllerBase
             item.Name,
             item.Unit,
             item.ItemType,
+            item.IsKit,
             item.Quantity,
             item.ReorderLevel,
             item.Location,
             item.UnitValue));
+    }
+
+    [HttpPatch("{inventoryId:guid}/kit")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    public async Task<IActionResult> UpdateKitFlag(
+        Guid inventoryId,
+        UpdateInventoryKitRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _inventoryService.SetKitFlagAsync(inventoryId, request.IsKit, cancellationToken);
+        return NoContent();
     }
 
     [HttpGet]
@@ -69,6 +83,7 @@ public sealed class InventoryController : ControllerBase
                 item.Name,
                 item.Unit,
                 item.ItemType,
+                item.IsKit,
                 item.Quantity,
                 item.ReorderLevel,
                 item.Location,

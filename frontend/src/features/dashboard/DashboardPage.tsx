@@ -112,7 +112,7 @@ export default function DashboardPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <div className="surface-card p-6">
+        <div className="surface-card p-6 hover-lift">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Quick Actions</p>
           <div className="mt-4 grid gap-3">
             {quickActions.length === 0 ? (
@@ -122,7 +122,7 @@ export default function DashboardPage() {
                 <Link
                   key={action.to}
                   to={action.to}
-                  className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted"
+                  className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted hover-lift"
                 >
                   {action.label}
                   <span className="text-muted-foreground">→</span>
@@ -132,7 +132,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="surface-card p-6">
+        <div className="surface-card p-6 hover-lift">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Status Summary

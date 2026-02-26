@@ -52,8 +52,81 @@
   }
 }
 
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @layer utilities {
   .bg-nvg-gradient {
     background: linear-gradient(135deg, #132a5e 0%, #1f4fa3 45%, #2b76d2 100%);
+  }
+
+  .fade-up {
+    animation: fade-up 260ms ease-out;
+  }
+
+  .fade-in {
+    animation: fade-in 220ms ease-out;
+  }
+
+  .hover-lift {
+    transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease,
+      color 160ms ease;
+    will-change: transform;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  }
+
+  .nav-link-shift {
+    transition: transform 160ms ease, background-color 160ms ease, color 160ms ease;
+  }
+
+  .nav-link-shift:hover {
+    transform: translateX(2px);
+  }
+
+  .table-smooth tbody tr {
+    transition: background-color 140ms ease;
+  }
+
+  .table-smooth tbody tr:hover {
+    background-color: hsl(var(--muted) / 0.6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-up,
+    .fade-in {
+      animation: none;
+    }
+
+    .hover-lift,
+    .nav-link-shift {
+      transition: none;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .table-smooth tbody tr {
+      transition: none;
+    }
   }
 }

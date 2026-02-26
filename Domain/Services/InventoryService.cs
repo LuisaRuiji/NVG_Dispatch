@@ -12,7 +12,8 @@ public sealed record CreateInventoryItemCommand(
     decimal Quantity,
     decimal? ReorderLevel,
     string? Location,
-    decimal? UnitValue);
+    decimal? UnitValue,
+    bool IsKit);
 
 public sealed class InventoryService
 {
@@ -42,12 +43,18 @@ public sealed class InventoryService
             throw new BusinessRuleViolationException("Quantity cannot be negative.");
         }
 
+        if (command.IsKit && command.ItemType != Enums.ItemType.NonConsumable)
+        {
+            throw new BusinessRuleViolationException("Kits must be non-consumable items.");
+        }
+
         var item = new InventoryItem
         {
             Id = Guid.NewGuid(),
             Name = command.Name.Trim(),
             Unit = command.Unit.Trim(),
             ItemType = command.ItemType,
+            IsKit = command.IsKit,
             Quantity = command.Quantity,
             ReorderLevel = command.ReorderLevel,
             Location = string.IsNullOrWhiteSpace(command.Location) ? null : command.Location.Trim(),
@@ -89,5 +96,39 @@ public sealed class InventoryService
         return await query
             .OrderBy(item => item.Name)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task SetKitFlagAsync(
+        Guid inventoryId,
+        bool isKit,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await _dbContext.InventoryItems
+            .Include(i => i.KitComponents)
+            .FirstOrDefaultAsync(i => i.Id == inventoryId, cancellationToken);
+
+        if (item is null)
+        {
+            throw new NotFoundException("Inventory item not found.");
+        }
+
+        if (isKit && item.ItemType != Enums.ItemType.NonConsumable)
+        {
+            throw new BusinessRuleViolationException("Kits must be non-consumable items.");
+        }
+
+        if (!isKit && item.KitComponents.Count > 0)
+        {
+            throw new BusinessRuleViolationException("Cannot unset kit flag while components exist.");
+        }
+
+        if (item.IsKit == isKit)
+        {
+            return;
+        }
+
+        item.IsKit = isKit;
+        item.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 }

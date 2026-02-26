@@ -370,11 +370,6 @@ public sealed class InventoryAdjustmentWorkflowService
             {
                 throw new BusinessRuleViolationException("Adjustment quantity must be non-zero.");
             }
-
-            if (line.QtyDelta % 1m != 0m)
-            {
-                throw new BusinessRuleViolationException("Adjustment quantity must be a whole number.");
-            }
         }
     }
 }

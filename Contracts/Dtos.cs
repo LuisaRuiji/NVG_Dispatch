@@ -61,17 +61,57 @@ public sealed record CreateInventoryItemRequest(
     decimal Quantity,
     decimal? ReorderLevel,
     string? Location,
-    decimal? UnitValue);
+    decimal? UnitValue,
+    bool? IsKit = null);
 
 public sealed record InventoryItemResponse(
     Guid Id,
     string Name,
     string Unit,
     ItemType ItemType,
+    bool IsKit,
     decimal Quantity,
     decimal? ReorderLevel,
     string? Location,
     decimal? UnitValue);
+
+public sealed record UpdateInventoryKitRequest(bool IsKit);
+
+public sealed record KitComponentResponse(
+    Guid Id,
+    Guid InventoryId,
+    string Name,
+    decimal RequiredQty,
+    bool IsRequired,
+    string? Notes,
+    DateTime CreatedAt);
+
+public sealed record CreateKitComponentRequest(
+    string Name,
+    decimal RequiredQty,
+    bool IsRequired,
+    string? Notes);
+
+public sealed record UpdateKitComponentRequest(
+    string Name,
+    decimal RequiredQty,
+    bool IsRequired,
+    string? Notes);
+
+public sealed record KitComponentImportLineRequest(
+    string Name,
+    decimal RequiredQty,
+    bool IsRequired,
+    string? Notes);
+
+public sealed record ImportKitComponentsRequest(
+    string Mode,
+    IReadOnlyCollection<KitComponentImportLineRequest> Lines);
+
+public sealed record ImportKitComponentsResponse(
+    int Added,
+    int Updated,
+    int Removed);
 
 public sealed record CreateAssetRequest(
     string AssetCode,

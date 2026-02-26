@@ -153,6 +153,7 @@ export interface CreateInventoryItemRequest {
   reorderLevel?: number | null;
   location?: string | null;
   unitValue?: number | null;
+  isKit?: boolean | null;
 }
 
 export interface InventoryItemResponse {
@@ -160,6 +161,7 @@ export interface InventoryItemResponse {
   name: string;
   unit: string;
   itemType: ItemType;
+  isKit: boolean;
   quantity: number;
   reorderLevel?: number | null;
   location?: string | null;

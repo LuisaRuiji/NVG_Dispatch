@@ -8,8 +8,8 @@ type Props = {
 
 export default function DataTable({ children, className }: Props) {
   return (
-    <div className={cn("overflow-auto rounded-xl border border-border bg-white", className)}>
-      <table className="w-full border-collapse text-sm">{children}</table>
+    <div className={cn("overflow-auto rounded-xl border border-border bg-white fade-in", className)}>
+      <table className="w-full border-collapse text-sm table-smooth">{children}</table>
     </div>
   );
 }

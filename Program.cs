@@ -72,6 +72,7 @@ builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<ApprovalService>();
 builder.Services.AddScoped<RequestWorkflowService>();
 builder.Services.AddScoped<InventoryService>();
+builder.Services.AddScoped<KitComponentService>();
 builder.Services.AddScoped<AssetService>();
 builder.Services.AddScoped<LoanWorkflowService>();
 builder.Services.AddScoped<RequestQueryService>();

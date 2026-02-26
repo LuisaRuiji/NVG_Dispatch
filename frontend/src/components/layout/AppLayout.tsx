@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { getMe, logout } from "@/features/auth/authStore";
 import { cn } from "@/lib/utils";
 import nvgLogo from "@/assets/nvg-logo.png";
@@ -67,6 +67,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
 export default function AppLayout() {
   const me = getMe();
   const nav = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const { toasts, show } = useToast();
 
@@ -124,7 +125,7 @@ export default function AppLayout() {
                     to={item.to}
                     className={({ isActive }) =>
                       cn(
-                        "mx-3 my-1 flex h-10 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors group-hover:justify-start",
+                        "mx-3 my-1 flex h-10 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors nav-link-shift group-hover:justify-start",
                         isActive
                           ? "bg-[#175C99] text-white shadow-md"
                           : "text-slate-500 hover:bg-slate-100"
@@ -191,15 +192,15 @@ export default function AppLayout() {
         </header>
 
         <main className="flex-1 flex flex-col h-screen overflow-y-auto">
-          <div className="px-8 py-8">
+          <div key={location.pathname} className="px-8 py-8 fade-up">
             <Outlet />
           </div>
         </main>
       </div>
 
       {open ? (
-        <div className="fixed inset-0 z-50 bg-black/40 md:hidden">
-          <div className="absolute left-0 top-0 h-full w-72 bg-white p-6 shadow-lg">
+        <div className="fixed inset-0 z-50 bg-black/40 md:hidden fade-in">
+          <div className="absolute left-0 top-0 h-full w-72 bg-white p-6 shadow-lg fade-up">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-nvg-gradient" />
@@ -226,7 +227,7 @@ export default function AppLayout() {
                         onClick={() => setOpen(false)}
                         className={({ isActive }) =>
                           cn(
-                            "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition",
+                            "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition nav-link-shift",
                             isActive
                               ? "bg-primary/10 text-primary"
                               : "hover:bg-muted hover:text-foreground"

@@ -148,7 +148,8 @@ public sealed class DemoDataSeeder
                         0m,
                         item.ReorderLevel,
                         null,
-                        null),
+                        null,
+                        false),
                     cancellationToken);
                 inventoryMap[item.Name] = created;
             }

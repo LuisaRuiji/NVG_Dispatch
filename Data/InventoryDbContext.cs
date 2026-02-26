@@ -17,6 +17,7 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+    public DbSet<KitComponent> KitComponents => Set<KitComponent>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<Request> Requests => Set<Request>();
     public DbSet<RequestLine> RequestLines => Set<RequestLine>();
@@ -44,6 +45,7 @@ public sealed class InventoryDbContext : DbContext
         ConfigureUserRoles(modelBuilder);
         ConfigureAssets(modelBuilder);
         ConfigureInventory(modelBuilder);
+        ConfigureKitComponents(modelBuilder);
         ConfigureSuppliers(modelBuilder);
         ConfigureRequests(modelBuilder);
         ConfigureRequestLines(modelBuilder);
@@ -187,6 +189,43 @@ public sealed class InventoryDbContext : DbContext
             entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
             entity.HasIndex(item => item.Name);
             entity.HasIndex(item => item.ItemType);
+        });
+    }
+
+    private static void ConfigureKitComponents(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<KitComponent>(entity =>
+        {
+            entity.ToTable("kit_components");
+            entity.HasKey(component => component.Id);
+            entity.Property(component => component.Id).HasColumnName("id");
+            entity.Property(component => component.InventoryItemId).HasColumnName("inventory_id");
+            entity.Property(component => component.Name)
+                .HasColumnName("name")
+                .HasMaxLength(200)
+                .IsRequired();
+            entity.Property(component => component.RequiredQty)
+                .HasColumnName("required_qty")
+                .HasColumnType("decimal(18,2)")
+                .IsRequired();
+            entity.Property(component => component.IsRequired)
+                .HasColumnName("is_required")
+                .HasDefaultValue(true)
+                .IsRequired();
+            entity.Property(component => component.Notes)
+                .HasColumnName("notes")
+                .HasMaxLength(250);
+            entity.Property(component => component.CreatedAt)
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(component => component.InventoryItem)
+                .WithMany(item => item.KitComponents)
+                .HasForeignKey(component => component.InventoryItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(component => component.InventoryItemId);
+            entity.HasIndex(component => new { component.InventoryItemId, component.Name }).IsUnique();
         });
     }
 

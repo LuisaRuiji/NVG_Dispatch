@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design Tokens ─────────────────────────────── */
+:root {
+  --obsidian: #0D0D12;
+  --champagne: #C9A84C;
+  --ivory: #FAF8F5;
+  --slate: #2A2A35;
+  --champagne-dim: rgba(201, 168, 76, 0.15);
+  --champagne-border: rgba(201, 168, 76, 0.25);
+}
+
+/* ─── Base Reset ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--obsidian);
+  color: var(--ivory);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ─── Global Noise Overlay ───────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+}
+
+/* ─── Typography ─────────────────────────────────── */
+.font-heading { font-family: 'Inter', sans-serif; }
+.font-drama   { font-family: 'Playfair Display', serif; }
+.font-mono    { font-family: 'JetBrains Mono', monospace; }
+
+/* ─── Radius System ──────────────────────────────── */
+.pill    { border-radius: 9999px; }
+.card-r  { border-radius: 2rem; }
+.card-rl { border-radius: 3rem; }
+
+/* ─── Magnetic Button ────────────────────────────── */
+.btn-magnetic {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.3s ease;
+}
+.btn-magnetic:hover { transform: scale(1.03); }
+.btn-magnetic .btn-bg {
+  position: absolute;
+  inset: 0;
+  transform: translateY(101%);
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.btn-magnetic:hover .btn-bg { transform: translateY(0); }
+
+/* Primary (champagne) button */
+.btn-primary {
+  background: var(--champagne);
+  color: var(--obsidian);
+  padding: 0.85rem 2rem;
+  border-radius: 9999px;
+}
+.btn-primary .btn-bg { background: #e0bf6a; }
+
+/* Ghost (outline) button */
+.btn-ghost {
+  background: transparent;
+  color: var(--champagne);
+  padding: 0.75rem 1.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--champagne-border);
+}
+.btn-ghost .btn-bg { background: var(--champagne-dim); }
+
+/* ─── Nav link hover lift ────────────────────────── */
+.nav-link {
+  transition: color 0.2s ease, transform 0.2s ease;
+  display: inline-block;
+}
+.nav-link:hover {
+  color: var(--champagne);
+  transform: translateY(-1px);
+}
+
+/* ─── Section fade utility ───────────────────────── */
+.reveal { opacity: 0; transform: translateY(40px); }
+
+/* ─── Scrollbar ──────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--obsidian); }
+::-webkit-scrollbar-thumb { background: var(--slate); border-radius: 2px; }
+
+/* ─── Feature Cards ──────────────────────────────── */
+.feature-card {
+  background: #13131a;
+  border: 1px solid var(--champagne-border);
+  border-radius: 2rem;
+  overflow: hidden;
+}
+
+/* Typewriter cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink { animation: blink 1s steps(1) infinite; }
+
+/* Live dot pulse */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+.pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+/* Status pulse */
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+}
+.status-pulse { animation: status-pulse 2s ease-in-out infinite; }
+
+/* Protocol SVG animations */
+@keyframes rotate-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.rotate-slow { animation: rotate-slow 8s linear infinite; }
+
+@keyframes scan-laser {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.scan-laser { animation: scan-laser 2.5s ease-in-out infinite; }
+
+@keyframes waveform {
+  0%   { stroke-dashoffset: 400; }
+  100% { stroke-dashoffset: 0; }
+}
+.waveform-path { animation: waveform 2s linear infinite; }
+
+/* Shuffler card spring */
+.shuffler-card {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Scheduler cursor */
+@keyframes cursor-move {
+  0%   { top: 50%; left: 10%; }
+  30%  { top: 40%; left: 55%; }
+  55%  { top: 40%; left: 55%; transform: scale(0.9); }
+  70%  { top: 40%; left: 55%; transform: scale(1); }
+  90%  { top: 65%; left: 75%; }
+  100% { top: 65%; left: 75%; opacity: 0; }
+}
+.scheduler-cursor { animation: cursor-move 4s ease-in-out infinite; }
