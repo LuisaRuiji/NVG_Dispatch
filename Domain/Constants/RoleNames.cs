@@ -4,6 +4,7 @@ public static class RoleNames
 {
     public const string InventoryOfficer = "InventoryOfficer";
     public const string Manager = "Manager";
+    public const string Dispatcher = "Dispatcher";
     public const string HeadOfFinance = "HeadOfFinance";
     public const string Ceo = "CEO";
     public const string Driver = "Driver";

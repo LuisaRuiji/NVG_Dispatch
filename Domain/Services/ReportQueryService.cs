@@ -90,6 +90,25 @@ public sealed record AuditLogItem(
     DateTime CreatedAt,
     string? Metadata);
 
+public sealed record AuthEventItem(
+    Guid Id,
+    string EventType,
+    string Outcome,
+    string? ReasonCode,
+    string? Username,
+    Guid? UserId,
+    string? RolesSnapshotJson,
+    string AuthMethod,
+    bool MfaPerformed,
+    string? MfaMethod,
+    string? TokenJti,
+    string? CorrelationId,
+    string? IpAddress,
+    string? UserAgent,
+    string? ClientApp,
+    string? Environment,
+    DateTime CreatedAt);
+
 public sealed record IntegrityCheckResult(
     int MaintenanceWithoutAsset,
     int LoansWithNegativeRemaining,
@@ -561,6 +580,7 @@ public sealed class ReportQueryService
     }
 
     public async Task<PagedQueryResult<AuditLogItem>> GetAuditLogsAsync(
+        string? action,
         string? entityType,
         Guid? entityId,
         DateTime? fromUtc,
@@ -573,6 +593,12 @@ public sealed class ReportQueryService
         var resolvedPageSize = pageSize <= 0 ? 20 : Math.Min(pageSize, 100);
 
         var query = _dbContext.AuditLogs.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            var normalizedAction = action.Trim().ToUpperInvariant();
+            query = query.Where(log => log.Action == normalizedAction);
+        }
 
         if (!string.IsNullOrWhiteSpace(entityType))
         {
@@ -613,6 +639,84 @@ public sealed class ReportQueryService
             .ToListAsync(cancellationToken);
 
         return new PagedQueryResult<AuditLogItem>(items, totalCount);
+    }
+
+    public async Task<PagedQueryResult<AuthEventItem>> GetAuthEventsAsync(
+        string? eventType,
+        string? outcome,
+        string? username,
+        Guid? userId,
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var resolvedPage = page <= 0 ? 1 : page;
+        var resolvedPageSize = pageSize <= 0 ? 20 : Math.Min(pageSize, 100);
+
+        var query = _dbContext.AuthEvents.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(eventType))
+        {
+            var normalizedType = eventType.Trim().ToUpperInvariant();
+            query = query.Where(ev => ev.EventType == normalizedType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(outcome))
+        {
+            var normalizedOutcome = outcome.Trim().ToUpperInvariant();
+            query = query.Where(ev => ev.Outcome == normalizedOutcome);
+        }
+
+        if (!string.IsNullOrWhiteSpace(username))
+        {
+            var normalizedUser = username.Trim();
+            query = query.Where(ev => ev.Username == normalizedUser);
+        }
+
+        if (userId.HasValue)
+        {
+            query = query.Where(ev => ev.UserId == userId.Value);
+        }
+
+        if (fromUtc.HasValue)
+        {
+            query = query.Where(ev => ev.CreatedAt >= fromUtc.Value);
+        }
+
+        if (toUtc.HasValue)
+        {
+            query = query.Where(ev => ev.CreatedAt <= toUtc.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderByDescending(ev => ev.CreatedAt)
+            .Skip((resolvedPage - 1) * resolvedPageSize)
+            .Take(resolvedPageSize)
+            .Select(ev => new AuthEventItem(
+                ev.Id,
+                ev.EventType,
+                ev.Outcome,
+                ev.ReasonCode,
+                ev.Username,
+                ev.UserId,
+                ev.RolesSnapshotJson,
+                ev.AuthMethod,
+                ev.MfaPerformed,
+                ev.MfaMethod,
+                ev.TokenJti,
+                ev.CorrelationId,
+                ev.IpAddress,
+                ev.UserAgent,
+                ev.ClientApp,
+                ev.Environment,
+                ev.CreatedAt))
+            .ToListAsync(cancellationToken);
+
+        return new PagedQueryResult<AuthEventItem>(items, totalCount);
     }
 
     public async Task<IntegrityCheckResult> GetIntegrityCheckAsync(CancellationToken cancellationToken = default)

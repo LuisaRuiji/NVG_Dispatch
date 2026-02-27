@@ -32,6 +32,10 @@ public sealed class AuditService : IAuditService
         object? before = null,
         object? after = null)
     {
+        var traceId = _httpContextAccessor.HttpContext?.TraceIdentifier
+            ?? Activity.Current?.TraceId.ToString()
+            ?? "-";
+
         var entry = new AuditLog
         {
             Id = Guid.NewGuid(),
@@ -41,14 +45,12 @@ public sealed class AuditService : IAuditService
             EntityId = entityId,
             BeforeJson = Serialize(before),
             AfterJson = Serialize(after),
+            TraceId = traceId,
             CreatedAt = DateTime.UtcNow
         };
 
         _dbContext.AuditLogs.Add(entry);
 
-        var traceId = _httpContextAccessor.HttpContext?.TraceIdentifier
-            ?? Activity.Current?.TraceId.ToString()
-            ?? "-";
         var correlationId = _httpContextAccessor.HttpContext?.Items["CorrelationId"]?.ToString()
             ?? _httpContextAccessor.HttpContext?.TraceIdentifier
             ?? "-";

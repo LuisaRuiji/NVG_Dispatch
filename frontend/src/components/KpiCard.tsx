@@ -9,11 +9,11 @@ type Props = {
 export default function KpiCard({ title, value, subtitle }: Props) {
   const display = value === null ? "—" : value;
   return (
-    <Card className="border-border bg-white shadow-sm hover-lift fade-up">
-      <CardContent className="p-5">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>
-        <p className="mt-2 text-2xl font-semibold text-foreground">{display}</p>
-        {subtitle ? <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p> : null}
+    <Card className="surface-card hover-lift fade-up border-transparent bg-gradient-to-br from-card to-muted/20">
+      <CardContent className="p-6">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">{title}</p>
+        <p className="mt-2 text-3xl font-bold tracking-tight text-foreground">{display}</p>
+        {subtitle ? <p className="mt-1.5 text-xs text-muted-foreground/70">{subtitle}</p> : null}
       </CardContent>
     </Card>
   );

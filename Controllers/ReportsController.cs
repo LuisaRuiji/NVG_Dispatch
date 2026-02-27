@@ -434,6 +434,7 @@ public sealed class ReportsController : ControllerBase
     [HttpGet("audit")]
     [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.HeadOfFinance},{RoleNames.Ceo},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<PagedResult<AuditLogItemResponse>>> GetAuditLogs(
+        [FromQuery] string? action,
         [FromQuery] string? entityType,
         [FromQuery] Guid? entityId,
         [FromQuery] string? from,
@@ -458,6 +459,7 @@ public sealed class ReportsController : ControllerBase
         }
 
         var results = await _reportQueryService.GetAuditLogsAsync(
+            action,
             entityType,
             entityId,
             fromUtc,
@@ -476,6 +478,71 @@ public sealed class ReportsController : ControllerBase
                 item.ActorUsername,
                 item.CreatedAt,
                 item.Metadata)).ToList(),
+            results.TotalCount,
+            page <= 0 ? 1 : page,
+            pageSize <= 0 ? 20 : Math.Min(pageSize, 100));
+
+        return Ok(response);
+    }
+
+    [HttpGet("auth-events")]
+    [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    public async Task<ActionResult<PagedResult<AuthEventItemResponse>>> GetAuthEvents(
+        [FromQuery] string? eventType,
+        [FromQuery] string? outcome,
+        [FromQuery] string? username,
+        [FromQuery] Guid? userId,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseUtcDate(from, out var fromUtc, out var fromError))
+        {
+            return BadRequest(fromError);
+        }
+
+        if (!TryParseUtcDate(to, out var toUtc, out var toError))
+        {
+            return BadRequest(toError);
+        }
+
+        if (fromUtc.HasValue && toUtc.HasValue && fromUtc > toUtc)
+        {
+            return BadRequest("'from' must be earlier than or equal to 'to'.");
+        }
+
+        var results = await _reportQueryService.GetAuthEventsAsync(
+            eventType,
+            outcome,
+            username,
+            userId,
+            fromUtc,
+            toUtc,
+            page,
+            pageSize,
+            cancellationToken);
+
+        var response = new PagedResult<AuthEventItemResponse>(
+            results.Items.Select(item => new AuthEventItemResponse(
+                item.Id,
+                item.EventType,
+                item.Outcome,
+                item.ReasonCode,
+                item.Username,
+                item.UserId,
+                item.RolesSnapshotJson,
+                item.AuthMethod,
+                item.MfaPerformed,
+                item.MfaMethod,
+                item.TokenJti,
+                item.CorrelationId,
+                item.IpAddress,
+                item.UserAgent,
+                item.ClientApp,
+                item.Environment,
+                item.CreatedAt)).ToList(),
             results.TotalCount,
             page <= 0 ? 1 : page,
             pageSize <= 0 ? 20 : Math.Min(pageSize, 100));

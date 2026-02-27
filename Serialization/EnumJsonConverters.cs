@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NVGInventory.Domain.Enums;
+using NVGInventory.Modules.Dispatching.Enums;
 
 namespace NVGInventory.Serialization;
 
@@ -206,4 +207,77 @@ public sealed class PurchaseOrderStatusJsonConverter : EnumStringConverter<Purch
 
     protected override IReadOnlyDictionary<PurchaseOrderStatus, string> ToStringMap => Map;
     protected override IReadOnlyDictionary<string, PurchaseOrderStatus> FromStringMap => Reverse;
+}
+
+public sealed class TripStatusJsonConverter : EnumStringConverter<TripStatus>
+{
+    private static readonly IReadOnlyDictionary<TripStatus, string> Map = new Dictionary<TripStatus, string>
+    {
+        [TripStatus.Draft] = "DRAFT",
+        [TripStatus.Dispatched] = "DISPATCHED",
+        [TripStatus.EnroutePickup] = "ENROUTE_PICKUP",
+        [TripStatus.AtPickup] = "AT_PICKUP",
+        [TripStatus.Loaded] = "LOADED",
+        [TripStatus.EnrouteDropoff] = "ENROUTE_DROPOFF",
+        [TripStatus.AtDropoff] = "AT_DROPOFF",
+        [TripStatus.Delivered] = "DELIVERED",
+        [TripStatus.Closed] = "CLOSED",
+        [TripStatus.Cancelled] = "CANCELLED",
+        [TripStatus.OnHold] = "ON_HOLD",
+        [TripStatus.FailedAttempt] = "FAILED_ATTEMPT"
+    };
+
+    private static readonly IReadOnlyDictionary<string, TripStatus> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<TripStatus, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, TripStatus> FromStringMap => Reverse;
+}
+
+public sealed class TripStopTypeJsonConverter : EnumStringConverter<TripStopType>
+{
+    private static readonly IReadOnlyDictionary<TripStopType, string> Map = new Dictionary<TripStopType, string>
+    {
+        [TripStopType.Pickup] = "PICKUP",
+        [TripStopType.Dropoff] = "DROPOFF"
+    };
+
+    private static readonly IReadOnlyDictionary<string, TripStopType> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<TripStopType, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, TripStopType> FromStringMap => Reverse;
+}
+
+public sealed class TripDocumentTypeJsonConverter : EnumStringConverter<TripDocumentType>
+{
+    private static readonly IReadOnlyDictionary<TripDocumentType, string> Map = new Dictionary<TripDocumentType, string>
+    {
+        [TripDocumentType.Waybill] = "WAYBILL",
+        [TripDocumentType.Pod] = "POD",
+        [TripDocumentType.Atw] = "ATW"
+    };
+
+    private static readonly IReadOnlyDictionary<string, TripDocumentType> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<TripDocumentType, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, TripDocumentType> FromStringMap => Reverse;
+}
+
+public sealed class TripDocumentStateJsonConverter : EnumStringConverter<TripDocumentState>
+{
+    private static readonly IReadOnlyDictionary<TripDocumentState, string> Map = new Dictionary<TripDocumentState, string>
+    {
+        [TripDocumentState.Missing] = "MISSING",
+        [TripDocumentState.Uploaded] = "UPLOADED",
+        [TripDocumentState.Verified] = "VERIFIED",
+        [TripDocumentState.Rejected] = "REJECTED"
+    };
+
+    private static readonly IReadOnlyDictionary<string, TripDocumentState> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<TripDocumentState, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, TripDocumentState> FromStringMap => Reverse;
 }

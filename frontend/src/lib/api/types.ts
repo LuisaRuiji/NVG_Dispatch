@@ -244,3 +244,19 @@ export interface LoanReturnResponse {
   loanId: string;
   status: LoanStatus;
 }
+
+export interface ModuleSettingResponse {
+  moduleKey: string;
+  displayName: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt?: string | null;
+  updatedByUserId?: string | null;
+  updatedByUsername?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateModuleSettingRequest {
+  isEnabled: boolean;
+  notes?: string | null;
+}

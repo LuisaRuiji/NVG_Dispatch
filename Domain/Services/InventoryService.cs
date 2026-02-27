@@ -15,6 +15,15 @@ public sealed record CreateInventoryItemCommand(
     decimal? UnitValue,
     bool IsKit);
 
+public sealed record UpdateInventoryItemCommand(
+    string Name,
+    string Unit,
+    Enums.ItemType ItemType,
+    decimal? ReorderLevel,
+    string? Location,
+    decimal? UnitValue,
+    bool IsKit);
+
 public sealed class InventoryService
 {
     private readonly InventoryDbContext _dbContext;
@@ -96,6 +105,80 @@ public sealed class InventoryService
         return await query
             .OrderBy(item => item.Name)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<InventoryItem> UpdateItemAsync(
+        Guid inventoryId,
+        UpdateInventoryItemCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.Name))
+        {
+            throw new BusinessRuleViolationException("Item name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Unit))
+        {
+            throw new BusinessRuleViolationException("Item unit is required.");
+        }
+
+        if (command.IsKit && command.ItemType != Enums.ItemType.NonConsumable)
+        {
+            throw new BusinessRuleViolationException("Kits must be non-consumable items.");
+        }
+
+        var item = await _dbContext.InventoryItems
+            .Include(i => i.KitComponents)
+            .FirstOrDefaultAsync(i => i.Id == inventoryId, cancellationToken);
+
+        if (item is null)
+        {
+            throw new NotFoundException("Inventory item not found.");
+        }
+
+        if (!command.IsKit && item.KitComponents.Count > 0)
+        {
+            throw new BusinessRuleViolationException("Cannot unset kit flag while components exist.");
+        }
+
+        item.Name = command.Name.Trim();
+        item.Unit = command.Unit.Trim();
+        item.ItemType = command.ItemType;
+        item.ReorderLevel = command.ReorderLevel;
+        item.Location = string.IsNullOrWhiteSpace(command.Location) ? null : command.Location.Trim();
+        item.UnitValue = command.UnitValue;
+        item.IsKit = command.IsKit;
+        item.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return item;
+    }
+
+    public async Task ArchiveItemAsync(
+        Guid inventoryId,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await _dbContext.InventoryItems
+            .FirstOrDefaultAsync(i => i.Id == inventoryId, cancellationToken);
+
+        if (item is null)
+        {
+            throw new NotFoundException("Inventory item not found.");
+        }
+
+        if (!item.IsActive)
+        {
+            return;
+        }
+
+        if (item.Quantity > 0)
+        {
+            throw new BusinessRuleViolationException("Cannot archive item with stock on hand.");
+        }
+
+        item.IsActive = false;
+        item.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task SetKitFlagAsync(

@@ -22,16 +22,25 @@ import InventoryPage from "@/features/inventory/InventoryPage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import IntegrityPage from "@/features/admin/IntegrityPage";
 import UsersPage from "@/features/admin/UsersPage";
+import ModuleSettingsPage from "@/features/admin/ModuleSettingsPage";
+import AuditLogsPage from "@/features/admin/AuditLogsPage";
+import AuthEventsPage from "@/features/admin/AuthEventsPage";
 import PurchaseOrdersPage from "@/features/purchase-orders/PurchaseOrdersPage";
 import PurchaseOrderDetailPage from "@/features/purchase-orders/PurchaseOrderDetailPage";
+import DispatchBoardPage from "@/features/dispatch/DispatchBoardPage";
+import MyTripsPage from "@/features/dispatch/MyTripsPage";
+import TripDetailPage from "@/features/dispatch/TripDetailPage";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { getDefaultRoute, getMe, loadMeIfTokenExists, logout } from "@/features/auth/authStore";
 import RoleGate from "@/components/RoleGate";
+import { initTheme } from "@/lib/theme";
 
 setUnauthorizedHandler(() => {
   logout();
   window.location.assign("/login");
 });
+
+initTheme();
 
 function App() {
   const [ready, setReady] = useState(false);
@@ -54,7 +63,7 @@ function App() {
           <Route
             path="/dashboard"
             element={
-              <RoleGate roles={["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Driver"]}>
+              <RoleGate roles={["InventoryOfficer", "Manager", "Dispatcher", "HeadOfFinance", "CEO", "Driver"]}>
                 <DashboardPage />
               </RoleGate>
             }
@@ -117,6 +126,30 @@ function App() {
             }
           />
           <Route
+            path="/dispatch/board"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher"]}>
+                <DispatchBoardPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/my-trips"
+            element={
+              <RoleGate roles={["Driver"]}>
+                <MyTripsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/trips/:id"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher", "Driver", "HeadOfFinance", "CEO"]}>
+                <TripDetailPage />
+              </RoleGate>
+            }
+          />
+          <Route
             path="/reports"
             element={
               <RoleGate roles={["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"]}>
@@ -137,6 +170,30 @@ function App() {
             element={
               <RoleGate roles={["Admin", "SuperAdmin"]}>
                 <UsersPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/admin/modules"
+            element={
+              <RoleGate roles={["SuperAdmin"]}>
+                <ModuleSettingsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/admin/audit-logs"
+            element={
+              <RoleGate roles={["Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"]}>
+                <AuditLogsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/admin/auth-events"
+            element={
+              <RoleGate roles={["Admin", "SuperAdmin"]}>
+                <AuthEventsPage />
               </RoleGate>
             }
           />

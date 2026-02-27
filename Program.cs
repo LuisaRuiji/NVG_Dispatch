@@ -15,8 +15,10 @@ using NVGInventory.Contracts;
 using NVGInventory.Data;
 using NVGInventory.Domain.Services;
 using NVGInventory.Domain.Exceptions;
+using NVGInventory.Middleware;
 using NVGInventory.Serialization;
 using NVGInventory.Security;
+using NVGInventory.Modules.Dispatching;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +37,10 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new ReturnConditionJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new LoanStatusJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new PurchaseOrderStatusJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new TripStatusJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new TripStopTypeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new TripDocumentTypeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new TripDocumentStateJsonConverter());
     });
 builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -63,8 +69,10 @@ builder.Services.AddDbContext<InventoryDbContext>(options =>
     options.UseSqlServer(connectionString);
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<DispatchingOptions>(builder.Configuration.GetSection(DispatchingOptions.SectionName));
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<AuthEventService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<RequestService>();
 builder.Services.AddScoped<StockLedgerService>();
@@ -84,6 +92,10 @@ builder.Services.AddScoped<PurchaseOrderQueryService>();
 builder.Services.AddScoped<SupplierService>();
 builder.Services.AddScoped<InventoryAdjustmentWorkflowService>();
 builder.Services.AddScoped<InventoryAdjustmentQueryService>();
+builder.Services.AddScoped<ModuleSettingsService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripQueryService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();
 builder.Services.AddScoped<DemoDataSeeder>();
 builder.Services.AddScoped<PerformanceDataSeeder>();
 builder.Services.Configure<IntegrityCheckJobOptions>(builder.Configuration.GetSection("BackgroundJobs:IntegrityCheck"));
@@ -423,6 +435,7 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<ModuleMaintenanceMiddleware>();
 
 app.MapControllers();
 app.MapGet("/health", async (InventoryDbContext dbContext, CancellationToken cancellationToken) =>

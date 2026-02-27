@@ -9,6 +9,7 @@ public sealed class AuditLog
     public Guid EntityId { get; set; }
     public string? BeforeJson { get; set; }
     public string? AfterJson { get; set; }
+    public string? TraceId { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public User? Actor { get; set; }

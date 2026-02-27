@@ -22,6 +22,9 @@ export function getDefaultRoute(current: MeResponse | null = me) {
   if (roles.includes("Admin") || roles.includes("SuperAdmin")) {
     return "/admin/users";
   }
+  if (roles.includes("Dispatcher")) {
+    return "/dispatch/board";
+  }
   return "/dashboard";
 }
 

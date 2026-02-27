@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using NVGInventory.Data;
+using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Entities;
 
 namespace NVGInventory.Security;
@@ -11,7 +12,16 @@ public sealed record AuthResult(
     string Username,
     IReadOnlyCollection<string> Roles,
     string AccessToken,
-    DateTime ExpiresAtUtc);
+    DateTime ExpiresAtUtc,
+    string TokenJti);
+
+public sealed record AuthAttemptResult(
+    bool Success,
+    AuthResult? Result,
+    string? FailureReason,
+    Guid? UserId,
+    string? Username,
+    IReadOnlyCollection<string> RolesSnapshot);
 
 public sealed class AuthService
 {
@@ -26,11 +36,11 @@ public sealed class AuthService
         _tokenService = tokenService;
     }
 
-    public async Task<AuthResult?> TryLoginAsync(LoginCommand command, CancellationToken cancellationToken = default)
+    public async Task<AuthAttemptResult> TryLoginAsync(LoginCommand command, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(command.Username) || string.IsNullOrWhiteSpace(command.Password))
         {
-            return null;
+            return new AuthAttemptResult(false, null, AuthFailureReasons.ValidationError, null, null, Array.Empty<string>());
         }
 
         var user = await _dbContext.Users
@@ -40,15 +50,42 @@ public sealed class AuthService
                 u => u.Username == command.Username,
                 cancellationToken);
 
-        if (user is null || !user.IsActive)
+        if (user is null)
         {
-            return null;
+            return new AuthAttemptResult(false, null, AuthFailureReasons.UserNotFound, null, command.Username.Trim(), Array.Empty<string>());
+        }
+
+        if (!user.IsActive)
+        {
+            return new AuthAttemptResult(
+                false,
+                null,
+                AuthFailureReasons.UserInactive,
+                user.Id,
+                user.Username,
+                user.UserRoles
+                    .Select(ur => ur.Role?.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name!)
+                    .Distinct()
+                    .ToList());
         }
 
         var validPassword = BCrypt.Net.BCrypt.Verify(command.Password, user.PasswordHash);
         if (!validPassword)
         {
-            return null;
+            return new AuthAttemptResult(
+                false,
+                null,
+                AuthFailureReasons.InvalidCredentials,
+                user.Id,
+                user.Username,
+                user.UserRoles
+                    .Select(ur => ur.Role?.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name!)
+                    .Distinct()
+                    .ToList());
         }
 
         var roles = user.UserRoles
@@ -60,11 +97,20 @@ public sealed class AuthService
 
         var token = _tokenService.CreateAccessToken(user, roles);
 
-        return new AuthResult(
+        var result = new AuthResult(
             user.Id,
             user.Username,
             roles,
             token.AccessToken,
-            token.ExpiresAtUtc);
+            token.ExpiresAtUtc,
+            token.Jti);
+
+        return new AuthAttemptResult(
+            true,
+            result,
+            null,
+            result.UserId,
+            result.Username,
+            result.Roles);
     }
 }

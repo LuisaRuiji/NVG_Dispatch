@@ -47,6 +47,47 @@ public sealed class InventoryController : ControllerBase
             item.UnitValue));
     }
 
+    [HttpPut("{inventoryId:guid}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    public async Task<ActionResult<InventoryItemResponse>> UpdateItem(
+        Guid inventoryId,
+        UpdateInventoryItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        var item = await _inventoryService.UpdateItemAsync(
+            inventoryId,
+            new UpdateInventoryItemCommand(
+                request.Name,
+                request.Unit,
+                request.ItemType,
+                request.ReorderLevel,
+                request.Location,
+                request.UnitValue,
+                request.IsKit),
+            cancellationToken);
+
+        return Ok(new InventoryItemResponse(
+            item.Id,
+            item.Name,
+            item.Unit,
+            item.ItemType,
+            item.IsKit,
+            item.Quantity,
+            item.ReorderLevel,
+            item.Location,
+            item.UnitValue));
+    }
+
+    [HttpPatch("{inventoryId:guid}/archive")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    public async Task<IActionResult> ArchiveItem(
+        Guid inventoryId,
+        CancellationToken cancellationToken)
+    {
+        await _inventoryService.ArchiveItemAsync(inventoryId, cancellationToken);
+        return NoContent();
+    }
+
     [HttpPatch("{inventoryId:guid}/kit")]
     [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
     public async Task<IActionResult> UpdateKitFlag(

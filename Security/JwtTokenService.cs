@@ -7,7 +7,7 @@ using NVGInventory.Domain.Entities;
 
 namespace NVGInventory.Security;
 
-public sealed record TokenResult(string AccessToken, DateTime ExpiresAtUtc);
+public sealed record TokenResult(string AccessToken, DateTime ExpiresAtUtc, string Jti);
 
 public sealed class JwtTokenService
 {
@@ -38,11 +38,12 @@ public sealed class JwtTokenService
         var now = DateTime.UtcNow;
         var expires = now.AddMinutes(_options.AccessTokenMinutes);
 
+        var jti = Guid.NewGuid().ToString();
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, jti)
         };
 
         foreach (var role in roles)
@@ -59,6 +60,6 @@ public sealed class JwtTokenService
             signingCredentials: _signingCredentials);
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
-        return new TokenResult(tokenString, expires);
+        return new TokenResult(tokenString, expires, jti);
     }
 }

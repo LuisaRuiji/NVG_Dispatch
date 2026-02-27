@@ -5,15 +5,20 @@ import PageHeader from "@/components/PageHeader";
 import KpiCard from "@/components/KpiCard";
 import EmptyState from "@/components/EmptyState";
 import ToastHost from "@/components/ToastHost";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/lib/useToast";
+import { Button } from "@/components/ui/button";
 import { fetchDashboardKpis } from "./kpis";
+import { ArrowRight, RefreshCw, Zap, Settings2 } from "lucide-react";
 
 export default function DashboardPage() {
   const me = getMe();
   const { toasts, show } = useToast();
   const roles = me?.roles ?? [];
 
-  const [kpis, setKpis] = useState({
+  const [loading, setLoading] = useState(false);
+  const [kpis, setKpis] = useState<any>({
     pendingIoCount: null,
     pendingManagerCount: null,
     awaitingIssueCount: null,
@@ -34,11 +39,14 @@ export default function DashboardPage() {
   const loadKpis = async (force = false) => {
     if (!me) return;
     try {
+      setLoading(true);
       const result = await fetchDashboardKpis(me, force);
       setKpis(result);
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to load dashboard metrics.", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -71,12 +79,15 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Operational snapshot across requests, stock, and loans."
         actions={
-          <button
-            className="rounded-lg border border-border px-3 py-2 text-sm"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => loadKpis(true)}
+            className="gap-2"
           >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             Refresh
-          </button>
+          </Button>
         }
       />
 
@@ -112,9 +123,12 @@ export default function DashboardPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <div className="surface-card p-6 hover-lift">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Quick Actions</p>
-          <div className="mt-4 grid gap-3">
+        <div className="surface-card p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Zap className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Quick Actions</h3>
+          </div>
+          <div className="grid gap-3">
             {quickActions.length === 0 ? (
               <EmptyState title="No quick actions" description="Your role has no quick actions." />
             ) : (
@@ -122,22 +136,26 @@ export default function DashboardPage() {
                 <Link
                   key={action.to}
                   to={action.to}
-                  className="flex items-center justify-between rounded-lg border border-border px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted hover-lift"
+                  className="group/action flex items-center justify-between rounded-xl border border-border/50 bg-card p-4 text-sm font-medium text-foreground transition-all duration-200 hover:bg-muted/50 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 active:scale-[0.99]"
                 >
-                  {action.label}
-                  <span className="text-muted-foreground">→</span>
+                  <span className="flex items-center gap-3">
+                    <div className="h-2 w-2 rounded-full bg-primary/40 group-hover/action:bg-primary transition-colors" />
+                    {action.label}
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover/action:translate-x-1 group-hover/action:text-primary" />
                 </Link>
               ))
             )}
           </div>
         </div>
 
-        <div className="surface-card p-6 hover-lift">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Status Summary
-            </p>
-            <span className="text-xs text-muted-foreground">Live</span>
+        <div className="surface-card p-6">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Status Summary</h3>
+            </div>
+            <Badge variant="outline" className="text-[10px] animate-pulse">LIVE</Badge>
           </div>
           <div className="space-y-3 text-sm text-muted-foreground">
             <div className="flex items-center justify-between">

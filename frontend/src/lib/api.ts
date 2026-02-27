@@ -1,4 +1,5 @@
 import { emitToast } from "@/lib/toastBus";
+import { emitMaintenance } from "@/lib/maintenanceBus";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
 
@@ -83,6 +84,14 @@ export async function api<T>(path: string, init: RequestInitEx = {}): Promise<T>
     if (res.status === 401 && init.auth !== false) {
       emitToast("Session expired", "error");
       onUnauthorized?.();
+    }
+
+    if (apiError?.errorCode === "MODULE_DISABLED") {
+      const maintenanceMessage =
+        apiError?.message?.trim() ||
+        raw.trim() ||
+        "Module is under maintenance.";
+      emitMaintenance(maintenanceMessage);
     }
 
     throw new ApiRequestError(res.status, message || "Request failed", apiError ?? undefined, raw);

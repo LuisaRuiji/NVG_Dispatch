@@ -9,8 +9,12 @@ export type Toast = {
 export function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const lastRef = useRef<{ message: string; ts: number } | null>(null);
+  const maintenancePattern = /module is under maintenance/i;
 
   const show = useCallback((message: string, type: Toast["type"] = "success") => {
+    if (maintenancePattern.test(message)) {
+      return;
+    }
     const now = Date.now();
     if (lastRef.current && lastRef.current.message === message && now - lastRef.current.ts < 1500) {
       return;

@@ -1,4 +1,5 @@
 using NVGInventory.Domain.Enums;
+using NVGInventory.Modules.Dispatching.Enums;
 
 namespace NVGInventory.Contracts;
 
@@ -23,6 +24,24 @@ public sealed record UserSummaryResponse(
     IReadOnlyCollection<string> Roles);
 
 public sealed record RoleSummaryResponse(string Name);
+
+public sealed record ModuleSettingResponse(
+    string ModuleKey,
+    string DisplayName,
+    bool IsEnabled,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    Guid? UpdatedByUserId,
+    string? UpdatedByUsername,
+    string? Notes);
+
+public sealed record UpdateModuleSettingRequest(bool IsEnabled, string? Notes);
+
+public sealed record ModuleStatusResponse(
+    string ModuleKey,
+    string DisplayName,
+    bool IsEnabled,
+    string? Notes);
 
 public sealed record ApiErrorResponse(string ErrorCode, string Message, string TraceId);
 
@@ -63,6 +82,15 @@ public sealed record CreateInventoryItemRequest(
     string? Location,
     decimal? UnitValue,
     bool? IsKit = null);
+
+public sealed record UpdateInventoryItemRequest(
+    string Name,
+    string Unit,
+    ItemType ItemType,
+    decimal? ReorderLevel,
+    string? Location,
+    decimal? UnitValue,
+    bool IsKit);
 
 public sealed record InventoryItemResponse(
     Guid Id,
@@ -458,6 +486,25 @@ public sealed record AuditLogItemResponse(
     DateTime CreatedAt,
     string? Metadata);
 
+public sealed record AuthEventItemResponse(
+    Guid Id,
+    string EventType,
+    string Outcome,
+    string? ReasonCode,
+    string? Username,
+    Guid? UserId,
+    string? RolesSnapshotJson,
+    string AuthMethod,
+    bool MfaPerformed,
+    string? MfaMethod,
+    string? TokenJti,
+    string? CorrelationId,
+    string? IpAddress,
+    string? UserAgent,
+    string? ClientApp,
+    string? Environment,
+    DateTime CreatedAt);
+
 public sealed record IntegrityCheckResponse(
     int MaintenanceWithoutAsset,
     int LoansWithNegativeRemaining,
@@ -561,3 +608,114 @@ public sealed record PagedResult<T>(
     int TotalCount,
     int Page,
     int PageSize);
+
+public sealed record DispatchCustomerSummaryResponse(Guid Id, string Name);
+
+public sealed record DispatchTripStopRequest(
+    TripStopType StopType,
+    string LocationText,
+    DateTime? ScheduledAt);
+
+public sealed record CreateDispatchTripRequest(
+    Guid CustomerId,
+    Guid? DriverUserId,
+    Guid? TruckAssetId,
+    string? Notes,
+    IReadOnlyCollection<DispatchTripStopRequest>? Stops);
+
+public sealed record CreateDispatchTripResponse(Guid TripId, TripStatus Status);
+
+public sealed record UpdateDispatchTripRequest(
+    Guid CustomerId,
+    Guid? DriverUserId,
+    Guid? TruckAssetId,
+    string? Notes,
+    IReadOnlyCollection<DispatchTripStopRequest>? Stops,
+    string? Remarks = null);
+
+public sealed record DispatchTripActionRequest(
+    Guid DriverUserId,
+    Guid? TruckAssetId,
+    string? Remarks);
+
+public sealed record DispatchTripActionResponse(Guid TripId, TripStatus Status);
+
+public sealed record DispatchTripStatusRequest(
+    TripStatus ToStatus,
+    string? Remarks,
+    bool? PodPendingOverride);
+
+public sealed record DispatchTripStatusResponse(Guid TripId, TripStatus Status);
+
+public sealed record DispatchTripStopResponse(
+    Guid Id,
+    TripStopType StopType,
+    string LocationText,
+    DateTime? ScheduledAt,
+    DateTime? ActualAt);
+
+public sealed record DispatchTripDocumentUploadRequest(
+    TripDocumentType Type,
+    string StorageKey);
+
+public sealed record DispatchTripDocumentRejectRequest(string Remarks);
+
+public sealed record DispatchTripDocumentResponse(
+    Guid Id,
+    TripDocumentType Type,
+    TripDocumentState State,
+    string StorageKey,
+    Guid UploadedByUserId,
+    string? UploadedByUsername,
+    Guid? VerifiedByUserId,
+    string? VerifiedByUsername,
+    Guid? RejectedByUserId,
+    string? RejectedByUsername,
+    string? Remarks,
+    DateTime UploadedAt,
+    DateTime? VerifiedAt,
+    DateTime? RejectedAt);
+
+public sealed record DispatchTripHistoryResponse(
+    Guid Id,
+    TripHistoryEventType EventType,
+    TripStatus FromStatus,
+    TripStatus ToStatus,
+    Guid ActorUserId,
+    string? ActorUsername,
+    string? Remarks,
+    DateTime CreatedAt);
+
+public sealed record DispatchTripListItemResponse(
+    Guid Id,
+    TripStatus Status,
+    DispatchCustomerSummaryResponse Customer,
+    Guid? DriverUserId,
+    string? DriverUsername,
+    Guid? TruckAssetId,
+    string? TruckAssetCode,
+    bool PodPending,
+    int UploadedDocumentCount,
+    int RequiredDocumentCount,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    DateTime? PickupScheduledAt,
+    DateTime? DropoffScheduledAt);
+
+public sealed record DispatchTripDetailResponse(
+    Guid Id,
+    TripStatus Status,
+    DispatchCustomerSummaryResponse Customer,
+    Guid? DriverUserId,
+    string? DriverUsername,
+    Guid? TruckAssetId,
+    string? TruckAssetCode,
+    bool PodPending,
+    TripStatus? HoldPreviousStatus,
+    string? Notes,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    IReadOnlyCollection<DispatchTripStopResponse> Stops,
+    IReadOnlyCollection<DispatchTripDocumentResponse> Documents,
+    IReadOnlyCollection<DispatchTripHistoryResponse> History,
+    bool DocVerificationEnabled);

@@ -56,3 +56,19 @@ public sealed class ConcurrencyConflictException : DomainException
     {
     }
 }
+
+public sealed class ConflictDomainException : DomainException
+{
+    public ConflictDomainException(string message)
+        : base(message, "CONFLICT", (int)HttpStatusCode.Conflict)
+    {
+    }
+}
+
+public sealed class ModuleDisabledException : DomainException
+{
+    public ModuleDisabledException(string message)
+        : base(message, "MODULE_DISABLED", (int)HttpStatusCode.ServiceUnavailable)
+    {
+    }
+}

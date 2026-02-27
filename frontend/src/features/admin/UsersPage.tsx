@@ -6,6 +6,11 @@ import ToastHost from "@/components/ToastHost";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
 import { getMe } from "@/features/auth/authStore";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { Trash2, UserPlus, Settings2 } from "lucide-react";
 
 type UserSummary = {
   id: string;
@@ -220,41 +225,46 @@ export default function UsersPage() {
       <PageHeader title="User Management" description="Create accounts, assign roles, and manage access." />
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-sm font-semibold text-slate-900">Create User</h3>
-          <p className="mt-1 text-sm text-slate-500">Admins can create non-admin users. SuperAdmin can create Admins.</p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-xs uppercase text-slate-500">Username</label>
-              <input
+        <div className="surface-card p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <UserPlus className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Create User</h3>
+          </div>
+          <p className="text-xs text-muted-foreground/80">Admins can create non-admin users. SuperAdmin can create Admins.</p>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Username</label>
+              <Input
                 value={createUsername}
                 onChange={(e) => setCreateUsername(e.target.value)}
-                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                placeholder="jdoe"
               />
             </div>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Email</label>
-              <input
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Email Address</label>
+              <Input
                 value={createEmail}
                 onChange={(e) => setCreateEmail(e.target.value)}
-                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                placeholder="john@example.com"
+                type="email"
               />
             </div>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Password</label>
-              <input
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Password</label>
+              <Input
                 value={createPassword}
                 onChange={(e) => setCreatePassword(e.target.value)}
                 type="password"
-                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                placeholder="••••••••"
               />
             </div>
-            <div>
-              <label className="text-xs uppercase text-slate-500">Role</label>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Initial Role</label>
               <select
                 value={createRole}
                 onChange={(e) => setCreateRole(e.target.value)}
-                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm transition-all duration-200 hover:border-ring/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="">Select role</option>
                 {roleOptions.map((role) => (
@@ -265,32 +275,48 @@ export default function UsersPage() {
               </select>
             </div>
           </div>
-          <button
+
+          <Button
             onClick={handleCreate}
             disabled={loading}
-            className="mt-4 rounded-lg bg-[#175C99] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            className="mt-6 w-full md:w-auto"
           >
-            Create User
-          </button>
+            Register User
+          </Button>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-sm font-semibold text-slate-900">Manage User</h3>
-          <p className="mt-1 text-sm text-slate-500">Select a user from the table to manage roles or reset passwords.</p>
+        <div className="surface-card p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Settings2 className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Account Controls</h3>
+          </div>
+          <p className="text-xs text-muted-foreground/80">Select a user from the directory to manage roles or reset passwords.</p>
+
           {selectedUser ? (
-            <div className="mt-4 space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{selectedUser.username}</p>
-                <p className="text-xs text-slate-500">{selectedUser.email ?? "No email"}</p>
+            <div className="mt-6 space-y-6 fade-in">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                  {selectedUser.username[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">{selectedUser.username}</p>
+                  <p className="text-xs text-muted-foreground">{selectedUser.email ?? "No email address linked"}</p>
+                </div>
+                <div className="ml-auto">
+                  <Badge className={selectedUser.isActive ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-muted text-muted-foreground"}>
+                    {selectedUser.isActive ? "ACTIVE" : "INACTIVE"}
+                  </Badge>
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs uppercase text-slate-500">Roles</label>
-                <div className="mt-2 flex flex-wrap gap-2">
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Assigned Roles</label>
+                <div className="flex flex-wrap gap-2">
                   {roleOptions.map((role) => (
-                    <label key={role.name} className="inline-flex items-center gap-2 text-sm text-slate-600">
+                    <label key={role.name} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/50 bg-card text-xs font-medium cursor-pointer hover:bg-muted/30 transition-colors">
                       <input
                         type="checkbox"
+                        className="rounded border-border text-primary focus:ring-primary/40 h-4 w-4"
                         checked={manageRoles.includes(role.name)}
                         onChange={() =>
                           toggleRole(role.name, manageRoles, setManageRoles)
@@ -301,129 +327,150 @@ export default function UsersPage() {
                     </label>
                   ))}
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={handleUpdateRoles}
                   disabled={loading}
-                  className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 disabled:opacity-60"
+                  className="mt-1"
                 >
-                  Update Roles
-                </button>
+                  Apply Role Changes
+                </Button>
               </div>
 
-              <div>
-                <label className="text-xs uppercase text-slate-500">Status</label>
-                <div className="mt-2 flex items-center gap-3">
-                  <select
-                    value={manageActive ? "active" : "inactive"}
-                    onChange={(e) => setManageActive(e.target.value === "active")}
-                    className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                  <button
-                    onClick={handleUpdateStatus}
-                    disabled={loading}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 disabled:opacity-60"
-                  >
-                    Save Status
-                  </button>
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Connectivity</label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={manageActive ? "active" : "inactive"}
+                      onChange={(e) => setManageActive(e.target.value === "active")}
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-xs transition-all duration-200 hover:border-ring/50 focus-visible:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUpdateStatus}
+                      disabled={loading}
+                    >
+                      Update
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">Quick Reset</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                      type="password"
+                      placeholder="••••••••"
+                      className="h-9"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetPassword}
+                      disabled={loading}
+                    >
+                      Reset
+                    </Button>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs uppercase text-slate-500">Reset Password</label>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <input
-                    value={resetPassword}
-                    onChange={(e) => setResetPassword(e.target.value)}
-                    type="password"
-                    className="h-9 w-60 rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                  />
-                  <button
-                    onClick={handleResetPassword}
-                    disabled={loading}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 disabled:opacity-60"
-                  >
-                    Reset Password
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs uppercase text-slate-500">Delete User</label>
-                <div className="mt-2 flex items-center gap-3">
-                  <button
-                    onClick={handleDeleteUser}
-                    disabled={loading}
-                    className="rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:text-rose-700 disabled:opacity-60"
-                  >
-                    Delete User
-                  </button>
-                  <span className="text-xs text-slate-500">Marks the account inactive.</span>
-                </div>
+              <div className="pt-4 border-t border-border/50 flex items-center justify-between">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDeleteUser}
+                  disabled={loading}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Deactivate Account
+                </Button>
+                <span className="text-[10px] text-muted-foreground italic">Note: Deletion deactivates access.</span>
               </div>
             </div>
           ) : (
-            <div className="mt-6 text-sm text-slate-500">Select a user from the table.</div>
+            <div className="mt-8">
+              <EmptyState
+                title="Account Settings"
+                description="Select a team member from the directory below to manage their access, roles, and security settings."
+              />
+            </div>
           )}
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mt-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">Users</h3>
-          <p className="text-xs text-slate-500">{users.length} total</p>
+      <div className="surface-card p-6 mt-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">User Directory</h3>
+            <Badge variant="secondary" className="font-mono">{users.length}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">Operational access control</p>
         </div>
-        <div className="mt-4">
-          <DataTable>
-            <thead className="bg-slate-50/50 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-3 text-left">Username</th>
-                <th className="px-4 py-3 text-left">Email</th>
-                <th className="px-4 py-3 text-left">Roles</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-right">Created</th>
+
+        <DataTable>
+          <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
+            <tr>
+              <th className="px-6 py-4 text-left">Username</th>
+              <th className="px-6 py-4 text-left">Email</th>
+              <th className="px-6 py-4 text-left">Roles</th>
+              <th className="px-6 py-4 text-left">Status</th>
+              <th className="px-6 py-4 text-right">Created</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {users.map((user) => (
+              <tr
+                key={user.id}
+                className={cn(
+                  "cursor-pointer transition-colors hover:bg-muted/40",
+                  selectedId === user.id ? "bg-primary/5" : ""
+                )}
+                onClick={() => setSelectedId(user.id)}
+              >
+                <td className="px-6 py-4">
+                  <span className="text-sm font-semibold text-foreground">{user.username}</span>
+                </td>
+                <td className="px-6 py-4 text-sm text-muted-foreground">{user.email ?? "-"}</td>
+                <td className="px-6 py-4 flex flex-wrap gap-1">
+                  {user.roles?.length ? (
+                    user.roles.map((r) => (
+                      <Badge key={r} variant="outline" className="text-[10px] py-0">{r}</Badge>
+                    ))
+                  ) : "-"}
+                </td>
+                <td className="px-6 py-4">
+                  <Badge
+                    className={cn(
+                      "font-bold text-[10px]",
+                      user.isActive
+                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                        : "bg-muted text-muted-foreground border-border"
+                    )}
+                  >
+                    {user.isActive ? "ACTIVE" : "INACTIVE"}
+                  </Badge>
+                </td>
+                <td className="px-6 py-4 text-right text-xs text-muted-foreground tabular-nums">
+                  {new Date(user.createdAt).toLocaleDateString()}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr
-                  key={user.id}
-                  className={`border-t border-slate-100 cursor-pointer ${
-                    selectedId === user.id ? "bg-slate-50" : "hover:bg-slate-50/60"
-                  }`}
-                  onClick={() => setSelectedId(user.id)}
-                >
-                  <td className="px-4 py-3 text-sm">{user.username}</td>
-                  <td className="px-4 py-3 text-sm text-slate-500">{user.email ?? "-"}</td>
-                  <td className="px-4 py-3 text-sm text-slate-500">
-                    {user.roles?.length ? user.roles.join(", ") : "-"}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        user.isActive
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : "bg-slate-100 text-slate-600 border border-slate-200"
-                      }`}
-                    >
-                      {user.isActive ? "ACTIVE" : "INACTIVE"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-xs text-slate-500">
-                    {new Date(user.createdAt).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-          {users.length === 0 && !loading ? (
-            <div className="mt-6">
-              <EmptyState title="No users found." description="Create a user to get started." />
-            </div>
-          ) : null}
-        </div>
+            ))}
+          </tbody>
+        </DataTable>
+
+        {users.length === 0 && !loading && (
+          <EmptyState title="No users found" description="The system hasn't registered any users yet." />
+        )}
       </div>
     </div>
   );

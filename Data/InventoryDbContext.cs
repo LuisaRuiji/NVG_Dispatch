@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Entities;
 using NVGInventory.Domain.Enums;
+using NVGInventory.Modules.Dispatching.Entities;
+using NVGInventory.Modules.Dispatching.Enums;
 
 namespace NVGInventory.Data;
 
@@ -35,6 +37,13 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<ApprovalAction> ApprovalActions => Set<ApprovalAction>();
     public DbSet<StockLog> StockLogs => Set<StockLog>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<AuthEvent> AuthEvents => Set<AuthEvent>();
+    public DbSet<ModuleSetting> ModuleSettings => Set<ModuleSetting>();
+    public DbSet<Customer> DispatchCustomers => Set<Customer>();
+    public DbSet<Trip> DispatchTrips => Set<Trip>();
+    public DbSet<TripStop> DispatchTripStops => Set<TripStop>();
+    public DbSet<TripStatusHistory> DispatchTripStatusHistories => Set<TripStatusHistory>();
+    public DbSet<TripDocument> DispatchTripDocuments => Set<TripDocument>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -63,6 +72,9 @@ public sealed class InventoryDbContext : DbContext
         ConfigureApprovalActions(modelBuilder);
         ConfigureStockLogs(modelBuilder);
         ConfigureAuditLogs(modelBuilder);
+        ConfigureAuthEvents(modelBuilder);
+        ConfigureModuleSettings(modelBuilder);
+        ConfigureDispatching(modelBuilder);
 
         modelBuilder.Entity<Role>().HasData(SeedData.Roles);
         modelBuilder.Entity<Workflow>().HasData(SeedData.Workflows);
@@ -930,6 +942,7 @@ public sealed class InventoryDbContext : DbContext
             entity.Property(log => log.EntityId).HasColumnName("entity_id");
             entity.Property(log => log.BeforeJson).HasColumnName("before_json");
             entity.Property(log => log.AfterJson).HasColumnName("after_json");
+            entity.Property(log => log.TraceId).HasColumnName("trace_id").HasMaxLength(64);
             entity.Property(log => log.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
 
             entity.HasOne(log => log.Actor)
@@ -940,6 +953,305 @@ public sealed class InventoryDbContext : DbContext
             entity.HasIndex(log => log.ActorUserId);
             entity.HasIndex(log => new { log.EntityType, log.EntityId, log.CreatedAt })
                 .IsDescending(false, false, true);
+        });
+    }
+
+    private static void ConfigureAuthEvents(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AuthEvent>(entity =>
+        {
+            entity.ToTable("auth_events");
+            entity.HasKey(authEvent => authEvent.Id);
+            entity.Property(authEvent => authEvent.Id).HasColumnName("id");
+            entity.Property(authEvent => authEvent.EventType).HasColumnName("event_type").HasMaxLength(40).IsRequired();
+            entity.Property(authEvent => authEvent.Outcome).HasColumnName("outcome").HasMaxLength(20).IsRequired();
+            entity.Property(authEvent => authEvent.ReasonCode).HasColumnName("reason_code").HasMaxLength(60);
+            entity.Property(authEvent => authEvent.Username).HasColumnName("username").HasMaxLength(100);
+            entity.Property(authEvent => authEvent.UserId).HasColumnName("user_id");
+            entity.Property(authEvent => authEvent.RolesSnapshotJson).HasColumnName("roles_snapshot_json");
+            entity.Property(authEvent => authEvent.AuthMethod).HasColumnName("auth_method").HasMaxLength(40).IsRequired();
+            entity.Property(authEvent => authEvent.MfaPerformed).HasColumnName("mfa_performed").HasDefaultValue(false).IsRequired();
+            entity.Property(authEvent => authEvent.MfaMethod).HasColumnName("mfa_method").HasMaxLength(40);
+            entity.Property(authEvent => authEvent.SessionId).HasColumnName("session_id").HasMaxLength(120);
+            entity.Property(authEvent => authEvent.TokenJti).HasColumnName("token_jti").HasMaxLength(120);
+            entity.Property(authEvent => authEvent.CorrelationId).HasColumnName("correlation_id").HasMaxLength(120);
+            entity.Property(authEvent => authEvent.IpAddress).HasColumnName("ip_address").HasMaxLength(64);
+            entity.Property(authEvent => authEvent.UserAgent).HasColumnName("user_agent").HasMaxLength(400);
+            entity.Property(authEvent => authEvent.ClientApp).HasColumnName("client_app").HasMaxLength(120);
+            entity.Property(authEvent => authEvent.Environment).HasColumnName("environment").HasMaxLength(40);
+            entity.Property(authEvent => authEvent.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(authEvent => authEvent.User)
+                .WithMany()
+                .HasForeignKey(authEvent => authEvent.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(authEvent => authEvent.CreatedAt);
+            entity.HasIndex(authEvent => authEvent.Username);
+            entity.HasIndex(authEvent => authEvent.UserId);
+            entity.HasIndex(authEvent => authEvent.Outcome);
+            entity.HasIndex(authEvent => authEvent.EventType);
+        });
+    }
+
+    private static void ConfigureModuleSettings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ModuleSetting>(entity =>
+        {
+            entity.ToTable("module_settings");
+            entity.HasKey(setting => setting.ModuleKey);
+            entity.Property(setting => setting.ModuleKey)
+                .HasColumnName("module_key")
+                .HasMaxLength(80)
+                .IsRequired();
+            entity.Property(setting => setting.IsEnabled)
+                .HasColumnName("is_enabled")
+                .HasDefaultValue(true)
+                .IsRequired();
+            entity.Property(setting => setting.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            entity.Property(setting => setting.Notes).HasColumnName("notes").HasMaxLength(400);
+            entity.Property(setting => setting.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(setting => setting.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(setting => setting.UpdatedBy)
+                .WithMany()
+                .HasForeignKey(setting => setting.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureDispatching(ModelBuilder modelBuilder)
+    {
+        var statusConverter = new ValueConverter<TripStatus, string>(
+            value =>
+                value == TripStatus.Draft ? "DRAFT" :
+                value == TripStatus.Dispatched ? "DISPATCHED" :
+                value == TripStatus.EnroutePickup ? "ENROUTE_PICKUP" :
+                value == TripStatus.AtPickup ? "AT_PICKUP" :
+                value == TripStatus.Loaded ? "LOADED" :
+                value == TripStatus.EnrouteDropoff ? "ENROUTE_DROPOFF" :
+                value == TripStatus.AtDropoff ? "AT_DROPOFF" :
+                value == TripStatus.Delivered ? "DELIVERED" :
+                value == TripStatus.Closed ? "CLOSED" :
+                value == TripStatus.Cancelled ? "CANCELLED" :
+                value == TripStatus.OnHold ? "ON_HOLD" :
+                value == TripStatus.FailedAttempt ? "FAILED_ATTEMPT" :
+                "DRAFT",
+            value =>
+                value == "DRAFT" ? TripStatus.Draft :
+                value == "DISPATCHED" ? TripStatus.Dispatched :
+                value == "ENROUTE_PICKUP" ? TripStatus.EnroutePickup :
+                value == "AT_PICKUP" ? TripStatus.AtPickup :
+                value == "LOADED" ? TripStatus.Loaded :
+                value == "ENROUTE_DROPOFF" ? TripStatus.EnrouteDropoff :
+                value == "AT_DROPOFF" ? TripStatus.AtDropoff :
+                value == "DELIVERED" ? TripStatus.Delivered :
+                value == "CLOSED" ? TripStatus.Closed :
+                value == "CANCELLED" ? TripStatus.Cancelled :
+                value == "ON_HOLD" ? TripStatus.OnHold :
+                value == "FAILED_ATTEMPT" ? TripStatus.FailedAttempt :
+                TripStatus.Draft);
+
+        var historyEventConverter = new ValueConverter<TripHistoryEventType, string>(
+            value => value == TripHistoryEventType.ScheduleUpdated ? "SCHEDULE_UPDATED" : "STATUS_CHANGE",
+            value => value == "SCHEDULE_UPDATED"
+                ? TripHistoryEventType.ScheduleUpdated
+                : TripHistoryEventType.StatusChange);
+
+        var stopTypeConverter = new ValueConverter<TripStopType, string>(
+            value => value == TripStopType.Pickup ? "PICKUP" : "DROPOFF",
+            value => value == "PICKUP" ? TripStopType.Pickup : TripStopType.Dropoff);
+
+        var docTypeConverter = new ValueConverter<TripDocumentType, string>(
+            value =>
+                value == TripDocumentType.Waybill ? "WAYBILL" :
+                value == TripDocumentType.Pod ? "POD" :
+                value == TripDocumentType.Atw ? "ATW" :
+                "WAYBILL",
+            value =>
+                value == "WAYBILL" ? TripDocumentType.Waybill :
+                value == "POD" ? TripDocumentType.Pod :
+                value == "ATW" ? TripDocumentType.Atw :
+                TripDocumentType.Waybill);
+
+        var docStateConverter = new ValueConverter<TripDocumentState, string>(
+            value =>
+                value == TripDocumentState.Missing ? "MISSING" :
+                value == TripDocumentState.Uploaded ? "UPLOADED" :
+                value == TripDocumentState.Verified ? "VERIFIED" :
+                value == TripDocumentState.Rejected ? "REJECTED" :
+                "MISSING",
+            value =>
+                value == "MISSING" ? TripDocumentState.Missing :
+                value == "UPLOADED" ? TripDocumentState.Uploaded :
+                value == "VERIFIED" ? TripDocumentState.Verified :
+                value == "REJECTED" ? TripDocumentState.Rejected :
+                TripDocumentState.Missing);
+
+        modelBuilder.Entity<Customer>(entity =>
+        {
+            entity.ToTable("dispatch_customers");
+            entity.HasKey(customer => customer.Id);
+            entity.Property(customer => customer.Id).HasColumnName("id");
+            entity.Property(customer => customer.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            entity.Property(customer => customer.Address).HasColumnName("address").HasMaxLength(300);
+            entity.Property(customer => customer.Contact).HasColumnName("contact").HasMaxLength(200);
+            entity.Property(customer => customer.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.HasIndex(customer => customer.Name);
+        });
+
+        modelBuilder.Entity<Trip>(entity =>
+        {
+            entity.ToTable("dispatch_trips");
+            entity.HasKey(trip => trip.Id);
+            entity.Property(trip => trip.Id).HasColumnName("id");
+            entity.Property(trip => trip.CustomerId).HasColumnName("customer_id");
+            entity.Property(trip => trip.DriverUserId).HasColumnName("driver_user_id");
+            entity.Property(trip => trip.TruckAssetId).HasColumnName("truck_asset_id");
+            entity.Property(trip => trip.Status)
+                .HasColumnName("status")
+                .HasConversion(statusConverter)
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(trip => trip.PodPending).HasColumnName("pod_pending").HasDefaultValue(false).IsRequired();
+            entity.Property(trip => trip.HoldPreviousStatus)
+                .HasColumnName("hold_previous_status")
+                .HasConversion(statusConverter)
+                .HasMaxLength(30);
+            entity.Property(trip => trip.Notes).HasColumnName("notes").HasMaxLength(400);
+            entity.Property(trip => trip.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(trip => trip.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(trip => trip.Customer)
+                .WithMany(customer => customer.Trips)
+                .HasForeignKey(trip => trip.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(trip => trip.Driver)
+                .WithMany()
+                .HasForeignKey(trip => trip.DriverUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(trip => trip.TruckAsset)
+                .WithMany()
+                .HasForeignKey(trip => trip.TruckAssetId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(trip => trip.Status);
+            entity.HasIndex(trip => trip.DriverUserId);
+            entity.HasIndex(trip => trip.CustomerId);
+        });
+
+        modelBuilder.Entity<TripStop>(entity =>
+        {
+            entity.ToTable("dispatch_trip_stops");
+            entity.HasKey(stop => stop.Id);
+            entity.Property(stop => stop.Id).HasColumnName("id");
+            entity.Property(stop => stop.TripId).HasColumnName("trip_id");
+            entity.Property(stop => stop.StopType)
+                .HasColumnName("stop_type")
+                .HasConversion(stopTypeConverter)
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(stop => stop.LocationText).HasColumnName("location_text").HasMaxLength(300).IsRequired();
+            entity.Property(stop => stop.ScheduledAt).HasColumnName("scheduled_at");
+            entity.Property(stop => stop.ActualAt).HasColumnName("actual_at");
+            entity.Property(stop => stop.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(stop => stop.Trip)
+                .WithMany(trip => trip.Stops)
+                .HasForeignKey(stop => stop.TripId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(stop => stop.TripId);
+        });
+
+        modelBuilder.Entity<TripStatusHistory>(entity =>
+        {
+            entity.ToTable("dispatch_trip_status_history");
+            entity.HasKey(history => history.Id);
+            entity.Property(history => history.Id).HasColumnName("id");
+            entity.Property(history => history.TripId).HasColumnName("trip_id");
+            entity.Property(history => history.EventType)
+                .HasColumnName("event_type")
+                .HasConversion(historyEventConverter)
+                .HasMaxLength(30)
+                .HasDefaultValue(TripHistoryEventType.StatusChange)
+                .IsRequired();
+            entity.Property(history => history.FromStatus)
+                .HasColumnName("from_status")
+                .HasConversion(statusConverter)
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(history => history.ToStatus)
+                .HasColumnName("to_status")
+                .HasConversion(statusConverter)
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(history => history.ActorUserId).HasColumnName("actor_user_id");
+            entity.Property(history => history.Remarks).HasColumnName("remarks").HasMaxLength(400);
+            entity.Property(history => history.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(history => history.Trip)
+                .WithMany(trip => trip.StatusHistory)
+                .HasForeignKey(history => history.TripId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(history => history.Actor)
+                .WithMany()
+                .HasForeignKey(history => history.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(history => history.TripId);
+        });
+
+        modelBuilder.Entity<TripDocument>(entity =>
+        {
+            entity.ToTable("dispatch_trip_documents");
+            entity.HasKey(doc => doc.Id);
+            entity.Property(doc => doc.Id).HasColumnName("id");
+            entity.Property(doc => doc.TripId).HasColumnName("trip_id");
+            entity.Property(doc => doc.Type)
+                .HasColumnName("doc_type")
+                .HasConversion(docTypeConverter)
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(doc => doc.State)
+                .HasColumnName("state")
+                .HasConversion(docStateConverter)
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(doc => doc.StorageKey).HasColumnName("storage_key").HasMaxLength(500).IsRequired();
+            entity.Property(doc => doc.UploadedByUserId).HasColumnName("uploaded_by_user_id");
+            entity.Property(doc => doc.VerifiedByUserId).HasColumnName("verified_by_user_id");
+            entity.Property(doc => doc.RejectedByUserId).HasColumnName("rejected_by_user_id");
+            entity.Property(doc => doc.Remarks).HasColumnName("remarks").HasMaxLength(500);
+            entity.Property(doc => doc.UploadedAt).HasColumnName("uploaded_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(doc => doc.VerifiedAt).HasColumnName("verified_at");
+            entity.Property(doc => doc.RejectedAt).HasColumnName("rejected_at");
+
+            entity.HasOne(doc => doc.Trip)
+                .WithMany(trip => trip.Documents)
+                .HasForeignKey(doc => doc.TripId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(doc => doc.UploadedBy)
+                .WithMany()
+                .HasForeignKey(doc => doc.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(doc => doc.VerifiedBy)
+                .WithMany()
+                .HasForeignKey(doc => doc.VerifiedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(doc => doc.RejectedBy)
+                .WithMany()
+                .HasForeignKey(doc => doc.RejectedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(doc => doc.TripId);
+            entity.HasIndex(doc => new { doc.TripId, doc.Type }).IsUnique();
         });
     }
 }
