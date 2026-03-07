@@ -76,8 +76,8 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title="Dashboard"
-        description="Operational snapshot across requests, stock, and loans."
+        title="Inventory Dashboard"
+        description="Operational snapshot across requests, stock, loans, and approvals."
         actions={
           <Button
             variant="outline"

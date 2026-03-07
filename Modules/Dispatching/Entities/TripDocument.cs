@@ -8,6 +8,9 @@ public sealed class TripDocument
     public Guid Id { get; set; }
     public Guid TripId { get; set; }
     public Trip? Trip { get; set; }
+    public Guid? SupersedesDocumentId { get; set; }
+    public TripDocument? SupersedesDocument { get; set; }
+    public bool IsActive { get; set; } = true;
     public TripDocumentType Type { get; set; }
     public TripDocumentState State { get; set; }
     public string StorageKey { get; set; } = string.Empty;
@@ -21,4 +24,5 @@ public sealed class TripDocument
     public DateTime UploadedAt { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }

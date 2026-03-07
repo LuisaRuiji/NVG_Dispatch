@@ -1,3 +1,5 @@
+using NVGInventory.Modules.Dispatching.Entities;
+
 namespace NVGInventory.Domain.Entities;
 
 public sealed class User
@@ -8,6 +10,8 @@ public sealed class User
     public string PasswordHash { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
+    public Guid? CustomerId { get; set; }
+    public Customer? Customer { get; set; }
 
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 }

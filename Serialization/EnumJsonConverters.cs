@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using NVGInventory.Domain.Enums;
 using NVGInventory.Modules.Dispatching.Enums;
+using NVGInventory.Modules.ShipmentRequests.Enums;
 
 namespace NVGInventory.Serialization;
 
@@ -280,4 +281,41 @@ public sealed class TripDocumentStateJsonConverter : EnumStringConverter<TripDoc
 
     protected override IReadOnlyDictionary<TripDocumentState, string> ToStringMap => Map;
     protected override IReadOnlyDictionary<string, TripDocumentState> FromStringMap => Reverse;
+}
+
+public sealed class ShipmentRequestStatusJsonConverter : EnumStringConverter<ShipmentRequestStatus>
+{
+    private static readonly IReadOnlyDictionary<ShipmentRequestStatus, string> Map =
+        new Dictionary<ShipmentRequestStatus, string>
+        {
+            [ShipmentRequestStatus.Draft] = "DRAFT",
+            [ShipmentRequestStatus.Submitted] = "SUBMITTED",
+            [ShipmentRequestStatus.Approved] = "APPROVED",
+            [ShipmentRequestStatus.Rejected] = "REJECTED",
+            [ShipmentRequestStatus.ConvertedToTrip] = "CONVERTED_TO_TRIP"
+        };
+
+    private static readonly IReadOnlyDictionary<string, ShipmentRequestStatus> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<ShipmentRequestStatus, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, ShipmentRequestStatus> FromStringMap => Reverse;
+}
+
+public sealed class ShipmentRequestDocumentTypeJsonConverter : EnumStringConverter<ShipmentRequestDocumentType>
+{
+    private static readonly IReadOnlyDictionary<ShipmentRequestDocumentType, string> Map =
+        new Dictionary<ShipmentRequestDocumentType, string>
+        {
+            [ShipmentRequestDocumentType.Invoice] = "INVOICE",
+            [ShipmentRequestDocumentType.CargoManifest] = "CARGO_MANIFEST",
+            [ShipmentRequestDocumentType.DeliveryInstructions] = "DELIVERY_INSTRUCTIONS",
+            [ShipmentRequestDocumentType.Other] = "OTHER"
+        };
+
+    private static readonly IReadOnlyDictionary<string, ShipmentRequestDocumentType> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<ShipmentRequestDocumentType, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, ShipmentRequestDocumentType> FromStringMap => Reverse;
 }

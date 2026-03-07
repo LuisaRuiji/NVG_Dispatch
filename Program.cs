@@ -41,6 +41,8 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new TripStopTypeJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new TripDocumentTypeJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new TripDocumentStateJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new ShipmentRequestStatusJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new ShipmentRequestDocumentTypeJsonConverter());
     });
 builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -96,6 +98,8 @@ builder.Services.AddScoped<ModuleSettingsService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripQueryService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();
+builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestService>();
+builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestQueryService>();
 builder.Services.AddScoped<DemoDataSeeder>();
 builder.Services.AddScoped<PerformanceDataSeeder>();
 builder.Services.Configure<IntegrityCheckJobOptions>(builder.Configuration.GetSection("BackgroundJobs:IntegrityCheck"));

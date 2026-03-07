@@ -25,6 +25,9 @@ export function getDefaultRoute(current: MeResponse | null = me) {
   if (roles.includes("Dispatcher")) {
     return "/dispatch/board";
   }
+  if (roles.includes("Customer")) {
+    return "/portal/dashboard";
+  }
   return "/dashboard";
 }
 

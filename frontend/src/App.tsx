@@ -1,5 +1,5 @@
-import WorkflowPage from "@/features/flow/WorkflowPage";
+import LandingPage from "@/features/landing/LandingPage";
 
 export default function App() {
-  return <WorkflowPage />;
+  return <LandingPage />;
 }

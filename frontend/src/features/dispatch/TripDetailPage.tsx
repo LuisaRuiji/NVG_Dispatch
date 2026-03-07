@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
 import StatusBadge from "@/components/StatusBadge";
@@ -9,10 +9,20 @@ import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
+import type { PagedResult } from "@/lib/paging";
 import { getMe } from "@/features/auth/authStore";
-import type { DispatchTripDetail, TripDocumentType, TripStatus } from "./types";
-import { nextOperationalStatus, operationalFlow, statusLabels } from "./types";
-import { Check, XCircle } from "lucide-react";
+import type {
+  DispatchTripDetail,
+  DispatchTripDocument,
+  DispatchTripDocumentLink,
+  DispatchTripDocumentVersion,
+  DispatchTripHistory,
+  DispatchTripSummary,
+  TripDocumentType,
+  TripStatus
+} from "./types";
+import { operationalFlow, statusLabels } from "./types";
+import { Check, ExternalLink, XCircle } from "lucide-react";
 
 type CustomerOption = { id: string; name: string };
 type DriverOption = { id: string; username: string };
@@ -30,9 +40,20 @@ type ScheduleForm = {
   changeRemarks: string;
 };
 
+type CorrectStatusForm = {
+  toStatus: TripStatus | "";
+  eventAt: string;
+  remarks: string;
+};
+
+type VersionStateFilter = "ALL" | "UPLOADED" | "VERIFIED" | "REJECTED";
+
 type ActionModal =
-  | { type: "HOLD"; remarks: string }
-  | { type: "FAILED"; remarks: string }
+  | { type: "HOLD"; remarks: string; eventAt: string }
+  | { type: "FAILED"; remarks: string; eventAt: string }
+  | { type: "RESOLVE_FAILED"; remarks: string; eventAt: string }
+  | { type: "CANCEL"; remarks: string; eventAt: string }
+  | { type: "CLOSE" }
   | { type: "DOC_UPLOAD"; docType: TripDocumentType; storageKey: string }
   | { type: "DOC_REJECT"; docId: string; remarks: string }
   | null;
@@ -44,12 +65,24 @@ const failedAttemptEligible: TripStatus[] = [
   "ENROUTE_DROPOFF",
   "AT_DROPOFF"
 ];
+const docStateClasses: Record<string, string> = {
+  MISSING: "border-slate-200 text-slate-500",
+  UPLOADED: "border-amber-200 text-amber-700",
+  VERIFIED: "border-emerald-200 text-emerald-700",
+  REJECTED: "border-rose-200 text-rose-700"
+};
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
   const date = new Date(iso);
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+};
+
+const fromLocalInput = (value: string) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
 export default function TripDetailPage() {
@@ -62,10 +95,12 @@ export default function TripDetailPage() {
   const isManager = roles.includes("Manager");
   const isDispatcher = roles.includes("Dispatcher");
   const isFinance = roles.includes("HeadOfFinance");
-  const isCeo = roles.includes("CEO");
 
   const [loading, setLoading] = useState(true);
   const [trip, setTrip] = useState<DispatchTripDetail | null>(null);
+  const [summary, setSummary] = useState<DispatchTripSummary | null>(null);
+  const [documents, setDocuments] = useState<DispatchTripDocument[]>([]);
+  const [timeline, setTimeline] = useState<DispatchTripHistory[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [modal, setModal] = useState<ActionModal>(null);
   const [scheduleSaving, setScheduleSaving] = useState(false);
@@ -73,6 +108,16 @@ export default function TripDetailPage() {
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [trucks, setTrucks] = useState<TruckOption[]>([]);
+  const [correctOpen, setCorrectOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionItems, setVersionItems] = useState<DispatchTripDocumentVersion[]>([]);
+  const [versionTotal, setVersionTotal] = useState(0);
+  const [versionPage, setVersionPage] = useState(1);
+  const [versionPageSize, setVersionPageSize] = useState(10);
+  const [versionType, setVersionType] = useState<TripDocumentType>("POD");
+  const [versionState, setVersionState] = useState<VersionStateFilter>("ALL");
+  const [linkKey, setLinkKey] = useState<string | null>(null);
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
     pickupLocation: "",
@@ -84,17 +129,30 @@ export default function TripDetailPage() {
     notes: "",
     changeRemarks: ""
   });
+  const [correctForm, setCorrectForm] = useState<CorrectStatusForm>({
+    toStatus: "",
+    eventAt: toLocalInput(new Date().toISOString()),
+    remarks: ""
+  });
 
   const canVerifyDocs = isManager || isFinance;
-  const canViewAny = isManager || isDispatcher || isFinance || isCeo;
   const canEditSchedule = isManager || isDispatcher;
+  const canViewVersions = isManager || isFinance || isDispatcher;
 
   const fetchTrip = async () => {
     if (!id) return;
     try {
       setLoading(true);
-      const detail = await api<DispatchTripDetail>(`/api/dispatch/trips/${id}`, { method: "GET" });
+      const [detail, summaryData, docs, history] = await Promise.all([
+        api<DispatchTripDetail>(`/api/dispatch/trips/${id}`, { method: "GET" }),
+        api<DispatchTripSummary>(`/api/dispatch/trips/${id}/summary`, { method: "GET" }),
+        api<DispatchTripDocument[]>(`/api/dispatch/trips/${id}/documents`, { method: "GET" }),
+        api<DispatchTripHistory[]>(`/api/dispatch/trips/${id}/history`, { method: "GET" })
+      ]);
       setTrip(detail);
+      setSummary(summaryData);
+      setDocuments(docs ?? []);
+      setTimeline(history ?? []);
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to load trip detail.", "error");
@@ -127,10 +185,23 @@ export default function TripDetailPage() {
     loadReferenceData();
   }, []);
 
-  const nextStatus = useMemo(() => {
-    if (!trip) return null;
-    return nextOperationalStatus(trip.status);
-  }, [trip]);
+  const tripId = summary?.id ?? trip?.id ?? "";
+  const currentStatus = summary?.status ?? trip?.status ?? null;
+  const currentRowVersion = summary?.rowVersion ?? trip?.rowVersion ?? "";
+  const podDoc = documents.find((doc) => doc.type === "POD");
+  const podState = podDoc?.state ?? "MISSING";
+  const isOnHold = currentStatus === "ON_HOLD";
+  const isFailedAttempt = currentStatus === "FAILED_ATTEMPT";
+  const pickupDelayed = summary?.latePickup ?? false;
+  const dropoffDelayed = summary?.lateDelivery ?? false;
+
+  useEffect(() => {
+    if (!versionsOpen) {
+      setLinkKey(null);
+      return;
+    }
+    loadVersions();
+  }, [versionsOpen, versionPage, versionPageSize, versionType, versionState, tripId]);
 
   const plannedStops = useMemo(() => {
     if (!trip) return { pickup: null, dropoff: null };
@@ -140,35 +211,64 @@ export default function TripDetailPage() {
   }, [trip]);
 
   const actualTimes = useMemo(() => {
-    if (!trip) return { pickup: null, dropoff: null, delivered: null };
-    const pickup = trip.history.find((entry) => entry.toStatus === "AT_PICKUP")?.createdAt ?? null;
-    const dropoff = trip.history.find((entry) => entry.toStatus === "AT_DROPOFF")?.createdAt ?? null;
-    const delivered = trip.history.find((entry) => entry.toStatus === "DELIVERED")?.createdAt ?? null;
+    if (!timeline.length) return { pickup: null, dropoff: null, delivered: null };
+    const pickup = timeline.find((entry) => entry.toStatus === "AT_PICKUP")?.eventAt ?? null;
+    const dropoff = timeline.find((entry) => entry.toStatus === "AT_DROPOFF")?.eventAt ?? null;
+    const delivered = timeline.find((entry) => entry.toStatus === "DELIVERED")?.eventAt ?? null;
     return { pickup, dropoff, delivered };
-  }, [trip]);
+  }, [timeline]);
+
+  const timelineSorted = useMemo(() => {
+    return [...timeline].sort((a, b) => {
+      const primary = new Date(a.eventAt).getTime() - new Date(b.eventAt).getTime();
+      if (primary !== 0) return primary;
+      return new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime();
+    });
+  }, [timeline]);
 
   useEffect(() => {
-    if (!trip) return;
+    if (!trip || !summary) return;
     setScheduleForm({
-      customerId: trip.customer.id,
+      customerId: summary.customer.id,
       pickupLocation: plannedStops.pickup?.locationText ?? "",
       pickupScheduledAt: toLocalInput(plannedStops.pickup?.scheduledAt),
       dropoffLocation: plannedStops.dropoff?.locationText ?? "",
       dropoffScheduledAt: toLocalInput(plannedStops.dropoff?.scheduledAt),
-      driverUserId: trip.driverUserId ?? "",
-      truckAssetId: trip.truckAssetId ?? "",
+      driverUserId: summary.driverUserId ?? "",
+      truckAssetId: summary.truckAssetId ?? "",
       notes: trip.notes ?? "",
       changeRemarks: ""
     });
-  }, [trip]);
+    setCorrectForm({
+      toStatus: "",
+      eventAt: toLocalInput(new Date().toISOString()),
+      remarks: ""
+    });
+  }, [trip, summary, plannedStops]);
 
   const resumeFromFailedAttempt = useMemo(() => {
-    if (!trip) return null;
-    const last = [...trip.history]
+    if (!timeline.length) return null;
+    const last = [...timeline]
       .reverse()
       .find((entry) => entry.toStatus === "FAILED_ATTEMPT");
     return last?.fromStatus ?? null;
-  }, [trip]);
+  }, [timeline]);
+
+  const correctionBaseStatus = useMemo(() => {
+    if (!currentStatus) return null;
+    if (operationalFlow.includes(currentStatus)) return currentStatus;
+    const lastOperational = [...timeline]
+      .reverse()
+      .find((entry) => operationalFlow.includes(entry.toStatus));
+    return lastOperational?.toStatus ?? null;
+  }, [currentStatus, timeline]);
+
+  const correctionOptions = useMemo(() => {
+    if (!correctionBaseStatus) return [];
+    const idx = operationalFlow.indexOf(correctionBaseStatus);
+    if (idx < 0) return [];
+    return operationalFlow.slice(idx + 1);
+  }, [correctionBaseStatus]);
 
   const buildStopsPayload = () => {
     return [
@@ -193,11 +293,12 @@ export default function TripDetailPage() {
     if (!scheduleForm.pickupScheduledAt || !scheduleForm.dropoffScheduledAt) {
       return "Pickup and dropoff times are required.";
     }
-    if (!trip) return null;
     const assignmentChanged =
-      scheduleForm.driverUserId !== (trip.driverUserId ?? "") ||
-      scheduleForm.truckAssetId !== (trip.truckAssetId ?? "");
-    const loadedOrLater = ["LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF", "DELIVERED"].includes(trip.status);
+      scheduleForm.driverUserId !== (summary?.driverUserId ?? trip?.driverUserId ?? "") ||
+      scheduleForm.truckAssetId !== (summary?.truckAssetId ?? trip?.truckAssetId ?? "");
+    const loadedOrLater = currentStatus
+      ? ["LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF", "DELIVERED"].includes(currentStatus)
+      : false;
     if (assignmentChanged && loadedOrLater && isManager && !scheduleForm.changeRemarks.trim()) {
       return "Remarks are required to reassign after loading.";
     }
@@ -205,7 +306,11 @@ export default function TripDetailPage() {
   };
 
   const handleSaveSchedule = async (silent?: boolean) => {
-    if (!trip) return false;
+    if (!tripId) return false;
+    if (!currentRowVersion) {
+      show("Missing row version. Refresh and try again.", "error");
+      return false;
+    }
     const error = validateSchedule();
     if (error) {
       show(error, "error");
@@ -213,7 +318,7 @@ export default function TripDetailPage() {
     }
     try {
       setScheduleSaving(true);
-      await api(`/api/dispatch/trips/${trip.id}`, {
+      await api(`/api/dispatch/trips/${tripId}`, {
         method: "PUT",
         body: JSON.stringify({
           customerId: scheduleForm.customerId,
@@ -221,7 +326,8 @@ export default function TripDetailPage() {
           truckAssetId: scheduleForm.truckAssetId || null,
           notes: scheduleForm.notes || null,
           remarks: scheduleForm.changeRemarks || null,
-          stops: buildStopsPayload()
+          stops: buildStopsPayload(),
+          rowVersion: currentRowVersion
         })
       });
       if (!silent) {
@@ -239,7 +345,11 @@ export default function TripDetailPage() {
   };
 
   const handleDispatch = async () => {
-    if (!trip) return;
+    if (!tripId) return;
+    if (!currentRowVersion) {
+      show("Missing row version. Refresh and try again.", "error");
+      return;
+    }
     if (!scheduleForm.driverUserId) {
       show("Assign a driver before dispatching.", "error");
       return;
@@ -248,12 +358,13 @@ export default function TripDetailPage() {
     if (!saved) return;
     try {
       setDispatching(true);
-      await api(`/api/dispatch/trips/${trip.id}/dispatch`, {
+      await api(`/api/dispatch/trips/${tripId}/dispatch`, {
         method: "POST",
         body: JSON.stringify({
           driverUserId: scheduleForm.driverUserId,
           truckAssetId: scheduleForm.truckAssetId || null,
-          remarks: null
+          remarks: null,
+          rowVersion: currentRowVersion
         })
       });
       show("Trip dispatched.", "success");
@@ -266,13 +377,28 @@ export default function TripDetailPage() {
     }
   };
 
-  const handleStatusChange = async (toStatus: TripStatus, remarks?: string | null) => {
-    if (!trip) return;
+  const handleStatusChange = async (
+    toStatus: TripStatus,
+    remarks?: string | null,
+    podPendingOverride?: boolean | null,
+    eventAtOverride?: string | null
+  ) => {
+    if (!tripId) return;
+    if (!currentRowVersion) {
+      show("Missing row version. Refresh and try again.", "error");
+      return;
+    }
     try {
       setActionLoading(true);
-      await api(`/api/dispatch/trips/${trip.id}/status`, {
+      await api(`/api/dispatch/trips/${tripId}/status`, {
         method: "POST",
-        body: JSON.stringify({ toStatus, remarks: remarks ?? null })
+        body: JSON.stringify({
+          toStatus,
+          remarks: remarks ?? null,
+          podPendingOverride: podPendingOverride ?? null,
+          eventAt: eventAtOverride ?? new Date().toISOString(),
+          rowVersion: currentRowVersion
+        })
       });
       show("Trip updated.", "success");
       await fetchTrip();
@@ -284,11 +410,52 @@ export default function TripDetailPage() {
     }
   };
 
-  const handleUploadDoc = async (docType: TripDocumentType, storageKey: string) => {
-    if (!trip) return;
+  const handleCorrectStatus = async () => {
+    if (!tripId) return;
+    if (!currentRowVersion) {
+      show("Missing row version. Refresh and try again.", "error");
+      return;
+    }
+    if (!correctForm.toStatus) {
+      show("Select a status to correct to.", "error");
+      return;
+    }
+    if (!correctForm.remarks.trim()) {
+      show("Remarks are required.", "error");
+      return;
+    }
+    const eventAt = fromLocalInput(correctForm.eventAt);
+    if (!eventAt) {
+      show("Event time is required.", "error");
+      return;
+    }
     try {
       setActionLoading(true);
-      await api(`/api/dispatch/trips/${trip.id}/documents`, {
+      await api(`/api/dispatch/trips/${tripId}/correct-status`, {
+        method: "POST",
+        body: JSON.stringify({
+          toStatus: correctForm.toStatus,
+          eventAt,
+          remarks: correctForm.remarks.trim(),
+          rowVersion: currentRowVersion
+        })
+      });
+      show("Status corrected.", "success");
+      setCorrectOpen(false);
+      await fetchTrip();
+    } catch (e: any) {
+      console.error(e);
+      show(e?.message ?? "Failed to correct status.", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUploadDoc = async (docType: TripDocumentType, storageKey: string) => {
+    if (!tripId) return;
+    try {
+      setActionLoading(true);
+      await api(`/api/dispatch/trips/${tripId}/documents`, {
         method: "POST",
         body: JSON.stringify({ type: docType, storageKey })
       });
@@ -303,10 +470,10 @@ export default function TripDetailPage() {
   };
 
   const handleVerifyDoc = async (docId: string) => {
-    if (!trip) return;
+    if (!tripId) return;
     try {
       setActionLoading(true);
-      await api(`/api/dispatch/trips/${trip.id}/documents/${docId}/verify`, { method: "POST" });
+      await api(`/api/dispatch/trips/${tripId}/documents/${docId}/verify`, { method: "POST" });
       show("Document verified.", "success");
       await fetchTrip();
     } catch (e: any) {
@@ -318,10 +485,10 @@ export default function TripDetailPage() {
   };
 
   const handleRejectDoc = async (docId: string, remarks: string) => {
-    if (!trip) return;
+    if (!tripId) return;
     try {
       setActionLoading(true);
-      await api(`/api/dispatch/trips/${trip.id}/documents/${docId}/reject`, {
+      await api(`/api/dispatch/trips/${tripId}/documents/${docId}/reject`, {
         method: "POST",
         body: JSON.stringify({ remarks })
       });
@@ -333,6 +500,57 @@ export default function TripDetailPage() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const loadVersions = async () => {
+    if (!tripId) return;
+    try {
+      setVersionsLoading(true);
+      const params = new URLSearchParams();
+      params.set("page", String(versionPage));
+      params.set("pageSize", String(versionPageSize));
+      params.set("type", versionType);
+      if (versionState !== "ALL") {
+        params.set("state", versionState);
+      }
+      const result = await api<PagedResult<DispatchTripDocumentVersion>>(
+        `/api/dispatch/trips/${tripId}/documents/versions?${params.toString()}`,
+        { method: "GET" }
+      );
+      setVersionItems(result.items);
+      setVersionTotal(result.totalCount);
+    } catch (e: any) {
+      console.error(e);
+      show(e?.message ?? "Failed to load document versions.", "error");
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const handleOpenDocument = async (docId: string) => {
+    if (!tripId) return;
+    try {
+      const result = await api<DispatchTripDocumentLink>(
+        `/api/dispatch/trips/${tripId}/documents/${docId}/link`,
+        { method: "GET" }
+      );
+      const key = result.storageKey;
+      if (/^https?:\/\//i.test(key)) {
+        window.open(key, "_blank", "noopener,noreferrer");
+        return;
+      }
+      setLinkKey(key);
+    } catch (e: any) {
+      console.error(e);
+      show(e?.message ?? "Failed to open document.", "error");
+    }
+  };
+
+  const openVersionsDrawer = (type?: TripDocumentType) => {
+    setVersionType(type ?? "POD");
+    setVersionState("ALL");
+    setVersionPage(1);
+    setVersionsOpen(true);
   };
 
   if (loading) {
@@ -348,128 +566,294 @@ export default function TripDetailPage() {
     return <EmptyState title="Trip not found" description="The trip detail could not be loaded." />;
   }
 
-  const isDraft = trip.status === "DRAFT";
+  const isDraft = currentStatus === "DRAFT";
   const canEditCustomer = isManager || isDraft;
   const canEditLocations = isManager || isDraft;
   const dispatcherReassignLocked =
     isDispatcher &&
     !isManager &&
     !isDraft &&
-    !["DISPATCHED", "ENROUTE_PICKUP"].includes(trip.status);
+    !["DISPATCHED", "ENROUTE_PICKUP"].includes(currentStatus ?? "");
+  const canCorrectStatus =
+    (isManager || isDispatcher) &&
+    currentStatus !== "CLOSED" &&
+    currentStatus !== "CANCELLED" &&
+    currentStatus !== "DRAFT";
+  const versionTotalPages = Math.max(1, Math.ceil(versionTotal / versionPageSize));
 
   return (
     <div className="space-y-6">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title={`Trip ${trip.id.slice(0, 8)}`}
-        description={`Customer: ${trip.customer?.name ?? "-"}`}
+        title={`Trip ${tripId ? tripId.slice(0, 8) : "-"}`}
+        description={`Customer: ${summary?.customer?.name ?? trip.customer?.name ?? "-"}`}
+        breadcrumbs={
+          <nav className="flex items-center gap-2" aria-label="Breadcrumb">
+            <Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">
+              Dispatch
+            </Link>
+            <span className="text-muted-foreground">/</span>
+            <Link to="/dispatch/trips" className="text-muted-foreground hover:text-foreground">
+              Trips
+            </Link>
+            <span className="text-muted-foreground">/</span>
+            <span className="text-foreground">Trip {tripId ? tripId.slice(0, 8) : "-"}</span>
+          </nav>
+        }
         actions={
-          <Button variant="outline" onClick={() => nav(-1)}>
-            Back
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => nav(-1)}>
+              Back
+            </Button>
+          </div>
         }
       />
 
-      <div className="surface-card p-6">
-        <div className="flex flex-wrap items-center gap-4">
-          <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-          <span className="text-sm text-muted-foreground">
-            Compliance: {trip.docVerificationEnabled ? "Strict" : "Relaxed"}
-          </span>
-          {trip.podPending ? (
-            <span className="text-xs rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">
-              POD Pending
-            </span>
-          ) : null}
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm text-muted-foreground">
-          <div>
-            <p className="text-xs uppercase">Driver</p>
-            <p className="mt-1 text-foreground">{trip.driverUsername ?? "-"}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase">Truck</p>
-            <p className="mt-1 text-foreground">{trip.truckAssetCode ?? "-"}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase">Updated</p>
-            <p className="mt-1 text-foreground">
-              {new Date(trip.updatedAt ?? trip.createdAt).toLocaleString()}
-            </p>
-          </div>
-        </div>
-        <div className="mt-6 grid gap-3 md:grid-cols-3 text-sm text-muted-foreground">
-          <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-            <p className="text-xs uppercase">Planned Pickup</p>
-            <p className="mt-1 text-foreground">
-              {plannedStops.pickup?.scheduledAt
-                ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
-                : "Unscheduled"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-            <p className="text-xs uppercase">Planned Dropoff</p>
-            <p className="mt-1 text-foreground">
-              {plannedStops.dropoff?.scheduledAt
-                ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
-                : "Unscheduled"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-            <p className="text-xs uppercase">Actual Milestones</p>
-            <p className="mt-1 text-foreground text-xs">
-              Pickup: {actualTimes.pickup ? new Date(actualTimes.pickup).toLocaleString() : "—"}
-            </p>
-            <p className="text-foreground text-xs">
-              Dropoff: {actualTimes.dropoff ? new Date(actualTimes.dropoff).toLocaleString() : "—"}
-            </p>
-            <p className="text-foreground text-xs">
-              Delivered: {actualTimes.delivered ? new Date(actualTimes.delivered).toLocaleString() : "—"}
-            </p>
+      <div className="sticky top-0 z-20 -mx-6 border-b border-border/60 bg-background/95 px-6 py-4 backdrop-blur">
+        <div className="surface-card p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Trip {tripId ? tripId.slice(0, 8) : "-"}
+                </span>
+                <StatusBadge status={currentStatus ? statusLabels[currentStatus] ?? currentStatus : "Unknown"} />
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    docStateClasses[podState]
+                  }`}
+                >
+                  POD {podState}
+                </span>
+                {isOnHold ? (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                    On Hold
+                  </span>
+                ) : null}
+                {isFailedAttempt ? (
+                  <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700">
+                    Failed Attempt
+                  </span>
+                ) : null}
+                {summary?.podPending ?? trip.podPending ? (
+                  <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-orange-700">
+                    POD Pending
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <p className="text-xs uppercase">Customer</p>
+                  <p className="mt-1 text-foreground">{summary?.customer?.name ?? trip.customer?.name ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase">Driver</p>
+                  <p className="mt-1 text-foreground">{summary?.driverUsername ?? trip.driverUsername ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase">Truck</p>
+                  <p className="mt-1 text-foreground">{summary?.truckAssetCode ?? trip.truckAssetCode ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase">Pickup</p>
+                  <p className="mt-1 text-foreground">
+                    {plannedStops.pickup?.scheduledAt
+                      ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
+                      : "Unscheduled"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase">Dropoff</p>
+                  <p className="mt-1 text-foreground">
+                    {plannedStops.dropoff?.scheduledAt
+                      ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
+                      : "Unscheduled"}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {canEditSchedule && isDraft ? (
+                <Button onClick={handleDispatch} disabled={scheduleSaving || dispatching}>
+                  {dispatching ? "Dispatching..." : "Dispatch"}
+                </Button>
+              ) : null}
+              {(isManager || isDispatcher) && currentStatus && !["CLOSED", "CANCELLED", "ON_HOLD"].includes(currentStatus) ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setModal({
+                      type: "HOLD",
+                      remarks: "",
+                      eventAt: toLocalInput(new Date().toISOString())
+                    })
+                  }
+                >
+                  Place On Hold
+                </Button>
+              ) : null}
+              {(isManager || isDispatcher) &&
+              failedAttemptEligible.includes(currentStatus ?? "DRAFT") ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setModal({
+                      type: "FAILED",
+                      remarks: "",
+                      eventAt: toLocalInput(new Date().toISOString())
+                    })
+                  }
+                >
+                  Report Failed Attempt
+                </Button>
+              ) : null}
+              {(isManager || isDispatcher) && currentStatus === "ON_HOLD" && trip.holdPreviousStatus ? (
+                <Button variant="outline" onClick={() => handleStatusChange(trip.holdPreviousStatus!)}>
+                  Resume
+                </Button>
+              ) : null}
+              {(isManager || isDispatcher) && currentStatus === "FAILED_ATTEMPT" && resumeFromFailedAttempt ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setModal({
+                      type: "RESOLVE_FAILED",
+                      remarks: "",
+                      eventAt: toLocalInput(new Date().toISOString())
+                    })
+                  }
+                >
+                  Resolve Failed Attempt
+                </Button>
+              ) : null}
+              {isManager && currentStatus === "DELIVERED" ? (
+                <Button onClick={() => setModal({ type: "CLOSE" })}>Close Trip</Button>
+              ) : null}
+              {isManager && currentStatus && !["CLOSED", "CANCELLED"].includes(currentStatus) ? (
+                <Button
+                  variant="destructive"
+                  onClick={() =>
+                    setModal({
+                      type: "CANCEL",
+                      remarks: "",
+                      eventAt: toLocalInput(new Date().toISOString())
+                    })
+                  }
+                >
+                  Cancel Trip
+                </Button>
+              ) : null}
+              {canCorrectStatus ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCorrectForm({
+                      toStatus: "",
+                      eventAt: toLocalInput(new Date().toISOString()),
+                      remarks: ""
+                    });
+                    setCorrectOpen(true);
+                  }}
+                >
+                  Correct Status
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-6">
-          {canEditSchedule ? (
-            <div className="surface-card p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold">Schedule & Assignment</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {isDraft
-                      ? "Draft trips require planned pickup/dropoff and a customer."
-                      : "Dispatchers can adjust planned times and assignments after dispatch."}
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {isDraft ? "Draft" : "Active"}
-                </span>
-              </div>
-
-              <div className="mt-4 grid gap-4 text-sm md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <label className="text-xs uppercase text-muted-foreground">Customer</label>
-                  <select
-                    value={scheduleForm.customerId}
-                    onChange={(e) => setScheduleForm((prev) => ({ ...prev, customerId: e.target.value }))}
-                    className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                    disabled={!canEditCustomer}
-                  >
-                    <option value="">Select customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name}
-                      </option>
-                    ))}
-                  </select>
-                  {!canEditCustomer ? (
-                    <p className="mt-1 text-xs text-muted-foreground">Customer is locked after dispatch.</p>
+            <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <div className="surface-card p-6" id="trip-timeline">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Trip Timeline</h3>
+            <span className="text-xs text-muted-foreground">Chronological history</span>
+          </div>
+          <div className="mt-4 max-h-[520px] space-y-3 overflow-y-auto pr-2 text-sm">
+            {timelineSorted.length === 0 ? (
+              <EmptyState title="No history" description="Trip history will appear here." />
+            ) : (
+              timelineSorted.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
+                  <div className="flex items-start justify-between text-xs text-muted-foreground">
+                    <div className="space-y-1">
+                      <span className="block">{new Date(entry.eventAt).toLocaleString()}</span>
+                      <span className="block text-[10px]">
+                        Recorded {new Date(entry.recordedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <span>{entry.actorUsername ?? entry.actorUserId}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <p className="text-sm text-foreground">
+                      {entry.eventType === "SCHEDULE_UPDATED"
+                        ? "Schedule updated"
+                        : entry.eventType === "STATUS_CORRECTED"
+                        ? `Status corrected: ${statusLabels[entry.fromStatus]} -> ${statusLabels[entry.toStatus]}`
+                        : `${statusLabels[entry.fromStatus]} -> ${statusLabels[entry.toStatus]}`}
+                    </p>
+                    {entry.eventType === "STATUS_CORRECTED" ? (
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700">
+                        Corrected
+                      </span>
+                    ) : null}
+                  </div>
+                  {entry.remarks ? (
+                    <p className="mt-1 text-xs text-muted-foreground">{entry.remarks}</p>
                   ) : null}
                 </div>
+              ))
+            )}
+          </div>
+        </div>
 
+        <div className="space-y-6">
+          <div className="surface-card p-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Stops & Schedule</h3>
+              <span className="text-xs text-muted-foreground">{trip.stops.length} stop(s)</span>
+            </div>
+            <div className="mt-4 grid gap-3 text-sm">
+              <div
+                className={`rounded-lg border px-4 py-3 ${
+                  pickupDelayed ? "border-amber-200 bg-amber-50" : "border-border/50 bg-muted/20"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">Pickup</span>
+                  <span className="text-xs text-muted-foreground">
+                    {plannedStops.pickup?.scheduledAt
+                      ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
+                      : "Unscheduled"}
+                  </span>
+                </div>
+                <p className="mt-2 text-muted-foreground">{plannedStops.pickup?.locationText ?? "-"}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Actual arrival: {actualTimes.pickup ? new Date(actualTimes.pickup).toLocaleString() : "--"}
+                </p>
+              </div>
+              <div
+                className={`rounded-lg border px-4 py-3 ${
+                  dropoffDelayed ? "border-amber-200 bg-amber-50" : "border-border/50 bg-muted/20"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">Dropoff</span>
+                  <span className="text-xs text-muted-foreground">
+                    {plannedStops.dropoff?.scheduledAt
+                      ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
+                      : "Unscheduled"}
+                  </span>
+                </div>
+                <p className="mt-2 text-muted-foreground">{plannedStops.dropoff?.locationText ?? "-"}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Actual arrival: {actualTimes.dropoff ? new Date(actualTimes.dropoff).toLocaleString() : "--"}
+                </p>
+              </div>
+            </div>
+
+            {canEditSchedule ? (
+              <div className="mt-5 grid gap-4 text-sm md:grid-cols-2">
                 <div>
                   <label className="text-xs uppercase text-muted-foreground">Pickup Location</label>
                   <input
@@ -506,280 +890,504 @@ export default function TripDetailPage() {
                     className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
                   />
                 </div>
-
-                <div>
-                  <label className="text-xs uppercase text-muted-foreground">Driver</label>
-                  <select
-                    value={scheduleForm.driverUserId}
-                    onChange={(e) => setScheduleForm((prev) => ({ ...prev, driverUserId: e.target.value }))}
-                    className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                    disabled={dispatcherReassignLocked}
-                  >
-                    <option value="">Unassigned</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.id} value={driver.id}>
-                        {driver.username}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs uppercase text-muted-foreground">Truck</label>
-                  <select
-                    value={scheduleForm.truckAssetId}
-                    onChange={(e) => setScheduleForm((prev) => ({ ...prev, truckAssetId: e.target.value }))}
-                    className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                    disabled={dispatcherReassignLocked}
-                  >
-                    <option value="">Unassigned</option>
-                    {trucks.map((truck) => (
-                      <option key={truck.id} value={truck.id}>
-                        {truck.assetCode}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs uppercase text-muted-foreground">Notes</label>
-                <input
-                  value={scheduleForm.notes}
-                  onChange={(e) => setScheduleForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                />
               </div>
-              <div className="md:col-span-2">
-                <label className="text-xs uppercase text-muted-foreground">Change Remarks</label>
-                <input
-                  value={scheduleForm.changeRemarks}
-                  onChange={(e) => setScheduleForm((prev) => ({ ...prev, changeRemarks: e.target.value }))}
-                  className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                  placeholder="Required for reassignment after loading."
-                />
-              </div>
-            </div>
-
-              <div className="mt-5 flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => handleSaveSchedule()}
-                  disabled={scheduleSaving || dispatching}
-                >
-                  {scheduleSaving ? "Saving..." : "Save Schedule"}
-                </Button>
-                {isDraft ? (
-                  <Button
-                    onClick={handleDispatch}
-                    disabled={scheduleSaving || dispatching}
-                  >
-                    {dispatching ? "Dispatching..." : "Dispatch Trip"}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="surface-card p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Stops</h3>
-              <span className="text-xs text-muted-foreground">{trip.stops.length} stop(s)</span>
-            </div>
-            <div className="mt-4 space-y-3 text-sm">
-              {trip.stops.map((stop) => (
-                <div key={stop.id} className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-foreground">{stop.stopType}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {stop.scheduledAt ? new Date(stop.scheduledAt).toLocaleString() : "Unscheduled"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-muted-foreground">{stop.locationText}</p>
-                </div>
-              ))}
-            </div>
+            ) : null}
           </div>
 
           <div className="surface-card p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Documents</h3>
-              <span className="text-xs text-muted-foreground">Waybill + POD required</span>
-            </div>
-            <div className="mt-4 grid gap-3">
-              {docTypes.map((type) => {
-                const doc = trip.documents.find((d) => d.type === type);
-                const state = doc?.state ?? "MISSING";
-                return (
-                  <div key={type} className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{type}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Status: {state}
-                          {doc?.remarks ? ` • ${doc.remarks}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isDriver ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={actionLoading}
-                            onClick={() => setModal({ type: "DOC_UPLOAD", docType: type, storageKey: "" })}
-                          >
-                            Upload
-                          </Button>
-                        ) : null}
-                        {canVerifyDocs && doc && doc.state === "UPLOADED" ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1"
-                              disabled={actionLoading}
-                              onClick={() => handleVerifyDoc(doc.id)}
-                            >
-                              <Check className="h-4 w-4" />
-                              Verify
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1"
-                              disabled={actionLoading}
-                              onClick={() => setModal({ type: "DOC_REJECT", docId: doc.id, remarks: "" })}
-                            >
-                              <XCircle className="h-4 w-4" />
-                              Reject
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="surface-card p-6">
-            <h3 className="text-sm font-semibold">Next Actions</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Delivered requires POD upload unless manager marks POD pending. Closing requires verified POD if strict.
-            </p>
-
-            <div className="mt-4 space-y-3">
-              {isDriver && nextStatus && operationalFlow.includes(trip.status) ? (
-                <Button
-                  className="w-full"
-                  onClick={() => handleStatusChange(nextStatus)}
-                  disabled={actionLoading}
-                >
-                  Advance to {statusLabels[nextStatus]}
+              {canViewVersions ? (
+                <Button variant="outline" size="sm" onClick={() => openVersionsDrawer()}>
+                  View Versions
                 </Button>
               ) : null}
-
-              {isDriver ? (
-                <>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setModal({ type: "HOLD", remarks: "" })}
-                    disabled={actionLoading || trip.status === "CLOSED" || trip.status === "CANCELLED"}
-                  >
-                    Place On Hold
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setModal({ type: "FAILED", remarks: "" })}
-                    disabled={actionLoading || !failedAttemptEligible.includes(trip.status)}
-                  >
-                    Report Failed Attempt
-                  </Button>
-                </>
-              ) : null}
-
-              {isManager ? (
-                <>
-                  {trip.status === "DELIVERED" ? (
-                    <Button
-                      className="w-full"
-                      onClick={() => handleStatusChange("CLOSED")}
-                      disabled={actionLoading}
-                    >
-                      Close Trip
-                    </Button>
-                  ) : null}
-                  {trip.status === "ON_HOLD" && trip.holdPreviousStatus ? (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handleStatusChange(trip.holdPreviousStatus!)}
-                      disabled={actionLoading}
-                    >
-                      Resume to {statusLabels[trip.holdPreviousStatus!]}
-                    </Button>
-                  ) : null}
-                  {trip.status === "FAILED_ATTEMPT" && resumeFromFailedAttempt ? (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handleStatusChange(resumeFromFailedAttempt)}
-                      disabled={actionLoading}
-                    >
-                      Resume to {statusLabels[resumeFromFailedAttempt]}
-                    </Button>
-                  ) : null}
-                  {trip.status !== "CLOSED" && trip.status !== "CANCELLED" ? (
-                    <Button
-                      variant="destructive"
-                      className="w-full"
-                      onClick={() => handleStatusChange("CANCELLED")}
-                      disabled={actionLoading}
-                    >
-                      Cancel Trip
-                    </Button>
-                  ) : null}
-                </>
-              ) : null}
-
-              {!isDriver && !isManager ? (
-                <p className="text-xs text-muted-foreground">
-                  {canViewAny ? "No actions available for your role." : "Access limited."}
-                </p>
-              ) : null}
             </div>
-          </div>
-
-          <div className="surface-card p-6">
-            <h3 className="text-sm font-semibold">Status Timeline</h3>
-            <div className="mt-4 space-y-3 text-sm">
-              {trip.history.length === 0 ? (
-                <EmptyState title="No history" description="Trip history will appear here." />
-              ) : (
-                trip.history.map((entry) => (
-                  <div key={entry.id} className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{new Date(entry.createdAt).toLocaleString()}</span>
-                      <span>{entry.actorUsername ?? entry.actorUserId}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-foreground">
-                      {entry.eventType === "SCHEDULE_UPDATED"
-                        ? "Schedule updated"
-                        : `${statusLabels[entry.fromStatus]} → ${statusLabels[entry.toStatus]}`}
-                    </p>
-                    {entry.remarks ? (
-                      <p className="mt-1 text-xs text-muted-foreground">{entry.remarks}</p>
-                    ) : null}
-                  </div>
-                ))
-              )}
+            <div className="mt-4 overflow-x-auto">
+              <DataTable>
+                <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Type</th>
+                    <th className="px-4 py-3 text-left">Version</th>
+                    <th className="px-4 py-3 text-left">Uploaded By</th>
+                    <th className="px-4 py-3 text-left">Uploaded At</th>
+                    <th className="px-4 py-3 text-left">State</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {docTypes.map((type) => {
+                    const doc = documents.find((d) => d.type === type);
+                    const state = doc?.state ?? "MISSING";
+                    return (
+                      <tr key={type} className="text-sm">
+                        <td className="px-4 py-3 font-medium text-foreground">{type}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{doc ? "Active" : "-"}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {doc?.uploadedByUsername ?? doc?.uploadedByUserId ?? "-"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : "-"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                              docStateClasses[state]
+                            }`}
+                          >
+                            {state}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {isDriver ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={actionLoading}
+                                onClick={() =>
+                                  setModal({ type: "DOC_UPLOAD", docType: type, storageKey: "" })
+                                }
+                              >
+                                Upload
+                              </Button>
+                            ) : null}
+                            {canVerifyDocs && doc && doc.state === "UPLOADED" ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1"
+                                  disabled={actionLoading}
+                                  onClick={() => handleVerifyDoc(doc.id)}
+                                >
+                                  <Check className="h-4 w-4" />
+                                  Verify
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1"
+                                  disabled={actionLoading}
+                                  onClick={() =>
+                                    setModal({ type: "DOC_REJECT", docId: doc.id, remarks: "" })
+                                  }
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                  Reject
+                                </Button>
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </DataTable>
             </div>
           </div>
         </div>
       </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <div className="surface-card p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold">Assignment</h3>
+              <p className="text-xs text-muted-foreground">
+                Reassign drivers or trucks before delivery. Conflict checks apply on save.
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground">{isDraft ? "Draft" : "Active"}</span>
+          </div>
+
+          <div className="mt-4 grid gap-4 text-sm md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="text-xs uppercase text-muted-foreground">Customer</label>
+              <select
+                value={scheduleForm.customerId}
+                onChange={(e) => setScheduleForm((prev) => ({ ...prev, customerId: e.target.value }))}
+                className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                disabled={!canEditCustomer}
+              >
+                <option value="">Select customer</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+              {!canEditCustomer ? (
+                <p className="mt-1 text-xs text-muted-foreground">Customer is locked after dispatch.</p>
+              ) : null}
+            </div>
+            <div>
+              <label className="text-xs uppercase text-muted-foreground">Driver</label>
+              <select
+                value={scheduleForm.driverUserId}
+                onChange={(e) => setScheduleForm((prev) => ({ ...prev, driverUserId: e.target.value }))}
+                className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                disabled={dispatcherReassignLocked}
+              >
+                <option value="">Unassigned</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs uppercase text-muted-foreground">Truck</label>
+              <select
+                value={scheduleForm.truckAssetId}
+                onChange={(e) => setScheduleForm((prev) => ({ ...prev, truckAssetId: e.target.value }))}
+                className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                disabled={dispatcherReassignLocked}
+              >
+                <option value="">Unassigned</option>
+                {trucks.map((truck) => (
+                  <option key={truck.id} value={truck.id}>
+                    {truck.assetCode}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs uppercase text-muted-foreground">Change Remarks</label>
+              <input
+                value={scheduleForm.changeRemarks}
+                onChange={(e) => setScheduleForm((prev) => ({ ...prev, changeRemarks: e.target.value }))}
+                className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                placeholder="Required for reassignment after loading."
+              />
+            </div>
+          </div>
+
+          {canEditSchedule ? (
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => handleSaveSchedule()}
+                disabled={scheduleSaving || dispatching}
+              >
+                {scheduleSaving ? "Saving..." : "Save Assignment"}
+              </Button>
+              {isDraft ? (
+                <Button onClick={handleDispatch} disabled={scheduleSaving || dispatching}>
+                  {dispatching ? "Dispatching..." : "Dispatch Trip"}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="surface-card p-6">
+          <h3 className="text-sm font-semibold">Trip Metadata</h3>
+          <div className="mt-4 grid gap-3 text-sm text-muted-foreground">
+            <div>
+              <p className="text-xs uppercase">Created At</p>
+              <p className="mt-1 text-foreground">{new Date(trip.createdAt).toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase">Created By</p>
+              <p className="mt-1 text-foreground">
+                {summary?.createdByUsername ?? summary?.createdByUserId ?? "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase">Last Updated</p>
+              <p className="mt-1 text-foreground">
+                {new Date(summary?.updatedAt ?? trip.updatedAt ?? trip.createdAt).toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase">POD Pending</p>
+              <p className="mt-1 text-foreground">{summary?.podPending ?? trip.podPending ? "Yes" : "No"}</p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs uppercase text-muted-foreground">Internal Remarks</label>
+              <textarea
+                value={scheduleForm.notes}
+                onChange={(e) => setScheduleForm((prev) => ({ ...prev, notes: e.target.value }))}
+                className="mt-2 min-h-[90px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                placeholder="Operational notes"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+{versionsOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            onClick={() => setVersionsOpen(false)}
+            role="presentation"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="absolute right-0 top-0 h-full w-[min(92vw,560px)] border-l border-slate-200 bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Document History</p>
+                <h2 className="mt-2 text-lg font-semibold text-slate-900">Versions</h2>
+              </div>
+              <button
+                onClick={() => setVersionsOpen(false)}
+                className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 text-sm">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs uppercase text-slate-500">Type</label>
+                  <select
+                    value={versionType}
+                    onChange={(e) => {
+                      setVersionType(e.target.value as TripDocumentType);
+                      setVersionPage(1);
+                    }}
+                    className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                  >
+                    {docTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs uppercase text-slate-500">State</label>
+                  <select
+                    value={versionState}
+                    onChange={(e) => {
+                      setVersionState(e.target.value as VersionStateFilter);
+                      setVersionPage(1);
+                    }}
+                    className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                  >
+                    <option value="ALL">All</option>
+                    <option value="UPLOADED">Uploaded</option>
+                    <option value="VERIFIED">Verified</option>
+                    <option value="REJECTED">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  {versionTotal} version{versionTotal === 1 ? "" : "s"}
+                </span>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] uppercase text-slate-400">Page Size</label>
+                  <select
+                    value={versionPageSize}
+                    onChange={(e) => {
+                      setVersionPageSize(Number(e.target.value));
+                      setVersionPage(1);
+                    }}
+                    className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs"
+                  >
+                    {[10, 20, 50].map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {linkKey ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                  <p className="text-[10px] uppercase text-slate-400">Storage Key</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={linkKey}
+                      className="h-8 flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(linkKey);
+                        show("Storage key copied.", "success");
+                      }}
+                    >
+                      Copy
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setLinkKey(null)}>
+                      Hide
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-3 overflow-y-auto pr-1">
+                {versionsLoading ? (
+                  <LoadingSkeleton rows={4} />
+                ) : versionItems.length === 0 ? (
+                  <EmptyState title="No versions" description="No document versions match the filters." />
+                ) : (
+                  versionItems.map((item) => (
+                    <div key={item.id} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                      <div className="flex items-start justify-between text-xs text-slate-500">
+                        <div>
+                          <span className="block">{new Date(item.uploadedAt).toLocaleString()}</span>
+                          <span className="block text-[10px]">
+                            {item.uploadedByUsername ?? item.uploadedByUserId}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] uppercase">
+                            {item.state}
+                          </span>
+                          {item.isActive ? (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                              Active
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      {item.remarks ? (
+                        <p className="mt-2 text-xs text-slate-500">Remarks: {item.remarks}</p>
+                      ) : null}
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1"
+                          onClick={() => handleOpenDocument(item.id)}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  Page {versionPage} of {versionTotalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={versionPage <= 1 || versionsLoading}
+                    onClick={() => setVersionPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={versionPage >= versionTotalPages || versionsLoading}
+                    onClick={() => setVersionPage((prev) => Math.min(versionTotalPages, prev + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {correctOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
+          onClick={() => setCorrectOpen(false)}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-[min(92vw,560px)] rounded-2xl border border-slate-200 bg-white p-6 shadow-xl fade-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Status Correction</p>
+                <h2 className="mt-2 text-lg font-semibold text-slate-900">Correct Status</h2>
+              </div>
+              <button
+                onClick={() => setCorrectOpen(false)}
+                className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4 text-sm">
+              <div>
+                <label className="text-xs uppercase text-slate-500">To Status</label>
+                <select
+                  value={correctForm.toStatus}
+                  onChange={(e) =>
+                    setCorrectForm((prev) => ({ ...prev, toStatus: e.target.value as TripStatus }))
+                  }
+                  className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                >
+                  <option value="">Select status</option>
+                  {correctionOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {statusLabels[status]}
+                    </option>
+                  ))}
+                </select>
+                {correctionOptions.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-500">No forward statuses available.</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="text-xs uppercase text-slate-500">Event Time</label>
+                <input
+                  type="datetime-local"
+                  value={correctForm.eventAt}
+                  onChange={(e) =>
+                    setCorrectForm((prev) => ({ ...prev, eventAt: e.target.value }))
+                  }
+                  className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs uppercase text-slate-500">Remarks</label>
+                <textarea
+                  value={correctForm.remarks}
+                  onChange={(e) =>
+                    setCorrectForm((prev) => ({ ...prev, remarks: e.target.value }))
+                  }
+                  className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Explain the correction"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setCorrectOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCorrectStatus}
+                disabled={actionLoading || correctionOptions.length === 0}
+              >
+                Submit
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {modal ? (
         <div
@@ -802,8 +1410,14 @@ export default function TripDetailPage() {
                     : modal.type === "DOC_REJECT"
                     ? "Reject Document"
                     : modal.type === "HOLD"
-                    ? "Place on Hold"
-                    : "Report Failed Attempt"}
+                    ? "Place Trip On Hold"
+                    : modal.type === "FAILED"
+                    ? "Report Failed Attempt"
+                    : modal.type === "RESOLVE_FAILED"
+                    ? "Resolve Failed Attempt"
+                    : modal.type === "CANCEL"
+                    ? "Cancel Trip"
+                    : "Close Trip"}
                 </h2>
               </div>
               <button
@@ -824,15 +1438,34 @@ export default function TripDetailPage() {
                   placeholder="docs/waybill.pdf"
                 />
               </div>
+            ) : modal.type === "CLOSE" ? (
+              <div className="mt-5 text-sm text-slate-600">
+                Closing a trip is irreversible. Make sure POD rules are satisfied before proceeding.
+              </div>
             ) : (
-              <div className="mt-5 space-y-2 text-sm">
-                <label className="text-xs uppercase text-slate-500">Remarks</label>
-                <textarea
-                  value={modal.remarks}
-                  onChange={(e) => setModal({ ...modal, remarks: e.target.value })}
-                  className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-                  placeholder="Add remarks"
-                />
+              <div className="mt-5 space-y-4 text-sm">
+                {"eventAt" in modal ? (
+                  <div>
+                    <label className="text-xs uppercase text-slate-500">Event Time</label>
+                    <input
+                      type="datetime-local"
+                      value={modal.eventAt}
+                      onChange={(e) => setModal({ ...modal, eventAt: e.target.value })}
+                      className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                    />
+                  </div>
+                ) : null}
+                <div>
+                  <label className="text-xs uppercase text-slate-500">Remarks</label>
+                  <textarea
+                    value={modal.remarks}
+                    onChange={(e) => setModal({ ...modal, remarks: e.target.value })}
+                    className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder={
+                      modal.type === "CANCEL" ? "Optional remarks" : "Add remarks (required)"
+                    }
+                  />
+                </div>
               </div>
             )}
 
@@ -862,14 +1495,36 @@ export default function TripDetailPage() {
                       show("Remarks are required.", "error");
                       return;
                     }
-                    handleStatusChange("ON_HOLD", modal.remarks.trim());
+                    const eventAt = fromLocalInput(modal.eventAt) ?? new Date().toISOString();
+                    handleStatusChange("ON_HOLD", modal.remarks.trim(), null, eventAt);
                     setModal(null);
-                  } else {
+                  } else if (modal.type === "FAILED") {
                     if (!modal.remarks.trim()) {
                       show("Remarks are required.", "error");
                       return;
                     }
-                    handleStatusChange("FAILED_ATTEMPT", modal.remarks.trim());
+                    const eventAt = fromLocalInput(modal.eventAt) ?? new Date().toISOString();
+                    handleStatusChange("FAILED_ATTEMPT", modal.remarks.trim(), null, eventAt);
+                    setModal(null);
+                  } else if (modal.type === "RESOLVE_FAILED") {
+                    if (!modal.remarks.trim()) {
+                      show("Remarks are required.", "error");
+                      return;
+                    }
+                    if (!resumeFromFailedAttempt) {
+                      show("Previous status not available.", "error");
+                      return;
+                    }
+                    const eventAt = fromLocalInput(modal.eventAt) ?? new Date().toISOString();
+                    handleStatusChange(resumeFromFailedAttempt, modal.remarks.trim(), null, eventAt);
+                    setModal(null);
+                  } else if (modal.type === "CANCEL") {
+                    const eventAt = fromLocalInput(modal.eventAt) ?? new Date().toISOString();
+                    const remarks = modal.remarks.trim() ? modal.remarks.trim() : null;
+                    handleStatusChange("CANCELLED", remarks, null, eventAt);
+                    setModal(null);
+                  } else if (modal.type === "CLOSE") {
+                    handleStatusChange("CLOSED");
                     setModal(null);
                   }
                 }}
@@ -883,4 +1538,6 @@ export default function TripDetailPage() {
     </div>
   );
 }
+
+
 

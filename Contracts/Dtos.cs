@@ -1,5 +1,6 @@
 using NVGInventory.Domain.Enums;
 using NVGInventory.Modules.Dispatching.Enums;
+using NVGInventory.Modules.ShipmentRequests.Enums;
 
 namespace NVGInventory.Contracts;
 
@@ -631,21 +632,38 @@ public sealed record UpdateDispatchTripRequest(
     Guid? TruckAssetId,
     string? Notes,
     IReadOnlyCollection<DispatchTripStopRequest>? Stops,
-    string? Remarks = null);
+    string? Remarks = null,
+    string RowVersion = "");
 
 public sealed record DispatchTripActionRequest(
     Guid DriverUserId,
     Guid? TruckAssetId,
-    string? Remarks);
+    string? Remarks,
+    string RowVersion = "");
 
 public sealed record DispatchTripActionResponse(Guid TripId, TripStatus Status);
+
+public sealed record DispatchTripDriverActionRequest(
+    DateTime EventAt,
+    string RowVersion = "",
+    string? Remarks = null);
 
 public sealed record DispatchTripStatusRequest(
     TripStatus ToStatus,
     string? Remarks,
-    bool? PodPendingOverride);
+    bool? PodPendingOverride,
+    DateTime EventAt,
+    string RowVersion = "");
 
 public sealed record DispatchTripStatusResponse(Guid TripId, TripStatus Status);
+
+public sealed record DispatchTripCorrectStatusRequest(
+    TripStatus ToStatus,
+    DateTime EventAt,
+    string Remarks,
+    string RowVersion = "");
+
+public sealed record DispatchTripCorrectStatusResponse(Guid TripId, TripStatus Status);
 
 public sealed record DispatchTripStopResponse(
     Guid Id,
@@ -676,6 +694,30 @@ public sealed record DispatchTripDocumentResponse(
     DateTime? VerifiedAt,
     DateTime? RejectedAt);
 
+public sealed record DispatchTripDocumentChecklistResponse(
+    TripDocumentType Type,
+    TripDocumentState State);
+
+public sealed record DispatchTripDocumentVersionResponse(
+    Guid Id,
+    TripDocumentType Type,
+    TripDocumentState State,
+    string StorageKey,
+    Guid UploadedByUserId,
+    string? UploadedByUsername,
+    Guid? VerifiedByUserId,
+    string? VerifiedByUsername,
+    Guid? RejectedByUserId,
+    string? RejectedByUsername,
+    string? Remarks,
+    DateTime UploadedAt,
+    DateTime? VerifiedAt,
+    DateTime? RejectedAt,
+    bool IsActive,
+    Guid? SupersedesDocumentId);
+
+public sealed record DispatchTripDocumentLinkResponse(string StorageKey);
+
 public sealed record DispatchTripHistoryResponse(
     Guid Id,
     TripHistoryEventType EventType,
@@ -684,7 +726,8 @@ public sealed record DispatchTripHistoryResponse(
     Guid ActorUserId,
     string? ActorUsername,
     string? Remarks,
-    DateTime CreatedAt);
+    DateTime EventAt,
+    DateTime RecordedAt);
 
 public sealed record DispatchTripListItemResponse(
     Guid Id,
@@ -697,10 +740,41 @@ public sealed record DispatchTripListItemResponse(
     bool PodPending,
     int UploadedDocumentCount,
     int RequiredDocumentCount,
+    IReadOnlyCollection<DispatchTripDocumentChecklistResponse> Documents,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    string? PickupLocation,
+    string? DropoffLocation,
+    DateTime? PickupScheduledAt,
+    DateTime? DropoffScheduledAt,
+    bool LatePickup,
+    bool LateDelivery,
+    int? OnHoldMinutes,
+    string RowVersion);
+
+public sealed record DispatchTripSummaryResponse(
+    Guid Id,
+    TripStatus Status,
+    DispatchCustomerSummaryResponse Customer,
+    Guid? DriverUserId,
+    string? DriverUsername,
+    Guid? TruckAssetId,
+    string? TruckAssetCode,
+    bool PodPending,
+    int UploadedDocumentCount,
+    int RequiredDocumentCount,
+    IReadOnlyCollection<DispatchTripDocumentChecklistResponse> Documents,
+    TripDocumentState PodState,
+    Guid? CreatedByUserId,
+    string? CreatedByUsername,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     DateTime? PickupScheduledAt,
-    DateTime? DropoffScheduledAt);
+    DateTime? DropoffScheduledAt,
+    bool LatePickup,
+    bool LateDelivery,
+    int? OnHoldMinutes,
+    string RowVersion);
 
 public sealed record DispatchTripDetailResponse(
     Guid Id,
@@ -718,4 +792,114 @@ public sealed record DispatchTripDetailResponse(
     IReadOnlyCollection<DispatchTripStopResponse> Stops,
     IReadOnlyCollection<DispatchTripDocumentResponse> Documents,
     IReadOnlyCollection<DispatchTripHistoryResponse> History,
-    bool DocVerificationEnabled);
+    bool DocVerificationEnabled,
+    string RowVersion);
+
+public sealed record CreateShipmentRequestRequest(
+    string PickupLocation,
+    string DropoffLocation,
+    DateTime? RequestedPickupTime,
+    string? CargoDescription,
+    decimal? CargoWeight,
+    string? SpecialInstructions);
+
+public sealed record UpdateShipmentRequestRequest(
+    string PickupLocation,
+    string DropoffLocation,
+    DateTime? RequestedPickupTime,
+    string? CargoDescription,
+    decimal? CargoWeight,
+    string? SpecialInstructions);
+
+public sealed record ShipmentRequestStatusResponse(Guid Id, ShipmentRequestStatus Status);
+
+public sealed record ShipmentRequestListItemResponse(
+    Guid Id,
+    ShipmentRequestStatus Status,
+    string PickupLocation,
+    string DropoffLocation,
+    DateTime? RequestedPickupTime,
+    int DocumentsCount,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    Guid? ConvertedTripId);
+
+public sealed record ShipmentRequestDetailResponse(
+    Guid Id,
+    ShipmentRequestStatus Status,
+    string PickupLocation,
+    string DropoffLocation,
+    DateTime? RequestedPickupTime,
+    string? CargoDescription,
+    decimal? CargoWeight,
+    string? SpecialInstructions,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    Guid? ConvertedTripId,
+    IReadOnlyCollection<ShipmentRequestDocumentResponse> Documents);
+
+public sealed record ShipmentRequestDocumentResponse(
+    Guid Id,
+    ShipmentRequestDocumentType DocumentType,
+    string StorageKey,
+    Guid UploadedByUserId,
+    string? UploadedByUsername,
+    DateTime UploadedAt);
+
+public sealed record ShipmentRequestDocumentUploadRequest(
+    ShipmentRequestDocumentType DocumentType,
+    string StorageKey);
+
+public sealed record ShipmentRequestRejectRequest(string Remarks);
+
+public sealed record DispatchShipmentRequestQueueItemResponse(
+    Guid Id,
+    Guid CustomerId,
+    string CustomerName,
+    string PickupLocation,
+    string DropoffLocation,
+    DateTime? RequestedPickupTime,
+    int DocumentsCount,
+    DateTime CreatedAt);
+
+public sealed record ShipmentRequestConversionResponse(
+    Guid RequestId,
+    Guid TripId,
+    ShipmentRequestStatus Status);
+
+public sealed record CustomerShipmentListItemResponse(
+    Guid TripId,
+    string PickupLocation,
+    string DropoffLocation,
+    TripStatus Status,
+    DateTime? PickupTime,
+    DateTime? DeliveredTime,
+    TripDocumentState PodState);
+
+public sealed record CustomerShipmentDetailResponse(
+    Guid TripId,
+    TripStatus Status,
+    string PickupLocation,
+    string DropoffLocation,
+    DateTime? PickupTime,
+    DateTime? DropoffTime,
+    DateTime? DeliveredTime,
+    TripDocumentState PodState,
+    IReadOnlyCollection<CustomerShipmentStopResponse> Stops);
+
+public sealed record CustomerShipmentStopResponse(
+    TripStopType StopType,
+    string LocationText,
+    DateTime? ScheduledAt,
+    DateTime? ActualAt);
+
+public sealed record CustomerShipmentTimelineEntryResponse(
+    TripStatus FromStatus,
+    TripStatus ToStatus,
+    DateTime EventAt);
+
+public sealed record CustomerShipmentDocumentResponse(
+    TripDocumentType Type,
+    TripDocumentState State,
+    string StorageKey,
+    DateTime UploadedAt);

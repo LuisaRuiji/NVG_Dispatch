@@ -36,7 +36,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Core",
     items: [
-      { label: "Dashboard", to: "/dashboard", roles: ["InventoryOfficer", "Manager", "Dispatcher", "HeadOfFinance", "CEO", "Driver"], icon: LayoutDashboard },
+      { label: "Inventory Dashboard", to: "/dashboard", roles: ["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Driver"], icon: LayoutDashboard },
       { label: "Inventory", to: "/inventory", roles: ["InventoryOfficer", "Manager"], icon: Package, moduleKey: "inventory" }
     ]
   },
@@ -59,8 +59,19 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Dispatch",
     items: [
-      { label: "Dispatch Board", to: "/dispatch/board", roles: ["Manager", "Dispatcher"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Dispatch Board", to: "/dispatch/board", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Requests", to: "/dispatch/requests", roles: ["Manager", "Dispatcher"], icon: ClipboardList, moduleKey: "dispatch" },
+      { label: "Trips", to: "/dispatch/trips", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Documents", to: "/dispatch/documents", roles: ["Manager", "HeadOfFinance"], icon: FileText, moduleKey: "dispatch" },
       { label: "My Trips", to: "/dispatch/my-trips", roles: ["Driver"], icon: Truck, moduleKey: "dispatch" }
+    ]
+  },
+  {
+    title: "Customer Portal",
+    items: [
+      { label: "Portal Dashboard", to: "/portal/dashboard", roles: ["Customer"], icon: LayoutDashboard, moduleKey: "portal" },
+      { label: "Shipment Requests", to: "/portal/requests", roles: ["Customer"], icon: ClipboardList, moduleKey: "portal" },
+      { label: "Shipments", to: "/portal/shipments", roles: ["Customer"], icon: Truck, moduleKey: "portal" }
     ]
   },
   {

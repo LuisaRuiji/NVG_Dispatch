@@ -10,5 +10,7 @@ public interface IAuditService
         string entityType,
         Guid entityId,
         object? before = null,
-        object? after = null);
+        object? after = null,
+        string? actorRole = null,
+        Guid? tripId = null);
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "./index.css";
+import LandingPage from "@/features/landing/LandingPage";
 import LoginPage from "@/features/auth/LoginPage";
 import AppLayout from "@/components/layout/AppLayout";
 import DashboardPage from "@/features/dashboard/DashboardPage";
@@ -28,8 +29,18 @@ import AuthEventsPage from "@/features/admin/AuthEventsPage";
 import PurchaseOrdersPage from "@/features/purchase-orders/PurchaseOrdersPage";
 import PurchaseOrderDetailPage from "@/features/purchase-orders/PurchaseOrderDetailPage";
 import DispatchBoardPage from "@/features/dispatch/DispatchBoardPage";
+import DispatchRequestsPage from "@/features/dispatch/DispatchRequestsPage";
+import DispatchDocumentsPage from "@/features/dispatch/DispatchDocumentsPage";
+import DispatchTripsPage from "@/features/dispatch/DispatchTripsPage";
 import MyTripsPage from "@/features/dispatch/MyTripsPage";
+import MyTripDetailPage from "@/features/dispatch/MyTripDetailPage";
 import TripDetailPage from "@/features/dispatch/TripDetailPage";
+import PortalDashboardPage from "@/features/portal/PortalDashboardPage";
+import PortalRequestsPage from "@/features/portal/PortalRequestsPage";
+import PortalRequestNewPage from "@/features/portal/PortalRequestNewPage";
+import PortalRequestDetailPage from "@/features/portal/PortalRequestDetailPage";
+import PortalShipmentsPage from "@/features/portal/PortalShipmentsPage";
+import PortalShipmentDetailPage from "@/features/portal/PortalShipmentDetailPage";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { getDefaultRoute, getMe, loadMeIfTokenExists, logout } from "@/features/auth/authStore";
 import RoleGate from "@/components/RoleGate";
@@ -58,16 +69,20 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route
+          path="/"
+          element={getMe() ? <Navigate to={defaultRoute} replace /> : <LandingPage />}
+        />
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AppLayout />}>
-          <Route
-            path="/dashboard"
-            element={
-              <RoleGate roles={["InventoryOfficer", "Manager", "Dispatcher", "HeadOfFinance", "CEO", "Driver"]}>
-                <DashboardPage />
-              </RoleGate>
-            }
-          />
+            <Route
+              path="/dashboard"
+              element={
+                <RoleGate roles={["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Driver"]}>
+                  <DashboardPage />
+                </RoleGate>
+              }
+            />
           <Route path="/requests" element={<RequestsPage />} />
           <Route
             path="/queue/io"
@@ -128,8 +143,32 @@ function App() {
           <Route
             path="/dispatch/board"
             element={
-              <RoleGate roles={["Manager", "Dispatcher"]}>
+              <RoleGate roles={["Manager", "Dispatcher", "CEO"]}>
                 <DispatchBoardPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/requests"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher"]}>
+                <DispatchRequestsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/trips"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher", "CEO"]}>
+                <DispatchTripsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/documents"
+            element={
+              <RoleGate roles={["Manager", "HeadOfFinance"]}>
+                <DispatchDocumentsPage />
               </RoleGate>
             }
           />
@@ -142,9 +181,65 @@ function App() {
             }
           />
           <Route
+            path="/dispatch/my-trips/:id"
+            element={
+              <RoleGate roles={["Driver"]}>
+                <MyTripDetailPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/portal/dashboard"
+            element={
+              <RoleGate roles={["Customer"]}>
+                <PortalDashboardPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/portal/requests"
+            element={
+              <RoleGate roles={["Customer"]}>
+                <PortalRequestsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/portal/requests/new"
+            element={
+              <RoleGate roles={["Customer"]}>
+                <PortalRequestNewPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/portal/requests/:id"
+            element={
+              <RoleGate roles={["Customer"]}>
+                <PortalRequestDetailPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/portal/shipments"
+            element={
+              <RoleGate roles={["Customer"]}>
+                <PortalShipmentsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/portal/shipments/:id"
+            element={
+              <RoleGate roles={["Customer"]}>
+                <PortalShipmentDetailPage />
+              </RoleGate>
+            }
+          />
+          <Route
             path="/dispatch/trips/:id"
             element={
-              <RoleGate roles={["Manager", "Dispatcher", "Driver", "HeadOfFinance", "CEO"]}>
+              <RoleGate roles={["Manager", "Dispatcher", "HeadOfFinance", "CEO"]}>
                 <TripDetailPage />
               </RoleGate>
             }
@@ -238,7 +333,7 @@ function App() {
               </RoleGate>
             }
           />
-          <Route path="/" element={<Navigate to={defaultRoute} replace />} />
+          <Route path="/app" element={<Navigate to={defaultRoute} replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

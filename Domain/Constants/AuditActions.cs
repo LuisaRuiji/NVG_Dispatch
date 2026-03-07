@@ -30,9 +30,11 @@ public static class AuditActions
     public const string DispatchTripUpdated = "DISPATCH_TRIP_UPDATED";
     public const string DispatchTripDispatched = "DISPATCH_TRIP_DISPATCHED";
     public const string DispatchTripStatusChanged = "DISPATCH_TRIP_STATUS_CHANGED";
+    public const string DispatchTripStatusCorrected = "DISPATCH_TRIP_STATUS_CORRECTED";
     public const string DispatchTripCancelled = "DISPATCH_TRIP_CANCELLED";
     public const string DispatchTripOnHold = "DISPATCH_TRIP_ON_HOLD";
     public const string DispatchTripClosed = "DISPATCH_TRIP_CLOSED";
+    public const string DispatchTripConflictOverride = "DISPATCH_TRIP_CONFLICT_OVERRIDE";
     public const string DispatchTripDocumentUploaded = "DISPATCH_TRIP_DOCUMENT_UPLOADED";
     public const string DispatchTripDocumentVerified = "DISPATCH_TRIP_DOCUMENT_VERIFIED";
     public const string DispatchTripDocumentRejected = "DISPATCH_TRIP_DOCUMENT_REJECTED";

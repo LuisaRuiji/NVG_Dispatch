@@ -16,7 +16,8 @@ internal static class SeedData
         new Role { Id = 5, Name = RoleNames.Driver },
         new Role { Id = 6, Name = RoleNames.Admin },
         new Role { Id = 7, Name = RoleNames.SuperAdmin },
-        new Role { Id = 8, Name = RoleNames.Dispatcher }
+        new Role { Id = 8, Name = RoleNames.Dispatcher },
+        new Role { Id = 9, Name = RoleNames.Customer }
     ];
 
     public static readonly Workflow[] Workflows =

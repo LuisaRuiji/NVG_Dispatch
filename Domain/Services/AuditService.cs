@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -30,16 +31,21 @@ public sealed class AuditService : IAuditService
         string entityType,
         Guid entityId,
         object? before = null,
-        object? after = null)
+        object? after = null,
+        string? actorRole = null,
+        Guid? tripId = null)
     {
         var traceId = _httpContextAccessor.HttpContext?.TraceIdentifier
             ?? Activity.Current?.TraceId.ToString()
             ?? "-";
+        var resolvedActorRole = ResolveActorRole(actorRole);
 
         var entry = new AuditLog
         {
             Id = Guid.NewGuid(),
             ActorUserId = actorUserId,
+            ActorRole = resolvedActorRole,
+            TripId = tripId,
             Action = action,
             EntityType = entityType,
             EntityId = entityId,
@@ -73,5 +79,27 @@ public sealed class AuditService : IAuditService
         }
 
         return JsonSerializer.Serialize(value, JsonOptions);
+    }
+
+    private string? ResolveActorRole(string? actorRole)
+    {
+        if (!string.IsNullOrWhiteSpace(actorRole))
+        {
+            return actorRole;
+        }
+
+        var roles = _httpContextAccessor.HttpContext?.User?
+            .FindAll(ClaimTypes.Role)
+            .Select(role => role.Value)
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct()
+            .ToArray();
+
+        if (roles is null || roles.Length == 0)
+        {
+            return null;
+        }
+
+        return string.Join(",", roles);
     }
 }

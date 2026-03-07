@@ -14,5 +14,6 @@ public sealed class TripStatusHistory
     public Guid ActorUserId { get; set; }
     public User? Actor { get; set; }
     public string? Remarks { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public DateTime EventAt { get; set; }
+    public DateTime RecordedAt { get; set; }
 }

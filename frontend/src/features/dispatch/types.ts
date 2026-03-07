@@ -15,7 +15,7 @@ export type TripStatus =
 export type TripStopType = "PICKUP" | "DROPOFF";
 export type TripDocumentType = "WAYBILL" | "POD" | "ATW";
 export type TripDocumentState = "MISSING" | "UPLOADED" | "VERIFIED" | "REJECTED";
-export type TripHistoryEventType = "STATUS_CHANGE" | "SCHEDULE_UPDATED";
+export type TripHistoryEventType = "STATUS_CHANGE" | "SCHEDULE_UPDATED" | "STATUS_CORRECTED";
 
 export type DispatchCustomerSummary = {
   id: string;
@@ -33,10 +33,47 @@ export type DispatchTripListItem = {
   podPending: boolean;
   uploadedDocumentCount: number;
   requiredDocumentCount: number;
+  documents: DispatchTripDocumentChecklist[];
+  createdAt: string;
+  updatedAt?: string | null;
+  pickupLocation?: string | null;
+  dropoffLocation?: string | null;
+  pickupScheduledAt?: string | null;
+  dropoffScheduledAt?: string | null;
+  latePickup?: boolean;
+  lateDelivery?: boolean;
+  onHoldMinutes?: number | null;
+  rowVersion: string;
+};
+
+export type DispatchTripSummary = {
+  id: string;
+  status: TripStatus;
+  customer: DispatchCustomerSummary;
+  driverUserId?: string | null;
+  driverUsername?: string | null;
+  truckAssetId?: string | null;
+  truckAssetCode?: string | null;
+  podPending: boolean;
+  uploadedDocumentCount: number;
+  requiredDocumentCount: number;
+  documents: DispatchTripDocumentChecklist[];
+  podState: TripDocumentState;
+  createdByUserId?: string | null;
+  createdByUsername?: string | null;
   createdAt: string;
   updatedAt?: string | null;
   pickupScheduledAt?: string | null;
   dropoffScheduledAt?: string | null;
+  latePickup?: boolean;
+  lateDelivery?: boolean;
+  onHoldMinutes?: number | null;
+  rowVersion: string;
+};
+
+export type DispatchTripDocumentChecklist = {
+  type: TripDocumentType;
+  state: TripDocumentState;
 };
 
 export type DispatchTripStop = {
@@ -64,6 +101,29 @@ export type DispatchTripDocument = {
   rejectedAt?: string | null;
 };
 
+export type DispatchTripDocumentVersion = {
+  id: string;
+  type: TripDocumentType;
+  state: TripDocumentState;
+  storageKey: string;
+  uploadedByUserId: string;
+  uploadedByUsername?: string | null;
+  verifiedByUserId?: string | null;
+  verifiedByUsername?: string | null;
+  rejectedByUserId?: string | null;
+  rejectedByUsername?: string | null;
+  remarks?: string | null;
+  uploadedAt: string;
+  verifiedAt?: string | null;
+  rejectedAt?: string | null;
+  isActive: boolean;
+  supersedesDocumentId?: string | null;
+};
+
+export type DispatchTripDocumentLink = {
+  storageKey: string;
+};
+
 export type DispatchTripHistory = {
   id: string;
   eventType: TripHistoryEventType;
@@ -72,7 +132,8 @@ export type DispatchTripHistory = {
   actorUserId: string;
   actorUsername?: string | null;
   remarks?: string | null;
-  createdAt: string;
+  eventAt: string;
+  recordedAt: string;
 };
 
 export type DispatchTripDetail = {
@@ -92,12 +153,15 @@ export type DispatchTripDetail = {
   documents: DispatchTripDocument[];
   history: DispatchTripHistory[];
   docVerificationEnabled: boolean;
+  rowVersion: string;
 };
 
 export type DispatchTripStatusRequest = {
   toStatus: TripStatus;
   remarks?: string | null;
   podPendingOverride?: boolean | null;
+  eventAt: string;
+  rowVersion: string;
 };
 
 export const operationalFlow: TripStatus[] = [

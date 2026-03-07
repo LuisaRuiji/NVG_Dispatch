@@ -4,6 +4,8 @@ public sealed class AuditLog
 {
     public Guid Id { get; set; }
     public Guid ActorUserId { get; set; }
+    public string? ActorRole { get; set; }
+    public Guid? TripId { get; set; }
     public string Action { get; set; } = string.Empty;
     public string EntityType { get; set; } = string.Empty;
     public Guid EntityId { get; set; }
