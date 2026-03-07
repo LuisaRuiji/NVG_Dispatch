@@ -1116,6 +1116,9 @@ public sealed class InventoryDbContext : DbContext
             entity.Property(customer => customer.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
             entity.Property(customer => customer.Address).HasColumnName("address").HasMaxLength(300);
             entity.Property(customer => customer.Contact).HasColumnName("contact").HasMaxLength(200);
+            entity.Property(customer => customer.ContactPerson).HasColumnName("contact_person").HasMaxLength(200);
+            entity.Property(customer => customer.ContactEmail).HasColumnName("contact_email").HasMaxLength(200);
+            entity.Property(customer => customer.Phone).HasColumnName("phone").HasMaxLength(50);
             entity.Property(customer => customer.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
             entity.HasIndex(customer => customer.Name);
         });

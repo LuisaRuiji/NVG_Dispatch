@@ -22,8 +22,11 @@ export function getDefaultRoute(current: MeResponse | null = me) {
   if (roles.includes("Admin") || roles.includes("SuperAdmin")) {
     return "/admin/users";
   }
-  if (roles.includes("Dispatcher")) {
-    return "/dispatch/board";
+  if (roles.includes("Driver")) {
+    return "/dispatch/my-trips";
+  }
+  if (roles.includes("Dispatcher") || roles.includes("Manager") || roles.includes("HeadOfFinance") || roles.includes("CEO")) {
+    return "/dispatch";
   }
   if (roles.includes("Customer")) {
     return "/portal/dashboard";

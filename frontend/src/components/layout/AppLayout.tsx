@@ -83,6 +83,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Admin",
     items: [
+      { label: "Customers", to: "/admin/customers", roles: ["Manager", "Dispatcher"], icon: User, moduleKey: "users" },
       { label: "Modules", to: "/admin/modules", roles: ["SuperAdmin"], icon: Settings },
       { label: "Audit Logs", to: "/admin/audit-logs", roles: ["Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },
       { label: "Auth Logs", to: "/admin/auth-events", roles: ["Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },

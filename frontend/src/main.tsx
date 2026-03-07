@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "./index.css";
 import LandingPage from "@/features/landing/LandingPage";
-import LoginPage from "@/features/auth/LoginPage";
 import AppLayout from "@/components/layout/AppLayout";
 import DashboardPage from "@/features/dashboard/DashboardPage";
 import RequestsPage from "@/features/requests/RequestsPage";
@@ -23,6 +22,7 @@ import InventoryPage from "@/features/inventory/InventoryPage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import IntegrityPage from "@/features/admin/IntegrityPage";
 import UsersPage from "@/features/admin/UsersPage";
+import AdminCustomersPage from "@/features/admin/AdminCustomersPage";
 import ModuleSettingsPage from "@/features/admin/ModuleSettingsPage";
 import AuditLogsPage from "@/features/admin/AuditLogsPage";
 import AuthEventsPage from "@/features/admin/AuthEventsPage";
@@ -69,12 +69,17 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route
-          path="/"
-          element={getMe() ? <Navigate to={defaultRoute} replace /> : <LandingPage />}
-        />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LandingPage initialLoginOpen />} />
         <Route element={<AppLayout />}>
+          <Route
+            path="/dispatch"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher", "HeadOfFinance", "CEO"]}>
+                <Navigate to="/dispatch/board" replace />
+              </RoleGate>
+            }
+          />
             <Route
               path="/dashboard"
               element={
@@ -269,6 +274,14 @@ function App() {
             }
           />
           <Route
+            path="/admin/customers"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher"]}>
+                <AdminCustomersPage />
+              </RoleGate>
+            }
+          />
+          <Route
             path="/admin/modules"
             element={
               <RoleGate roles={["SuperAdmin"]}>
@@ -333,7 +346,6 @@ function App() {
               </RoleGate>
             }
           />
-          <Route path="/app" element={<Navigate to={defaultRoute} replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

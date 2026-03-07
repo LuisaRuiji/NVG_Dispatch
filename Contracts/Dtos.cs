@@ -24,6 +24,28 @@ public sealed record UserSummaryResponse(
     DateTime CreatedAt,
     IReadOnlyCollection<string> Roles);
 
+public sealed record CustomerListItemResponse(
+    Guid Id,
+    string Name,
+    string? ContactPerson,
+    string? ContactEmail,
+    string? Phone,
+    DateTime CreatedAt);
+
+public sealed record CreateCustomerRequest(
+    string Name,
+    string? ContactPerson,
+    string? ContactEmail,
+    string? Phone);
+
+public sealed record CreateCustomerUserRequest(string Email, string Password);
+
+public sealed record CreateCustomerUserResponse(
+    Guid UserId,
+    string Email,
+    string Role,
+    Guid CustomerId);
+
 public sealed record RoleSummaryResponse(string Name);
 
 public sealed record ModuleSettingResponse(
