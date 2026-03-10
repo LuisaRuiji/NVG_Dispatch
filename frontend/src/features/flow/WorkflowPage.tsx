@@ -816,7 +816,7 @@ export default function WorkflowPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="chip">Maintenance Issue Flow</p>
-              <h2 className="text-2xl font-semibold">Create -> Submit -> IO Review -> Manager Approve -> IO Issue</h2>
+              <h2 className="text-2xl font-semibold">Create -&gt; Submit -&gt; IO Review -&gt; Manager Approve -&gt; IO Issue</h2>
             </div>
             <Badge variant="outline">Consumables only + asset required</Badge>
           </div>
@@ -963,7 +963,7 @@ export default function WorkflowPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="chip">Borrow + Loan Return</p>
-              <h2 className="text-2xl font-semibold">Borrow -> Issue -> Return</h2>
+              <h2 className="text-2xl font-semibold">Borrow -&gt; Issue -&gt; Return</h2>
             </div>
             <Badge variant="outline">Non-consumables only</Badge>
           </div>

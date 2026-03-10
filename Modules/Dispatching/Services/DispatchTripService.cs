@@ -47,16 +47,14 @@ public sealed record ChangeDispatchTripStatusCommand(
     DateTime EventAt,
     byte[] RowVersion);
 
-public sealed record UploadTripDocumentCommand(
+public sealed record CorrectDispatchTripStatusCommand(
     Guid TripId,
-    TripDocumentType Type,
-    string StorageKey);
+    TripStatus ToStatus,
+    DateTime EventAt,
+    string Remarks,
+    byte[] RowVersion);
 
-public sealed record VerifyTripDocumentCommand(Guid TripId, Guid DocumentId);
-
-public sealed record RejectTripDocumentCommand(Guid TripId, Guid DocumentId, string Remarks);
-
-public sealed class DispatchTripService
+public sealed class DispatchTripService : ITripLifecycleService
 {
     private static readonly TripStatus[] OperationalFlow =
     [
@@ -88,17 +86,20 @@ public sealed class DispatchTripService
 
     private readonly InventoryDbContext _dbContext;
     private readonly UserService _userService;
-    private readonly IAuditService? _auditService;
+    private readonly IDispatchDocumentReadService _documentReadService;
+    private readonly IAuditService _auditService;
     private readonly DispatchingOptions _options;
 
     public DispatchTripService(
         InventoryDbContext dbContext,
         UserService userService,
+        IDispatchDocumentReadService documentReadService,
         IOptions<DispatchingOptions> options,
-        IAuditService? auditService = null)
+        IAuditService auditService)
     {
         _dbContext = dbContext;
         _userService = userService;
+        _documentReadService = documentReadService;
         _auditService = auditService;
         _options = options.Value ?? new DispatchingOptions();
     }
@@ -172,7 +173,7 @@ public sealed class DispatchTripService
             }
         }
 
-        _auditService?.AddEntry(
+        _auditService.AddEntry(
             actor.UserId,
             AuditActions.DispatchTripCreated,
             EntityTypes.DispatchTrip,
@@ -424,7 +425,7 @@ public sealed class DispatchTripService
                 Remarks = updateRemarks
             };
 
-            _auditService?.AddEntry(
+            _auditService.AddEntry(
                 actor.UserId,
                 AuditActions.DispatchTripUpdated,
                 EntityTypes.DispatchTrip,
@@ -510,7 +511,7 @@ public sealed class DispatchTripService
 
         AddHistory(trip.Id, fromStatus, trip.Status, actor.UserId, command.Remarks, now);
 
-        _auditService?.AddEntry(
+        _auditService.AddEntry(
             actor.UserId,
             AuditActions.DispatchTripDispatched,
             EntityTypes.DispatchTrip,
@@ -529,7 +530,6 @@ public sealed class DispatchTripService
         CancellationToken cancellationToken = default)
     {
         var trip = await _dbContext.DispatchTrips
-            .Include(t => t.Documents)
             .FirstOrDefaultAsync(t => t.Id == command.TripId, cancellationToken);
 
         if (trip is null)
@@ -668,18 +668,18 @@ public sealed class DispatchTripService
                 throw new ConflictDomainException("Trip must be delivered before closing.");
             }
 
-            var podState = GetPodState(trip);
             if (_options.DocVerificationEnabled)
             {
-                if (podState != TripDocumentState.Verified)
+                var hasVerifiedPod = await _documentReadService.HasVerifiedPodAsync(trip.Id, cancellationToken);
+                if (!hasVerifiedPod)
                 {
                     throw new ConflictDomainException("Closing requires a verified POD.");
                 }
             }
             else
             {
-                var podUploaded = podState is TripDocumentState.Uploaded or TripDocumentState.Verified;
-                if (!podUploaded && !trip.PodPending)
+                var hasUploadedOrVerifiedPod = await _documentReadService.HasUploadedOrVerifiedPodAsync(trip.Id, cancellationToken);
+                if (!hasUploadedOrVerifiedPod && !trip.PodPending)
                 {
                     throw new ConflictDomainException("Closing requires POD upload or POD pending.");
                 }
@@ -709,15 +709,16 @@ public sealed class DispatchTripService
     }
 
     public async Task<Trip> CorrectStatusAsync(
-        Guid tripId,
-        TripStatus toStatus,
-        DateTime eventAt,
-        string remarks,
-        byte[] rowVersion,
+        CorrectDispatchTripStatusCommand command,
         DispatchActorContext actor,
         CancellationToken cancellationToken = default)
     {
         EnsureDispatcherOrManager(actor);
+
+        var tripId = command.TripId;
+        var toStatus = command.ToStatus;
+        var eventAt = command.EventAt;
+        var remarks = command.Remarks;
 
         if (string.IsNullOrWhiteSpace(remarks))
         {
@@ -732,7 +733,7 @@ public sealed class DispatchTripService
             throw new NotFoundException("Trip not found.");
         }
 
-        ApplyRowVersion(trip, rowVersion);
+        ApplyRowVersion(trip, command.RowVersion);
 
         EnsureTripAccess(trip, actor);
 
@@ -798,7 +799,7 @@ public sealed class DispatchTripService
         trip.UpdatedAt = DateTime.UtcNow;
         AddHistory(trip.Id, fromStatus, trip.Status, actor.UserId, remarks.Trim(), eventAt, TripHistoryEventType.StatusCorrected);
 
-        _auditService?.AddEntry(
+        _auditService.AddEntry(
             actor.UserId,
             AuditActions.DispatchTripStatusCorrected,
             EntityTypes.DispatchTrip,
@@ -815,182 +816,6 @@ public sealed class DispatchTripService
 
         await SaveChangesAsync(cancellationToken);
         return trip;
-    }
-
-    public async Task<TripDocument> UploadDocumentAsync(
-        UploadTripDocumentCommand command,
-        DispatchActorContext actor,
-        CancellationToken cancellationToken = default)
-    {
-        if (!actor.IsDriver)
-        {
-            throw new ForbiddenDomainException("Only drivers can upload trip documents.");
-        }
-
-        var trip = await _dbContext.DispatchTrips
-            .FirstOrDefaultAsync(t => t.Id == command.TripId, cancellationToken);
-
-        if (trip is null)
-        {
-            throw new NotFoundException("Trip not found.");
-        }
-
-        EnsureTripAccess(trip, actor);
-
-        if (trip.Status is TripStatus.Cancelled or TripStatus.Closed)
-        {
-            throw new ConflictDomainException("Documents cannot be uploaded for closed or cancelled trips.");
-        }
-
-        if (command.Type == TripDocumentType.Pod && trip.Status != TripStatus.Delivered)
-        {
-            throw new ConflictDomainException("POD can only be uploaded after delivery.");
-        }
-
-        if (string.IsNullOrWhiteSpace(command.StorageKey))
-        {
-            throw new BusinessRuleViolationException("Storage key is required.");
-        }
-
-        var now = DateTime.UtcNow;
-        var active = await _dbContext.DispatchTripDocuments
-            .FirstOrDefaultAsync(
-                d => d.TripId == trip.Id && d.Type == command.Type && d.IsActive,
-                cancellationToken);
-
-        if (active is not null)
-        {
-            active.IsActive = false;
-        }
-
-        var doc = new TripDocument
-        {
-            Id = Guid.NewGuid(),
-            TripId = trip.Id,
-            SupersedesDocumentId = active?.Id,
-            IsActive = true,
-            Type = command.Type,
-            State = TripDocumentState.Uploaded,
-            StorageKey = command.StorageKey,
-            UploadedByUserId = actor.UserId,
-            UploadedAt = now
-        };
-
-        _dbContext.DispatchTripDocuments.Add(doc);
-
-        _auditService?.AddEntry(
-            actor.UserId,
-            AuditActions.DispatchTripDocumentUploaded,
-            EntityTypes.DispatchTripDocument,
-            doc.Id,
-            null,
-            new { doc.Type, doc.State, TripId = trip.Id },
-            tripId: trip.Id);
-
-        await SaveChangesAsync(cancellationToken);
-        return doc;
-    }
-
-    public async Task<TripDocument> VerifyDocumentAsync(
-        VerifyTripDocumentCommand command,
-        DispatchActorContext actor,
-        CancellationToken cancellationToken = default)
-    {
-        if (!actor.IsManager && !actor.IsFinance)
-        {
-            throw new ForbiddenDomainException("Only finance or manager can verify documents.");
-        }
-
-        var doc = await _dbContext.DispatchTripDocuments
-            .Include(d => d.Trip)
-            .FirstOrDefaultAsync(d => d.Id == command.DocumentId && d.TripId == command.TripId, cancellationToken);
-
-        if (doc is null)
-        {
-            throw new NotFoundException("Document not found.");
-        }
-
-        if (doc.State != TripDocumentState.Uploaded)
-        {
-            throw new ConflictDomainException("Only uploaded documents can be verified.");
-        }
-
-        if (!doc.IsActive)
-        {
-            throw new ConflictDomainException("Only active documents can be verified.");
-        }
-
-        doc.State = TripDocumentState.Verified;
-        doc.VerifiedByUserId = actor.UserId;
-        doc.VerifiedAt = DateTime.UtcNow;
-        doc.RejectedByUserId = null;
-        doc.RejectedAt = null;
-
-        _auditService?.AddEntry(
-            actor.UserId,
-            AuditActions.DispatchTripDocumentVerified,
-            EntityTypes.DispatchTripDocument,
-            doc.Id,
-            null,
-            new { doc.Type, doc.State, TripId = doc.TripId },
-            tripId: doc.TripId);
-
-        await SaveChangesAsync(cancellationToken);
-        return doc;
-    }
-
-    public async Task<TripDocument> RejectDocumentAsync(
-        RejectTripDocumentCommand command,
-        DispatchActorContext actor,
-        CancellationToken cancellationToken = default)
-    {
-        if (!actor.IsManager && !actor.IsFinance)
-        {
-            throw new ForbiddenDomainException("Only finance or manager can reject documents.");
-        }
-
-        if (string.IsNullOrWhiteSpace(command.Remarks))
-        {
-            throw new BusinessRuleViolationException("Remarks are required to reject a document.");
-        }
-
-        var doc = await _dbContext.DispatchTripDocuments
-            .Include(d => d.Trip)
-            .FirstOrDefaultAsync(d => d.Id == command.DocumentId && d.TripId == command.TripId, cancellationToken);
-
-        if (doc is null)
-        {
-            throw new NotFoundException("Document not found.");
-        }
-
-        if (doc.State != TripDocumentState.Uploaded)
-        {
-            throw new ConflictDomainException("Only uploaded documents can be rejected.");
-        }
-
-        if (!doc.IsActive)
-        {
-            throw new ConflictDomainException("Only active documents can be rejected.");
-        }
-
-        doc.State = TripDocumentState.Rejected;
-        doc.RejectedByUserId = actor.UserId;
-        doc.RejectedAt = DateTime.UtcNow;
-        doc.VerifiedByUserId = null;
-        doc.VerifiedAt = null;
-        doc.Remarks = command.Remarks.Trim();
-
-        _auditService?.AddEntry(
-            actor.UserId,
-            AuditActions.DispatchTripDocumentRejected,
-            EntityTypes.DispatchTripDocument,
-            doc.Id,
-            null,
-            new { doc.Type, doc.State, TripId = doc.TripId },
-            tripId: doc.TripId);
-
-        await SaveChangesAsync(cancellationToken);
-        return doc;
     }
 
     private static void EnsureManager(DispatchActorContext actor)
@@ -1033,6 +858,11 @@ public sealed class DispatchTripService
         {
             throw new BusinessRuleViolationException("Scheduled pickup and dropoff times are required.");
         }
+
+        if (pickup.ScheduledAt.Value >= dropoff.ScheduledAt.Value)
+        {
+            throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
+        }
     }
 
     private static void ApplyNonDraftScheduleUpdate(
@@ -1052,6 +882,11 @@ public sealed class DispatchTripService
         if (!pickupInput.ScheduledAt.HasValue || !dropoffInput.ScheduledAt.HasValue)
         {
             throw new BusinessRuleViolationException("Scheduled pickup and dropoff times are required.");
+        }
+
+        if (pickupInput.ScheduledAt.Value >= dropoffInput.ScheduledAt.Value)
+        {
+            throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
         }
 
         var pickupStop = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
@@ -1393,10 +1228,24 @@ public sealed class DispatchTripService
             throw new BusinessRuleViolationException("Scheduled pickup and dropoff times are required.");
         }
 
+        if (pickup.Value >= dropoff.Value)
+        {
+            throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
+        }
+
         return (pickup.Value, dropoff.Value);
     }
 
-    private async Task<IReadOnlyCollection<Guid>> FindScheduleConflictsAsync(
+    private sealed record AssignmentConflictDetail(
+        Guid TripId,
+        Guid? DriverUserId,
+        string? DriverUsername,
+        Guid? TruckAssetId,
+        string? TruckAssetCode,
+        DateTime WindowStart,
+        DateTime WindowEnd);
+
+    private async Task<IReadOnlyCollection<AssignmentConflictDetail>> FindScheduleConflictsAsync(
         Guid tripId,
         Guid? driverUserId,
         Guid? truckAssetId,
@@ -1406,7 +1255,7 @@ public sealed class DispatchTripService
     {
         if (!driverUserId.HasValue && !truckAssetId.HasValue)
         {
-            return Array.Empty<Guid>();
+            return Array.Empty<AssignmentConflictDetail>();
         }
 
         var query = _dbContext.DispatchTrips
@@ -1430,11 +1279,22 @@ public sealed class DispatchTripService
             .Select(t => new
             {
                 t.Id,
+                t.DriverUserId,
+                DriverUsername = t.Driver != null ? t.Driver.Username : null,
+                t.TruckAssetId,
+                TruckAssetCode = t.TruckAsset != null ? t.TruckAsset.AssetCode : null,
                 Pickup = t.Stops.Where(s => s.StopType == TripStopType.Pickup).Select(s => s.ScheduledAt).FirstOrDefault(),
                 Dropoff = t.Stops.Where(s => s.StopType == TripStopType.Dropoff).Select(s => s.ScheduledAt).FirstOrDefault()
             })
             .Where(t => t.Pickup.HasValue && t.Dropoff.HasValue && t.Pickup.Value < dropoffAt && t.Dropoff.Value > pickupAt)
-            .Select(t => t.Id)
+            .Select(t => new AssignmentConflictDetail(
+                t.Id,
+                t.DriverUserId,
+                t.DriverUsername,
+                t.TruckAssetId,
+                t.TruckAssetCode,
+                t.Pickup!.Value,
+                t.Dropoff!.Value))
             .ToListAsync(cancellationToken);
     }
 
@@ -1463,7 +1323,8 @@ public sealed class DispatchTripService
 
         if (!actor.IsManager)
         {
-            throw new ConflictDomainException($"Driver or truck is already assigned during this window. Conflicts: {string.Join(", ", conflicts)}");
+            var summary = BuildConflictSummary(conflicts);
+            throw new ConflictDomainException(summary, BuildConflictDetails(summary, conflicts));
         }
 
         if (string.IsNullOrWhiteSpace(remarks))
@@ -1471,7 +1332,7 @@ public sealed class DispatchTripService
             throw new BusinessRuleViolationException("Remarks are required to override assignment conflicts.");
         }
 
-        _auditService?.AddEntry(
+        _auditService.AddEntry(
             actor.UserId,
             AuditActions.DispatchTripConflictOverride,
             EntityTypes.DispatchTrip,
@@ -1483,16 +1344,89 @@ public sealed class DispatchTripService
                 TruckAssetId = truckAssetId,
                 PickupAt = pickupAt,
                 DropoffAt = dropoffAt,
-                ConflictTripIds = conflicts,
+                Conflicts = conflicts.Select(conflict => new
+                {
+                    conflict.TripId,
+                    conflict.DriverUserId,
+                    conflict.DriverUsername,
+                    conflict.TruckAssetId,
+                    conflict.TruckAssetCode,
+                    conflict.WindowStart,
+                    conflict.WindowEnd
+                }).ToList(),
                 Remarks = remarks.Trim()
             },
             tripId: tripId);
     }
 
-    private static TripDocumentState? GetPodState(Trip trip)
+    private static object BuildConflictDetails(
+        string summary,
+        IReadOnlyCollection<AssignmentConflictDetail> conflicts)
     {
-        var pod = trip.Documents.FirstOrDefault(d => d.Type == TripDocumentType.Pod && d.IsActive);
-        return pod?.State;
+        return new
+        {
+            Summary = summary,
+            Conflicts = conflicts.Select(conflict => new
+            {
+                conflict.TripId,
+                TripReference = BuildTripReference(conflict.TripId),
+                conflict.DriverUserId,
+                conflict.DriverUsername,
+                conflict.TruckAssetId,
+                conflict.TruckAssetCode,
+                WindowStart = conflict.WindowStart,
+                WindowEnd = conflict.WindowEnd,
+                Message = BuildConflictItemMessage(conflict)
+            }).ToList()
+        };
+    }
+
+    private static string BuildConflictSummary(IReadOnlyCollection<AssignmentConflictDetail> conflicts)
+    {
+        if (conflicts.Count == 1)
+        {
+            var conflict = conflicts.First();
+            return $"{BuildAssignmentLabel(conflict)} is already assigned from {conflict.WindowStart:HH:mm} to {conflict.WindowEnd:HH:mm}.";
+        }
+
+        return "Scheduling conflict: the selected driver or truck is already assigned in overlapping windows.";
+    }
+
+    private static string BuildConflictItemMessage(AssignmentConflictDetail conflict)
+    {
+        return $"{BuildAssignmentLabel(conflict)} is assigned to Trip {BuildTripReference(conflict.TripId)} from {conflict.WindowStart:HH:mm} to {conflict.WindowEnd:HH:mm}.";
+    }
+
+    private static string BuildAssignmentLabel(AssignmentConflictDetail conflict)
+    {
+        var driverLabel = !string.IsNullOrWhiteSpace(conflict.DriverUsername)
+            ? $"Driver {conflict.DriverUsername}"
+            : null;
+        var truckLabel = !string.IsNullOrWhiteSpace(conflict.TruckAssetCode)
+            ? $"truck {conflict.TruckAssetCode}"
+            : null;
+
+        if (!string.IsNullOrWhiteSpace(driverLabel) && !string.IsNullOrWhiteSpace(truckLabel))
+        {
+            return $"{driverLabel} or {truckLabel}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(driverLabel))
+        {
+            return driverLabel;
+        }
+
+        if (!string.IsNullOrWhiteSpace(truckLabel))
+        {
+            return truckLabel;
+        }
+
+        return "The selected assignment";
+    }
+
+    private static string BuildTripReference(Guid tripId)
+    {
+        return tripId.ToString("N").Substring(0, 8).ToUpperInvariant();
     }
 
     private async Task<TripStatus?> GetFailedAttemptResumeStatusAsync(Guid tripId, CancellationToken cancellationToken)
@@ -1538,7 +1472,7 @@ public sealed class DispatchTripService
             _ => AuditActions.DispatchTripStatusChanged
         };
 
-        _auditService?.AddEntry(
+        _auditService.AddEntry(
             actorUserId,
             action,
             EntityTypes.DispatchTrip,
@@ -1724,3 +1658,4 @@ public sealed class DispatchTripService
         _dbContext.Entry(trip).Property(t => t.RowVersion).OriginalValue = rowVersion;
     }
 }
+

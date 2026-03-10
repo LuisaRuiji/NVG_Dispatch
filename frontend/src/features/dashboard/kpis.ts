@@ -48,71 +48,68 @@ export async function fetchDashboardKpis(me: Me, force = false): Promise<Dashboa
   const isCeo = roles.includes("CEO");
 
   const tasks: Promise<[keyof DashboardKpis, number | null]>[] = [];
+  const toKpiTask = <K extends keyof DashboardKpis>(
+    keyName: K,
+    valueTask: Promise<number>
+  ): Promise<[keyof DashboardKpis, number | null]> =>
+    valueTask
+      .then((count): [keyof DashboardKpis, number] => [keyName, count])
+      .catch((): [keyof DashboardKpis, null] => [keyName, null]);
 
   if (isDriver) {
     tasks.push(
-      fetchPagedTotal(
-        `/api/requests?requesterUserId=${encodeURIComponent(me.userId)}&page=1&pageSize=1`
+      toKpiTask(
+        "myRequestsCount",
+        fetchPagedTotal(`/api/requests?requesterUserId=${encodeURIComponent(me.userId)}&page=1&pageSize=1`)
       )
-        .then((count) => ["myRequestsCount", count])
-        .catch(() => ["myRequestsCount", null])
     );
   }
 
   if (isIo) {
     tasks.push(
-      fetchPagedTotal("/api/requests?status=PENDING_IO&page=1&pageSize=1")
-        .then((count) => ["pendingIoCount", count])
-        .catch(() => ["pendingIoCount", null])
+      toKpiTask("pendingIoCount", fetchPagedTotal("/api/requests?status=PENDING_IO&page=1&pageSize=1"))
     );
     tasks.push(
-      fetchPagedTotal("/api/requests?status=APPROVED&page=1&pageSize=1")
-        .then((count) => ["awaitingIssueCount", count])
-        .catch(() => ["awaitingIssueCount", null])
+      toKpiTask("awaitingIssueCount", fetchPagedTotal("/api/requests?status=APPROVED&page=1&pageSize=1"))
     );
     tasks.push(
-      fetchPagedTotal("/api/loans?status=OPEN,PARTIALLY_RETURNED&page=1&pageSize=1")
-        .then((count) => ["openLoansCount", count])
-        .catch(() => ["openLoansCount", null])
+      toKpiTask("openLoansCount", fetchPagedTotal("/api/loans?status=OPEN,PARTIALLY_RETURNED&page=1&pageSize=1"))
     );
     tasks.push(
-      api<unknown[]>("/api/reports/low-stock", { method: "GET" })
-        .then((rows) => ["lowStockCount", rows.length ?? 0])
-        .catch(() => ["lowStockCount", null])
+      toKpiTask(
+        "lowStockCount",
+        api<unknown[]>("/api/reports/low-stock", { method: "GET" }).then((rows) => rows.length ?? 0)
+      )
     );
   }
 
   if (isManager) {
     tasks.push(
-      fetchPagedTotal("/api/requests?status=PENDING_MANAGER&page=1&pageSize=1")
-        .then((count) => ["pendingManagerCount", count])
-        .catch(() => ["pendingManagerCount", null])
+      toKpiTask("pendingManagerCount", fetchPagedTotal("/api/requests?status=PENDING_MANAGER&page=1&pageSize=1"))
     );
     tasks.push(
-      fetchPagedTotal("/api/loans?status=OPEN,PARTIALLY_RETURNED&page=1&pageSize=1")
-        .then((count) => ["openLoansCount", count])
-        .catch(() => ["openLoansCount", null])
+      toKpiTask("openLoansCount", fetchPagedTotal("/api/loans?status=OPEN,PARTIALLY_RETURNED&page=1&pageSize=1"))
     );
     tasks.push(
-      api<unknown[]>("/api/reports/low-stock", { method: "GET" })
-        .then((rows) => ["lowStockCount", rows.length ?? 0])
-        .catch(() => ["lowStockCount", null])
+      toKpiTask(
+        "lowStockCount",
+        api<unknown[]>("/api/reports/low-stock", { method: "GET" }).then((rows) => rows.length ?? 0)
+      )
     );
   }
 
   if (isFinance) {
     tasks.push(
-      fetchPagedTotal("/api/purchase-orders?status=PENDING_FINANCE&page=1&pageSize=1")
-        .then((count) => ["pendingFinancePoCount", count])
-        .catch(() => ["pendingFinancePoCount", null])
+      toKpiTask(
+        "pendingFinancePoCount",
+        fetchPagedTotal("/api/purchase-orders?status=PENDING_FINANCE&page=1&pageSize=1")
+      )
     );
   }
 
   if (isCeo) {
     tasks.push(
-      fetchPagedTotal("/api/purchase-orders?status=PENDING_CEO&page=1&pageSize=1")
-        .then((count) => ["pendingCeoPoCount", count])
-        .catch(() => ["pendingCeoPoCount", null])
+      toKpiTask("pendingCeoPoCount", fetchPagedTotal("/api/purchase-orders?status=PENDING_CEO&page=1&pageSize=1"))
     );
   }
 

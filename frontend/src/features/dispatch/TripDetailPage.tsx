@@ -8,7 +8,7 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
-import { api } from "@/lib/api";
+import { ApiRequestError, api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import { getMe } from "@/features/auth/authStore";
 import type {
@@ -48,6 +48,23 @@ type CorrectStatusForm = {
 
 type VersionStateFilter = "ALL" | "UPLOADED" | "VERIFIED" | "REJECTED";
 
+type AssignmentConflictItem = {
+  tripId?: string;
+  tripReference?: string;
+  driverUserId?: string | null;
+  driverUsername?: string | null;
+  truckAssetId?: string | null;
+  truckAssetCode?: string | null;
+  windowStart?: string;
+  windowEnd?: string;
+  message?: string;
+};
+
+type AssignmentConflictState = {
+  summary: string;
+  conflicts: AssignmentConflictItem[];
+};
+
 type ActionModal =
   | { type: "HOLD"; remarks: string; eventAt: string }
   | { type: "FAILED"; remarks: string; eventAt: string }
@@ -85,6 +102,75 @@ const fromLocalInput = (value: string) => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
+const toTitleCaseKey = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
+
+const readValue = (source: Record<string, unknown>, key: string) =>
+  source[key] ?? source[toTitleCaseKey(key)];
+
+const formatWindowRange = (startRaw?: string, endRaw?: string) => {
+  if (!startRaw || !endRaw) return null;
+  const start = new Date(startRaw);
+  const end = new Date(endRaw);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return `${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} to ${end.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  })}`;
+};
+
+const buildConflictLine = (item: AssignmentConflictItem) => {
+  if (item.message) {
+    return item.message;
+  }
+
+  const driver = item.driverUsername ? `Driver ${item.driverUsername}` : null;
+  const truck = item.truckAssetCode ? `truck ${item.truckAssetCode}` : null;
+  const assignment = driver && truck ? `${driver} or ${truck}` : driver ?? truck ?? "Selected assignment";
+  const tripRef = item.tripReference ? `Trip ${item.tripReference}` : "another trip";
+  const window = formatWindowRange(item.windowStart, item.windowEnd);
+  return window
+    ? `${assignment} is assigned to ${tripRef} from ${window}.`
+    : `${assignment} is assigned to ${tripRef}.`;
+};
+
+const parseAssignmentConflict = (error: unknown): AssignmentConflictState | null => {
+  if (!(error instanceof ApiRequestError)) {
+    return null;
+  }
+
+  if (error.errorCode !== "CONFLICT" || !error.details || typeof error.details !== "object") {
+    return null;
+  }
+
+  const details = error.details as Record<string, unknown>;
+  const rawConflicts = readValue(details, "conflicts");
+  if (!Array.isArray(rawConflicts)) {
+    return null;
+  }
+
+  const conflicts = rawConflicts.map((entry) => {
+    const item = (entry ?? {}) as Record<string, unknown>;
+    return {
+      tripId: String(readValue(item, "tripId") ?? ""),
+      tripReference: String(readValue(item, "tripReference") ?? ""),
+      driverUserId: readValue(item, "driverUserId") ? String(readValue(item, "driverUserId")) : null,
+      driverUsername: readValue(item, "driverUsername") ? String(readValue(item, "driverUsername")) : null,
+      truckAssetId: readValue(item, "truckAssetId") ? String(readValue(item, "truckAssetId")) : null,
+      truckAssetCode: readValue(item, "truckAssetCode") ? String(readValue(item, "truckAssetCode")) : null,
+      windowStart: readValue(item, "windowStart") ? String(readValue(item, "windowStart")) : undefined,
+      windowEnd: readValue(item, "windowEnd") ? String(readValue(item, "windowEnd")) : undefined,
+      message: readValue(item, "message") ? String(readValue(item, "message")) : undefined
+    } as AssignmentConflictItem;
+  });
+
+  const summaryRaw = readValue(details, "summary");
+  const summary = typeof summaryRaw === "string" && summaryRaw.trim().length > 0
+    ? summaryRaw
+    : error.message;
+
+  return { summary, conflicts };
+};
+
 export default function TripDetailPage() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -118,6 +204,7 @@ export default function TripDetailPage() {
   const [versionType, setVersionType] = useState<TripDocumentType>("POD");
   const [versionState, setVersionState] = useState<VersionStateFilter>("ALL");
   const [linkKey, setLinkKey] = useState<string | null>(null);
+  const [assignmentConflict, setAssignmentConflict] = useState<AssignmentConflictState | null>(null);
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
     pickupLocation: "",
@@ -153,6 +240,7 @@ export default function TripDetailPage() {
       setSummary(summaryData);
       setDocuments(docs ?? []);
       setTimeline(history ?? []);
+      setAssignmentConflict(null);
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to load trip detail.", "error");
@@ -317,6 +405,7 @@ export default function TripDetailPage() {
       return false;
     }
     try {
+      setAssignmentConflict(null);
       setScheduleSaving(true);
       await api(`/api/dispatch/trips/${tripId}`, {
         method: "PUT",
@@ -337,7 +426,13 @@ export default function TripDetailPage() {
       return true;
     } catch (e: any) {
       console.error(e);
-      show(e?.message ?? "Failed to update schedule.", "error");
+      const conflict = parseAssignmentConflict(e);
+      if (conflict) {
+        setAssignmentConflict(conflict);
+        show(conflict.summary, "error");
+      } else {
+        show(e?.message ?? "Failed to update schedule.", "error");
+      }
       return false;
     } finally {
       setScheduleSaving(false);
@@ -357,6 +452,7 @@ export default function TripDetailPage() {
     const saved = await handleSaveSchedule(true);
     if (!saved) return;
     try {
+      setAssignmentConflict(null);
       setDispatching(true);
       await api(`/api/dispatch/trips/${tripId}/dispatch`, {
         method: "POST",
@@ -371,7 +467,13 @@ export default function TripDetailPage() {
       await fetchTrip();
     } catch (e: any) {
       console.error(e);
-      show(e?.message ?? "Failed to dispatch trip.", "error");
+      const conflict = parseAssignmentConflict(e);
+      if (conflict) {
+        setAssignmentConflict(conflict);
+        show(conflict.summary, "error");
+      } else {
+        show(e?.message ?? "Failed to dispatch trip.", "error");
+      }
     } finally {
       setDispatching(false);
     }
@@ -813,6 +915,18 @@ export default function TripDetailPage() {
               <h3 className="text-sm font-semibold">Stops & Schedule</h3>
               <span className="text-xs text-muted-foreground">{trip.stops.length} stop(s)</span>
             </div>
+            {assignmentConflict ? (
+              <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm">
+                <p className="font-semibold text-rose-700">{assignmentConflict.summary}</p>
+                {assignmentConflict.conflicts.length > 0 ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-rose-700">
+                    {assignmentConflict.conflicts.map((item, index) => (
+                      <li key={`${item.tripId ?? item.tripReference ?? "conflict"}-${index}`}>{buildConflictLine(item)}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 text-sm">
               <div
                 className={`rounded-lg border px-4 py-3 ${

@@ -1,4 +1,12 @@
-import type { InventoryItemDto } from "../../lib/api/types";
+type InventoryItemDto = {
+  id: string;
+  sku: string;
+  name: string;
+  itemType: "CONSUMABLE" | "NON_CONSUMABLE";
+  quantity: number;
+  location: string;
+  reorderPoint: number;
+};
 
 const sampleItems: InventoryItemDto[] = [
   {

@@ -49,7 +49,7 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular"]
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular"]
       },
       boxShadow: {
         card: "0 12px 24px -18px rgba(15, 23, 42, 0.25)"

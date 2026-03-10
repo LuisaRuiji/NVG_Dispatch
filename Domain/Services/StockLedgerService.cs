@@ -203,7 +203,18 @@ public sealed class StockLedgerService
         {
             if (ownsTransaction && transaction is not null)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                try
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Preserve the original application exception when transaction resources are already disposed.
+                }
+                catch (InvalidOperationException)
+                {
+                    // Preserve the original application exception when the transaction is already completed.
+                }
             }
             throw;
         }

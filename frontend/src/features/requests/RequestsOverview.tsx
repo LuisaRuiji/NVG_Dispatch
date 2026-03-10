@@ -1,4 +1,11 @@
-import type { RequestDto } from "../../lib/api/types";
+type RequestDto = {
+  id: string;
+  type: "MAINTENANCE_ISSUE" | "BORROW" | "ADJUSTMENT_DAMAGE_LOSS";
+  status: "DRAFT" | "SUBMITTED" | "PENDING_IO" | "PENDING_MANAGER" | "APPROVED" | "ISSUED" | "CLOSED" | "REJECTED";
+  createdAt: string;
+  requestor: string;
+  lines: number;
+};
 
 const sampleRequests: RequestDto[] = [
   {
@@ -44,7 +51,7 @@ export default function RequestsOverview() {
             <div>
               <p className="list-title">{request.id}</p>
               <p className="list-meta">
-                {request.type.replace(/_/g, " ")} · {request.lines} lines · {request.requestor}
+                {request.type.replace(/_/g, " ")} ï¿½ {request.lines} lines ï¿½ {request.requestor}
               </p>
             </div>
             <span className="pill pill-slate">{request.status.replace(/_/g, " ")}</span>

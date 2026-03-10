@@ -30,9 +30,17 @@ public sealed record DispatchTripListItem(
     string? DropoffLocation,
     DateTime? PickupScheduledAt,
     DateTime? DropoffScheduledAt,
+    DateTime? PlannedStart,
+    DateTime? PlannedEnd,
+    int? PlannedDurationMinutes,
     bool LatePickup,
     bool LateDelivery,
     int? OnHoldMinutes,
+    TripDocumentState PodState,
+    bool CloseDocumentReady,
+    int MissingRequiredDocumentCount,
+    int RejectedRequiredDocumentCount,
+    string? CloseDocumentBlockReason,
     byte[] RowVersion,
     TripStatus? HoldPreviousStatus,
     TripStatus? FailedAttemptFromStatus,
@@ -75,16 +83,44 @@ public sealed record DispatchTripSummary(
     int RequiredDocumentCount,
     IReadOnlyCollection<DispatchTripDocumentChecklist> Documents,
     TripDocumentState PodState,
+    bool CloseDocumentReady,
+    int MissingRequiredDocumentCount,
+    int RejectedRequiredDocumentCount,
+    string? CloseDocumentBlockReason,
     Guid? CreatedByUserId,
     string? CreatedByUsername,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     DateTime? PickupScheduledAt,
     DateTime? DropoffScheduledAt,
+    DateTime? PlannedStart,
+    DateTime? PlannedEnd,
+    int? PlannedDurationMinutes,
     bool LatePickup,
     bool LateDelivery,
     int? OnHoldMinutes,
     byte[] RowVersion);
+
+public sealed record DispatchAssignmentDayTripItem(
+    Guid TripId,
+    string TripReference,
+    TripStatus Status,
+    Guid CustomerId,
+    string CustomerName,
+    Guid? DriverUserId,
+    string? DriverUsername,
+    Guid? TruckAssetId,
+    string? TruckAssetCode,
+    DateTime PlannedStart,
+    DateTime PlannedEnd,
+    int PlannedDurationMinutes,
+    bool HasOverlap);
+
+public sealed record DispatchAssignmentDayGroup(
+    string GroupKey,
+    string GroupLabel,
+    bool HasOverlap,
+    IReadOnlyCollection<DispatchAssignmentDayTripItem> Trips);
 
 public sealed class DispatchTripQueryService
 {
@@ -187,6 +223,74 @@ public sealed class DispatchTripQueryService
         return await ExecuteTripListQueryAsync(query, requiredTypes, page, pageSize, cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<DispatchAssignmentDayGroup>> GetAssignmentDayViewAsync(
+        DateOnly day,
+        DispatchAssignmentGroupBy groupBy,
+        DispatchActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMonitoringAccess(actor);
+
+        var dayStart = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var dayEnd = dayStart.AddDays(1);
+
+        var rows = await _builder.Base(actor)
+            .Where(t => t.Status != TripStatus.Closed && t.Status != TripStatus.Cancelled)
+            .Select(t => new
+            {
+                t.Id,
+                t.Status,
+                t.CustomerId,
+                CustomerName = t.Customer != null ? t.Customer.Name : string.Empty,
+                t.DriverUserId,
+                DriverUsername = t.Driver != null ? t.Driver.Username : null,
+                t.TruckAssetId,
+                TruckAssetCode = t.TruckAsset != null ? t.TruckAsset.AssetCode : null,
+                PlannedStart = _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
+                    .Select(s => s.ScheduledAt)
+                    .FirstOrDefault(),
+                PlannedEnd = _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
+                    .Select(s => s.ScheduledAt)
+                    .FirstOrDefault()
+            })
+            .Where(item =>
+                item.PlannedStart.HasValue &&
+                item.PlannedEnd.HasValue &&
+                item.PlannedStart.Value < dayEnd &&
+                item.PlannedEnd.Value > dayStart)
+            .ToListAsync(cancellationToken);
+
+        var items = rows
+            .Select(item =>
+            {
+                var plannedDurationMinutes = (int)Math.Floor((item.PlannedEnd!.Value - item.PlannedStart!.Value).TotalMinutes);
+                if (plannedDurationMinutes < 0)
+                {
+                    plannedDurationMinutes = 0;
+                }
+
+                return new DispatchAssignmentDayTripItem(
+                    item.Id,
+                    BuildTripReference(item.Id),
+                    item.Status,
+                    item.CustomerId,
+                    item.CustomerName,
+                    item.DriverUserId,
+                    item.DriverUsername,
+                    item.TruckAssetId,
+                    item.TruckAssetCode,
+                    item.PlannedStart.Value,
+                    item.PlannedEnd.Value,
+                    plannedDurationMinutes,
+                    false);
+            })
+            .ToList();
+
+        return BuildAssignmentDayGroups(items, groupBy);
+    }
+
     public async Task<DispatchTripDetail> GetTripDetailAsync(
         Guid tripId,
         DispatchActorContext actor,
@@ -232,7 +336,6 @@ public sealed class DispatchTripQueryService
             throw new NotFoundException("Trip not found.");
         }
 
-        var podState = await GetActivePodStateAsync(tripId, cancellationToken);
         var createdBy = await _dbContext.AuditLogs
             .AsNoTracking()
             .Where(log =>
@@ -260,13 +363,20 @@ public sealed class DispatchTripQueryService
             item.UploadedDocumentCount,
             item.RequiredDocumentCount,
             item.Documents,
-            podState,
+            item.PodState,
+            item.CloseDocumentReady,
+            item.MissingRequiredDocumentCount,
+            item.RejectedRequiredDocumentCount,
+            item.CloseDocumentBlockReason,
             createdBy?.ActorUserId,
             createdBy?.Username,
             item.CreatedAt,
             item.UpdatedAt,
             item.PickupScheduledAt,
             item.DropoffScheduledAt,
+            item.PlannedStart,
+            item.PlannedEnd,
+            item.PlannedDurationMinutes,
             item.LatePickup,
             item.LateDelivery,
             item.OnHoldMinutes,
@@ -354,8 +464,16 @@ public sealed class DispatchTripQueryService
                     .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
                     .Select(s => s.ScheduledAt)
                     .FirstOrDefault(),
+                null,
+                null,
+                null,
                 false,
                 false,
+                null,
+                TripDocumentState.Missing,
+                false,
+                0,
+                0,
                 null,
                 t.RowVersion,
                 t.HoldPreviousStatus,
@@ -372,6 +490,8 @@ public sealed class DispatchTripQueryService
             .ToListAsync(cancellationToken);
 
         var enriched = await AttachDocumentChecklistAsync(results, requiredTypes, cancellationToken);
+        enriched = AttachDocumentReadiness(enriched);
+        enriched = AttachPlannedWindow(enriched);
         enriched = AttachOperationalIndicators(enriched);
         return new PagedQueryResult<DispatchTripListItem>(enriched, total);
     }
@@ -613,6 +733,30 @@ public sealed class DispatchTripQueryService
             trip.RowVersion);
     }
 
+    private static List<DispatchTripListItem> AttachPlannedWindow(List<DispatchTripListItem> items)
+    {
+        return items
+            .Select(item =>
+            {
+                int? plannedDurationMinutes = null;
+                if (item.PickupScheduledAt.HasValue &&
+                    item.DropoffScheduledAt.HasValue &&
+                    item.DropoffScheduledAt.Value > item.PickupScheduledAt.Value)
+                {
+                    plannedDurationMinutes = (int)Math.Floor(
+                        (item.DropoffScheduledAt.Value - item.PickupScheduledAt.Value).TotalMinutes);
+                }
+
+                return item with
+                {
+                    PlannedStart = item.PickupScheduledAt,
+                    PlannedEnd = item.DropoffScheduledAt,
+                    PlannedDurationMinutes = plannedDurationMinutes
+                };
+            })
+            .ToList();
+    }
+
     private static List<DispatchTripListItem> AttachOperationalIndicators(List<DispatchTripListItem> items)
     {
         var now = DateTime.UtcNow;
@@ -690,6 +834,73 @@ public sealed class DispatchTripQueryService
         return idx >= 0 && idx < deliveredIdx;
     }
 
+    private static IReadOnlyCollection<DispatchAssignmentDayGroup> BuildAssignmentDayGroups(
+        IReadOnlyCollection<DispatchAssignmentDayTripItem> items,
+        DispatchAssignmentGroupBy groupBy)
+    {
+        if (items.Count == 0)
+        {
+            return Array.Empty<DispatchAssignmentDayGroup>();
+        }
+
+        string ResolveGroupKey(DispatchAssignmentDayTripItem item)
+        {
+            return groupBy == DispatchAssignmentGroupBy.Driver
+                ? item.DriverUserId?.ToString() ?? "UNASSIGNED_DRIVER"
+                : item.TruckAssetId?.ToString() ?? "UNASSIGNED_TRUCK";
+        }
+
+        string ResolveGroupLabel(DispatchAssignmentDayTripItem item)
+        {
+            return groupBy == DispatchAssignmentGroupBy.Driver
+                ? item.DriverUsername ?? "Unassigned Driver"
+                : item.TruckAssetCode ?? "Unassigned Truck";
+        }
+
+        var grouped = items
+            .GroupBy(ResolveGroupKey)
+            .Select(group =>
+            {
+                var ordered = group
+                    .OrderBy(item => item.PlannedStart)
+                    .ThenBy(item => item.PlannedEnd)
+                    .ToList();
+
+                var overlapFlags = new bool[ordered.Count];
+                for (var i = 0; i < ordered.Count; i++)
+                {
+                    for (var j = i + 1; j < ordered.Count; j++)
+                    {
+                        if (ordered[i].PlannedStart < ordered[j].PlannedEnd &&
+                            ordered[i].PlannedEnd > ordered[j].PlannedStart)
+                        {
+                            overlapFlags[i] = true;
+                            overlapFlags[j] = true;
+                        }
+                    }
+                }
+
+                var mappedTrips = ordered
+                    .Select((item, index) => item with { HasOverlap = overlapFlags[index] })
+                    .ToList();
+
+                return new DispatchAssignmentDayGroup(
+                    group.Key,
+                    ResolveGroupLabel(ordered[0]),
+                    mappedTrips.Any(item => item.HasOverlap),
+                    mappedTrips);
+            })
+            .OrderBy(group => group.GroupLabel)
+            .ToList();
+
+        return grouped;
+    }
+
+    private static string BuildTripReference(Guid tripId)
+    {
+        return tripId.ToString("N").Substring(0, 8).ToUpperInvariant();
+    }
+
     private static void EnsureMonitoringAccess(DispatchActorContext actor)
     {
         if (actor.IsManager || actor.IsDispatcher || actor.IsCeo)
@@ -698,17 +909,6 @@ public sealed class DispatchTripQueryService
         }
 
         throw new ForbiddenDomainException("Monitoring access denied.");
-    }
-
-    private async Task<TripDocumentState> GetActivePodStateAsync(Guid tripId, CancellationToken cancellationToken)
-    {
-        var state = await _dbContext.DispatchTripDocuments
-            .AsNoTracking()
-            .Where(d => d.TripId == tripId && d.IsActive && d.Type == TripDocumentType.Pod)
-            .Select(d => (TripDocumentState?)d.State)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return state ?? TripDocumentState.Missing;
     }
 
     private async Task<PagedQueryResult<DispatchTripListItem>> ExecuteTripListQueryAsync(
@@ -761,8 +961,16 @@ public sealed class DispatchTripQueryService
                     .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
                     .Select(s => s.ScheduledAt)
                     .FirstOrDefault(),
+                null,
+                null,
+                null,
                 false,
                 false,
+                null,
+                TripDocumentState.Missing,
+                false,
+                0,
+                0,
                 null,
                 t.RowVersion,
                 t.HoldPreviousStatus,
@@ -779,6 +987,8 @@ public sealed class DispatchTripQueryService
             .ToListAsync(cancellationToken);
 
         var enriched = await AttachDocumentChecklistAsync(results, requiredTypes, cancellationToken);
+        enriched = AttachDocumentReadiness(enriched);
+        enriched = AttachPlannedWindow(enriched);
         enriched = AttachOperationalIndicators(enriched);
         return new PagedQueryResult<DispatchTripListItem>(enriched, total);
     }
@@ -834,5 +1044,51 @@ public sealed class DispatchTripQueryService
         }
 
         return list;
+    }
+
+    private List<DispatchTripListItem> AttachDocumentReadiness(List<DispatchTripListItem> items)
+    {
+        return items.Select(item =>
+        {
+            var podState = item.Documents
+                .FirstOrDefault(doc => doc.Type == TripDocumentType.Pod)?.State
+                ?? TripDocumentState.Missing;
+            var missingRequiredCount = item.Documents.Count(doc => doc.State == TripDocumentState.Missing);
+            var rejectedRequiredCount = item.Documents.Count(doc => doc.State == TripDocumentState.Rejected);
+
+            var closeDocumentReady = IsCloseDocumentReady(podState, item.PodPending);
+            var closeDocumentBlockReason = closeDocumentReady ? null : GetCloseDocumentBlockReason();
+
+            return item with
+            {
+                PodState = podState,
+                CloseDocumentReady = closeDocumentReady,
+                MissingRequiredDocumentCount = missingRequiredCount,
+                RejectedRequiredDocumentCount = rejectedRequiredCount,
+                CloseDocumentBlockReason = closeDocumentBlockReason
+            };
+        }).ToList();
+    }
+
+    private bool IsCloseDocumentReady(TripDocumentState podState, bool podPending)
+    {
+        if (_options.DocVerificationEnabled)
+        {
+            return podState == TripDocumentState.Verified;
+        }
+
+        return podState is TripDocumentState.Uploaded or TripDocumentState.Verified || podPending;
+    }
+
+    private string GetCloseDocumentBlockReason()
+    {
+        if (_options.DocVerificationEnabled)
+        {
+            return "POD must be verified.";
+        }
+
+        return _options.AllowPodPendingOverride
+            ? "POD must be uploaded or POD pending override must be set."
+            : "POD must be uploaded.";
     }
 }

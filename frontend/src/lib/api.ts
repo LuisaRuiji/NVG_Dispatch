@@ -20,6 +20,7 @@ type ApiErrorPayload = {
   errorCode?: string;
   message?: string;
   traceId?: string;
+  details?: unknown;
   errors?: Record<string, string[]>;
 };
 
@@ -27,6 +28,7 @@ export class ApiRequestError extends Error {
   status: number;
   errorCode?: string;
   traceId?: string;
+  details?: unknown;
   validationErrors?: Record<string, string[]>;
   raw?: string;
 
@@ -36,6 +38,7 @@ export class ApiRequestError extends Error {
     this.status = status;
     this.errorCode = payload?.errorCode;
     this.traceId = payload?.traceId;
+    this.details = payload?.details;
     this.validationErrors = payload?.errors;
     this.raw = raw;
   }
@@ -54,6 +57,7 @@ function normalizePayload(raw: string): ApiErrorPayload | null {
         errorCode: parsed.errorCode ?? asAny.ErrorCode,
         message: parsed.message ?? asAny.Message,
         traceId: parsed.traceId ?? asAny.TraceId,
+        details: parsed.details ?? asAny.Details,
         errors: parsed.errors ?? asAny.Errors
       };
     }

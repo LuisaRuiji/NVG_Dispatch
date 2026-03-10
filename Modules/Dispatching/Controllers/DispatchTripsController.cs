@@ -7,6 +7,7 @@ using NVGInventory.Domain.Enums;
 using NVGInventory.Security;
 using NVGInventory.Controllers;
 using NVGInventory.Modules.Dispatching;
+using NVGInventory.Modules.Dispatching.Contracts;
 using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.Dispatching.Services;
 
@@ -17,16 +18,19 @@ namespace NVGInventory.Modules.Dispatching.Controllers;
 [Authorize]
 public sealed class DispatchTripsController : ControllerBase
 {
-    private readonly DispatchTripService _tripService;
+    private readonly ITripLifecycleService _tripLifecycleService;
+    private readonly IDispatchDocumentWorkflowService _documentWorkflowService;
     private readonly DispatchTripQueryService _queryService;
     private readonly DispatchingOptions _options;
 
     public DispatchTripsController(
-        DispatchTripService tripService,
+        ITripLifecycleService tripLifecycleService,
+        IDispatchDocumentWorkflowService documentWorkflowService,
         DispatchTripQueryService queryService,
         IOptions<DispatchingOptions> options)
     {
-        _tripService = tripService;
+        _tripLifecycleService = tripLifecycleService;
+        _documentWorkflowService = documentWorkflowService;
         _queryService = queryService;
         _options = options.Value ?? new DispatchingOptions();
     }
@@ -205,6 +209,53 @@ public sealed class DispatchTripsController : ControllerBase
             resolvedPageSize));
     }
 
+    [HttpGet("assignment-day")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Ceo}")]
+    public async Task<ActionResult<DispatchAssignmentDayViewResponse>> GetAssignmentDayView(
+        [FromQuery] DateOnly? day,
+        [FromQuery] string? groupBy,
+        CancellationToken cancellationToken)
+    {
+        var resolvedDay = day ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var resolvedGroupBy = DispatchAssignmentGroupBy.Driver;
+        if (!string.IsNullOrWhiteSpace(groupBy))
+        {
+            if (!TryParseAssignmentGroupBy(groupBy, out resolvedGroupBy))
+            {
+                return BadRequest("groupBy must be either 'driver' or 'truck'.");
+            }
+        }
+
+        var groups = await _queryService.GetAssignmentDayViewAsync(
+            resolvedDay,
+            resolvedGroupBy,
+            BuildActor(),
+            cancellationToken);
+
+        var response = new DispatchAssignmentDayViewResponse(
+            resolvedDay,
+            resolvedGroupBy == DispatchAssignmentGroupBy.Driver ? "driver" : "truck",
+            groups.Select(group => new DispatchAssignmentDayGroupResponse(
+                group.GroupKey,
+                group.GroupLabel,
+                group.HasOverlap,
+                group.Trips.Select(item => new DispatchAssignmentDayTripItemResponse(
+                    item.TripId,
+                    item.TripReference,
+                    item.Status,
+                    new DispatchCustomerSummaryResponse(item.CustomerId, item.CustomerName),
+                    item.DriverUserId,
+                    item.DriverUsername,
+                    item.TruckAssetId,
+                    item.TruckAssetCode,
+                    item.PlannedStart,
+                    item.PlannedEnd,
+                    item.PlannedDurationMinutes,
+                    item.HasOverlap)).ToList())).ToList());
+
+        return Ok(response);
+    }
+
     [HttpGet("{tripId:guid}/summary")]
     public async Task<ActionResult<DispatchTripSummaryResponse>> GetTripSummary(
         Guid tripId,
@@ -225,12 +276,19 @@ public sealed class DispatchTripsController : ControllerBase
             summary.RequiredDocumentCount,
             summary.Documents.Select(doc => new DispatchTripDocumentChecklistResponse(doc.Type, doc.State)).ToList(),
             summary.PodState,
+            summary.CloseDocumentReady,
+            summary.MissingRequiredDocumentCount,
+            summary.RejectedRequiredDocumentCount,
+            summary.CloseDocumentBlockReason,
             summary.CreatedByUserId,
             summary.CreatedByUsername,
             summary.CreatedAt,
             summary.UpdatedAt,
             summary.PickupScheduledAt,
             summary.DropoffScheduledAt,
+            summary.PlannedStart,
+            summary.PlannedEnd,
+            summary.PlannedDurationMinutes,
             summary.LatePickup,
             summary.LateDelivery,
             summary.OnHoldMinutes,
@@ -253,7 +311,7 @@ public sealed class DispatchTripsController : ControllerBase
             request.Stops?.Select(stop => new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt))
                 .ToList());
 
-        var trip = await _tripService.CreateDraftAsync(command, BuildActor(), cancellationToken);
+        var trip = await _tripLifecycleService.CreateDraftAsync(command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
     }
 
@@ -279,7 +337,7 @@ public sealed class DispatchTripsController : ControllerBase
             request.Remarks,
             rowVersion);
 
-        var trip = await _tripService.UpdateTripAsync(tripId, command, BuildActor(), cancellationToken);
+        var trip = await _tripLifecycleService.UpdateTripAsync(tripId, command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
     }
 
@@ -352,7 +410,7 @@ public sealed class DispatchTripsController : ControllerBase
             return BadRequest("RowVersion is required and must be valid base64.");
         }
 
-        var trip = await _tripService.DispatchAsync(
+        var trip = await _tripLifecycleService.DispatchAsync(
             new DispatchTripCommand(tripId, request.DriverUserId, request.TruckAssetId, request.Remarks, rowVersion),
             BuildActor(),
             cancellationToken);
@@ -377,7 +435,7 @@ public sealed class DispatchTripsController : ControllerBase
             return BadRequest("RowVersion is required and must be valid base64.");
         }
 
-        var trip = await _tripService.ChangeStatusAsync(
+        var trip = await _tripLifecycleService.ChangeStatusAsync(
             new ChangeDispatchTripStatusCommand(
                 tripId,
                 request.ToStatus,
@@ -488,12 +546,13 @@ public sealed class DispatchTripsController : ControllerBase
             return BadRequest("RowVersion is required and must be valid base64.");
         }
 
-        var trip = await _tripService.CorrectStatusAsync(
-            tripId,
-            request.ToStatus,
-            request.EventAt,
-            request.Remarks,
-            rowVersion,
+        var trip = await _tripLifecycleService.CorrectStatusAsync(
+            new CorrectDispatchTripStatusCommand(
+                tripId,
+                request.ToStatus,
+                request.EventAt,
+                request.Remarks ?? string.Empty,
+                rowVersion),
             BuildActor(),
             cancellationToken);
 
@@ -650,7 +709,7 @@ public sealed class DispatchTripsController : ControllerBase
         DispatchTripDocumentUploadRequest request,
         CancellationToken cancellationToken)
     {
-        var doc = await _tripService.UploadDocumentAsync(
+        var doc = await _documentWorkflowService.UploadDocumentAsync(
             new UploadTripDocumentCommand(tripId, request.Type, request.StorageKey),
             BuildActor(),
             cancellationToken);
@@ -679,7 +738,7 @@ public sealed class DispatchTripsController : ControllerBase
         Guid docId,
         CancellationToken cancellationToken)
     {
-        var doc = await _tripService.VerifyDocumentAsync(
+        var doc = await _documentWorkflowService.VerifyDocumentAsync(
             new VerifyTripDocumentCommand(tripId, docId),
             BuildActor(),
             cancellationToken);
@@ -709,7 +768,7 @@ public sealed class DispatchTripsController : ControllerBase
         DispatchTripDocumentRejectRequest request,
         CancellationToken cancellationToken)
     {
-        var doc = await _tripService.RejectDocumentAsync(
+        var doc = await _documentWorkflowService.RejectDocumentAsync(
             new RejectTripDocumentCommand(tripId, docId, request.Remarks),
             BuildActor(),
             cancellationToken);
@@ -768,6 +827,23 @@ public sealed class DispatchTripsController : ControllerBase
         return true;
     }
 
+    private static bool TryParseAssignmentGroupBy(string raw, out DispatchAssignmentGroupBy groupBy)
+    {
+        groupBy = DispatchAssignmentGroupBy.Driver;
+        if (string.Equals(raw, "driver", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(raw, "truck", StringComparison.OrdinalIgnoreCase))
+        {
+            groupBy = DispatchAssignmentGroupBy.Truck;
+            return true;
+        }
+
+        return false;
+    }
+
     private static List<DispatchTripListItemResponse> MapTripListItems(
         IReadOnlyCollection<DispatchTripListItem> items)
     {
@@ -786,12 +862,20 @@ public sealed class DispatchTripsController : ControllerBase
                 item.Documents.Select(doc => new DispatchTripDocumentChecklistResponse(
                     doc.Type,
                     doc.State)).ToList(),
+                item.PodState,
+                item.CloseDocumentReady,
+                item.MissingRequiredDocumentCount,
+                item.RejectedRequiredDocumentCount,
+                item.CloseDocumentBlockReason,
                 item.CreatedAt,
                 item.UpdatedAt,
                 item.PickupLocation,
                 item.DropoffLocation,
                 item.PickupScheduledAt,
                 item.DropoffScheduledAt,
+                item.PlannedStart,
+                item.PlannedEnd,
+                item.PlannedDurationMinutes,
                 item.LatePickup,
                 item.LateDelivery,
                 item.OnHoldMinutes,
@@ -840,7 +924,7 @@ public sealed class DispatchTripsController : ControllerBase
             return BadRequest("Remarks are required.");
         }
 
-        var trip = await _tripService.ChangeStatusAsync(
+        var trip = await _tripLifecycleService.ChangeStatusAsync(
             new ChangeDispatchTripStatusCommand(
                 tripId,
                 toStatus,

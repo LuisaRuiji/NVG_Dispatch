@@ -42,7 +42,7 @@ import PortalRequestDetailPage from "@/features/portal/PortalRequestDetailPage";
 import PortalShipmentsPage from "@/features/portal/PortalShipmentsPage";
 import PortalShipmentDetailPage from "@/features/portal/PortalShipmentDetailPage";
 import { setUnauthorizedHandler } from "@/lib/api";
-import { getDefaultRoute, getMe, loadMeIfTokenExists, logout } from "@/features/auth/authStore";
+import { loadMeIfTokenExists, logout } from "@/features/auth/authStore";
 import RoleGate from "@/components/RoleGate";
 import { initTheme } from "@/lib/theme";
 
@@ -63,8 +63,6 @@ function App() {
   if (!ready) {
     return <div className="min-h-screen bg-background" />;
   }
-
-  const defaultRoute = getDefaultRoute(getMe());
 
   return (
     <BrowserRouter>

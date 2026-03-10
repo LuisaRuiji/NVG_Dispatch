@@ -1,4 +1,10 @@
-import type { LoanDto } from "../../lib/api/types";
+type LoanDto = {
+  id: string;
+  status: "OPEN" | "PARTIALLY_RETURNED" | "CLOSED";
+  borrower: string;
+  items: number;
+  dueDate: string;
+};
 
 const sampleLoans: LoanDto[] = [
   {
@@ -34,7 +40,7 @@ export default function LoansOverview() {
             <div>
               <p className="list-title">{loan.id}</p>
               <p className="list-meta">
-                {loan.borrower} · {loan.items} items · Due {loan.dueDate}
+                {loan.borrower} ï¿½ {loan.items} items ï¿½ Due {loan.dueDate}
               </p>
             </div>
             <span className={`pill ${loan.status === "OPEN" ? "pill-amber" : "pill-slate"}`}>

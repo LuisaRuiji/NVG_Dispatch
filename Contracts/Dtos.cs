@@ -66,7 +66,7 @@ public sealed record ModuleStatusResponse(
     bool IsEnabled,
     string? Notes);
 
-public sealed record ApiErrorResponse(string ErrorCode, string Message, string TraceId);
+public sealed record ApiErrorResponse(string ErrorCode, string Message, string TraceId, object? Details = null);
 
 public sealed record LoginRequest(string Username, string Password);
 
@@ -763,12 +763,20 @@ public sealed record DispatchTripListItemResponse(
     int UploadedDocumentCount,
     int RequiredDocumentCount,
     IReadOnlyCollection<DispatchTripDocumentChecklistResponse> Documents,
+    TripDocumentState PodState,
+    bool CloseDocumentReady,
+    int MissingRequiredDocumentCount,
+    int RejectedRequiredDocumentCount,
+    string? CloseDocumentBlockReason,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     string? PickupLocation,
     string? DropoffLocation,
     DateTime? PickupScheduledAt,
     DateTime? DropoffScheduledAt,
+    DateTime? PlannedStart,
+    DateTime? PlannedEnd,
+    int? PlannedDurationMinutes,
     bool LatePickup,
     bool LateDelivery,
     int? OnHoldMinutes,
@@ -787,12 +795,19 @@ public sealed record DispatchTripSummaryResponse(
     int RequiredDocumentCount,
     IReadOnlyCollection<DispatchTripDocumentChecklistResponse> Documents,
     TripDocumentState PodState,
+    bool CloseDocumentReady,
+    int MissingRequiredDocumentCount,
+    int RejectedRequiredDocumentCount,
+    string? CloseDocumentBlockReason,
     Guid? CreatedByUserId,
     string? CreatedByUsername,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     DateTime? PickupScheduledAt,
     DateTime? DropoffScheduledAt,
+    DateTime? PlannedStart,
+    DateTime? PlannedEnd,
+    int? PlannedDurationMinutes,
     bool LatePickup,
     bool LateDelivery,
     int? OnHoldMinutes,
@@ -816,6 +831,31 @@ public sealed record DispatchTripDetailResponse(
     IReadOnlyCollection<DispatchTripHistoryResponse> History,
     bool DocVerificationEnabled,
     string RowVersion);
+
+public sealed record DispatchAssignmentDayTripItemResponse(
+    Guid TripId,
+    string TripReference,
+    TripStatus Status,
+    DispatchCustomerSummaryResponse Customer,
+    Guid? DriverUserId,
+    string? DriverUsername,
+    Guid? TruckAssetId,
+    string? TruckAssetCode,
+    DateTime PlannedStart,
+    DateTime PlannedEnd,
+    int PlannedDurationMinutes,
+    bool HasOverlap);
+
+public sealed record DispatchAssignmentDayGroupResponse(
+    string GroupKey,
+    string GroupLabel,
+    bool HasOverlap,
+    IReadOnlyCollection<DispatchAssignmentDayTripItemResponse> Trips);
+
+public sealed record DispatchAssignmentDayViewResponse(
+    DateOnly Day,
+    string GroupBy,
+    IReadOnlyCollection<DispatchAssignmentDayGroupResponse> Groups);
 
 public sealed record CreateShipmentRequestRequest(
     string PickupLocation,

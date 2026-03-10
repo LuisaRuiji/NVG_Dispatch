@@ -5,7 +5,7 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import ToastHost from "@/components/ToastHost";
 import StatusBadge from "@/components/StatusBadge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
@@ -71,12 +71,12 @@ export default function PortalDashboardPage() {
           </p>
           <p className="mt-2 text-sm text-muted-foreground">Drafts and submitted requests.</p>
           <div className="mt-4 flex items-center gap-3">
-            <Button asChild size="sm">
-              <Link to="/portal/requests">View Requests</Link>
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/portal/requests/new">New Request</Link>
-            </Button>
+            <Link to="/portal/requests" className={buttonVariants({ size: "sm" })}>
+              View Requests
+            </Link>
+            <Link to="/portal/requests/new" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              New Request
+            </Link>
           </div>
         </div>
         <div className="surface-card p-5">
@@ -86,9 +86,9 @@ export default function PortalDashboardPage() {
           </p>
           <p className="mt-2 text-sm text-muted-foreground">Active and delivered shipments.</p>
           <div className="mt-4">
-            <Button asChild size="sm">
-              <Link to="/portal/shipments">View Shipments</Link>
-            </Button>
+            <Link to="/portal/shipments" className={buttonVariants({ size: "sm" })}>
+              View Shipments
+            </Link>
           </div>
         </div>
       </div>
@@ -99,9 +99,9 @@ export default function PortalDashboardPage() {
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Recent Shipments</p>
             <h3 className="mt-2 text-lg font-semibold text-foreground">Latest activity</h3>
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/portal/shipments">View all</Link>
-          </Button>
+          <Link to="/portal/shipments" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            View all
+          </Link>
         </div>
 
         {loading ? (
@@ -127,9 +127,12 @@ export default function PortalDashboardPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <StatusBadge status={statusLabels[shipment.status] ?? shipment.status} />
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/portal/shipments/${shipment.tripId}`}>View</Link>
-                    </Button>
+                    <Link
+                      to={`/portal/shipments/${shipment.tripId}`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      View
+                    </Link>
                   </div>
                 </div>
               </div>

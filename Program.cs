@@ -96,8 +96,19 @@ builder.Services.AddScoped<InventoryAdjustmentWorkflowService>();
 builder.Services.AddScoped<InventoryAdjustmentQueryService>();
 builder.Services.AddScoped<ModuleSettingsService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ITripLifecycleService>(serviceProvider =>
+    serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchTripService>());
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDocumentWorkflowService>(serviceProvider =>
+    serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>());
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDocumentReadService>(serviceProvider =>
+    serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>());
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripQueryService>();
+builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripDispatchGateway, NVGInventory.Modules.Dispatching.Services.DispatchShipmentRequestTripDispatchGateway>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchShipmentReadService, NVGInventory.Modules.Dispatching.Services.DispatchShipmentReadService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();
+builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripCreationService, NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestTripCreationService>();
+builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IPortalCustomerAccessService, NVGInventory.Modules.ShipmentRequests.Services.PortalCustomerAccessService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestQueryService>();
 builder.Services.AddScoped<DemoDataSeeder>();
@@ -358,7 +369,8 @@ app.Use(async (context, next) =>
 
         context.Response.StatusCode = ex.StatusCode;
         context.Response.ContentType = "application/json";
-        var payload = new ApiErrorResponse(ex.ErrorCode, ex.Message, context.TraceIdentifier);
+        var details = ex is ConflictDomainException conflict ? conflict.Details : null;
+        var payload = new ApiErrorResponse(ex.ErrorCode, ex.Message, context.TraceIdentifier, details);
         await context.Response.WriteAsJsonAsync(payload);
     }
     catch (Exception ex)

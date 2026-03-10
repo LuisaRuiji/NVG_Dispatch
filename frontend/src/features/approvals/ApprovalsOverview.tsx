@@ -1,4 +1,11 @@
-import type { ApprovalDto } from "../../lib/api/types";
+type ApprovalDto = {
+  id: string;
+  workflow: string;
+  step: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedBy: string;
+  updatedAt: string;
+};
 
 const sampleApprovals: ApprovalDto[] = [
   {

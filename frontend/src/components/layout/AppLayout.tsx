@@ -504,7 +504,9 @@ export default function AppLayout() {
                                     className="text-xs text-primary hover:underline"
                                     onClick={() => {
                                       setNotificationsOpen(false);
-                                      nav(item.href);
+                                      if (item.href) {
+                                        nav(item.href);
+                                      }
                                     }}
                                   >
                                     View

@@ -1,10 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using NVGInventory.Contracts;
-using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
-using NVGInventory.Domain.Exceptions;
 using NVGInventory.Security;
 using NVGInventory.Modules.Dispatching.Services;
 using NVGInventory.Modules.ShipmentRequests.Enums;
@@ -19,16 +16,16 @@ public sealed class PortalShipmentRequestsController : ControllerBase
 {
     private readonly ShipmentRequestService _service;
     private readonly ShipmentRequestQueryService _queryService;
-    private readonly InventoryDbContext _dbContext;
+    private readonly IPortalCustomerAccessService _portalCustomerAccessService;
 
     public PortalShipmentRequestsController(
         ShipmentRequestService service,
         ShipmentRequestQueryService queryService,
-        InventoryDbContext dbContext)
+        IPortalCustomerAccessService portalCustomerAccessService)
     {
         _service = service;
         _queryService = queryService;
-        _dbContext = dbContext;
+        _portalCustomerAccessService = portalCustomerAccessService;
     }
 
     [HttpGet]
@@ -176,18 +173,7 @@ public sealed class PortalShipmentRequestsController : ControllerBase
     private async Task<Guid> GetCustomerIdAsync(CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
-        var customerId = await _dbContext.Users
-            .AsNoTracking()
-            .Where(user => user.Id == userId)
-            .Select(user => user.CustomerId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (!customerId.HasValue)
-        {
-            throw new ForbiddenDomainException("Customer access denied.");
-        }
-
-        return customerId.Value;
+        return await _portalCustomerAccessService.GetRequiredPortalCustomerIdAsync(userId, cancellationToken);
     }
 
     private static bool TryResolvePaging(
@@ -335,14 +321,14 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
 public sealed class PortalShipmentsController : ControllerBase
 {
     private readonly ShipmentRequestQueryService _queryService;
-    private readonly InventoryDbContext _dbContext;
+    private readonly IPortalCustomerAccessService _portalCustomerAccessService;
 
     public PortalShipmentsController(
         ShipmentRequestQueryService queryService,
-        InventoryDbContext dbContext)
+        IPortalCustomerAccessService portalCustomerAccessService)
     {
         _queryService = queryService;
-        _dbContext = dbContext;
+        _portalCustomerAccessService = portalCustomerAccessService;
     }
 
     [HttpGet]
@@ -436,18 +422,7 @@ public sealed class PortalShipmentsController : ControllerBase
     private async Task<Guid> GetCustomerIdAsync(CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
-        var customerId = await _dbContext.Users
-            .AsNoTracking()
-            .Where(user => user.Id == userId)
-            .Select(user => user.CustomerId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (!customerId.HasValue)
-        {
-            throw new ForbiddenDomainException("Customer access denied.");
-        }
-
-        return customerId.Value;
+        return await _portalCustomerAccessService.GetRequiredPortalCustomerIdAsync(userId, cancellationToken);
     }
 
     private static bool TryResolvePaging(

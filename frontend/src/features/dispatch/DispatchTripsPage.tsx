@@ -15,7 +15,6 @@ import type {
   DispatchTripDetail,
   DispatchTripListItem,
   TripDocumentState,
-  TripDocumentType,
   TripStatus
 } from "./types";
 import { statusLabels } from "./types";
@@ -50,8 +49,6 @@ type ActionModal =
   | { type: "CANCEL"; trip: DispatchTripListItem; remarks: string; eventAt: string }
   | null;
 
-const docTypes: TripDocumentType[] = ["POD", "WAYBILL", "ATW"];
-
 const docStateClasses: Record<TripDocumentState, string> = {
   MISSING: "border-slate-200 text-slate-500",
   UPLOADED: "border-amber-200 text-amber-700",
@@ -72,9 +69,21 @@ const fromLocalInput = (value: string) => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
+const formatWindow = (trip: DispatchTripListItem) => {
+  const startRaw = trip.plannedStart ?? trip.pickupScheduledAt;
+  const endRaw = trip.plannedEnd ?? trip.dropoffScheduledAt;
+  if (!startRaw || !endRaw) return "-";
+
+  const start = new Date(startRaw);
+  const end = new Date(endRaw);
+  const startDate = start.toLocaleDateString();
+  const startTime = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const endTime = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${startDate} ${startTime}-${endTime}`;
+};
+
 function PodBadge({ trip }: { trip: DispatchTripListItem }) {
-  const pod = trip.documents.find((item) => item.type === "POD");
-  const state = pod?.state ?? "MISSING";
+  const state = trip.podState ?? "MISSING";
   return (
     <span
       className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
@@ -83,6 +92,54 @@ function PodBadge({ trip }: { trip: DispatchTripListItem }) {
     >
       {state}
     </span>
+  );
+}
+
+function CloseDocsBadge({ trip }: { trip: DispatchTripListItem }) {
+  const countsText = `${trip.missingRequiredDocumentCount} missing / ${trip.rejectedRequiredDocumentCount} rejected`;
+  const rawReason = trip.closeDocumentBlockReason ?? "";
+  const inlineReason = (() => {
+    if (trip.closeDocumentReady) {
+      return null;
+    }
+
+    if (rawReason === "POD must be verified.") {
+      return "POD must be verified";
+    }
+
+    if (rawReason === "POD must be uploaded.") {
+      return "POD must be uploaded";
+    }
+
+    if (rawReason === "POD must be uploaded or POD pending override must be set.") {
+      return "POD required before close";
+    }
+
+    return "Document blockers present";
+  })();
+
+  if (trip.closeDocumentReady) {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+          Ready
+        </span>
+        <span className="text-[11px] text-muted-foreground">{countsText}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span
+        className="rounded-full border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700"
+        title={trip.closeDocumentBlockReason ?? "Document blockers present"}
+      >
+        Blocked
+      </span>
+      <span className="text-[11px] font-medium text-rose-700">{inlineReason}</span>
+      <span className="text-[11px] text-muted-foreground">{countsText}</span>
+    </div>
   );
 }
 
@@ -203,6 +260,7 @@ export default function DispatchTripsPage() {
   };
 
   const rowClass = (trip: DispatchTripListItem) => {
+    if (trip.status === "DELIVERED" && !trip.closeDocumentReady) return "bg-rose-50/60";
     if (trip.status === "FAILED_ATTEMPT") return "bg-rose-50/60";
     if (trip.status === "ON_HOLD") return "bg-amber-50/60";
     if (trip.podPending) return "bg-orange-50/40";
@@ -427,9 +485,9 @@ export default function DispatchTripsPage() {
                 <th className="px-6 py-4 text-left">Driver</th>
                 <th className="px-6 py-4 text-left">Truck</th>
                 <th className="px-6 py-4 text-left">Status</th>
-                <th className="px-6 py-4 text-left">Pickup Time</th>
-                <th className="px-6 py-4 text-left">Dropoff Time</th>
+                <th className="px-6 py-4 text-left">Window</th>
                 <th className="px-6 py-4 text-left">POD Status</th>
+                <th className="px-6 py-4 text-left">Close Docs</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -456,13 +514,16 @@ export default function DispatchTripsPage() {
                     </button>
                   </td>
                   <td className="px-6 py-4 text-xs text-muted-foreground">
-                    {trip.pickupScheduledAt ? new Date(trip.pickupScheduledAt).toLocaleString() : "-"}
-                  </td>
-                  <td className="px-6 py-4 text-xs text-muted-foreground">
-                    {trip.dropoffScheduledAt ? new Date(trip.dropoffScheduledAt).toLocaleString() : "-"}
+                    <div>{formatWindow(trip)}</div>
+                    {typeof trip.plannedDurationMinutes === "number" ? (
+                      <div className="text-[11px] text-muted-foreground/80">{trip.plannedDurationMinutes} min</div>
+                    ) : null}
                   </td>
                   <td className="px-6 py-4">
                     <PodBadge trip={trip} />
+                  </td>
+                  <td className="px-6 py-4">
+                    <CloseDocsBadge trip={trip} />
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">

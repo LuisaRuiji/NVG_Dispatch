@@ -3,7 +3,6 @@ using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Exceptions;
 using NVGInventory.Domain.Services;
-using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.Dispatching.Services;
 using NVGInventory.Modules.ShipmentRequests.Entities;
 using NVGInventory.Modules.ShipmentRequests.Enums;
@@ -40,18 +39,18 @@ public sealed class ShipmentRequestService
 {
     private readonly InventoryDbContext _dbContext;
     private readonly UserService _userService;
-    private readonly DispatchTripService _dispatchTripService;
+    private readonly IShipmentRequestTripCreationService _tripCreationService;
     private readonly IAuditService? _auditService;
 
     public ShipmentRequestService(
         InventoryDbContext dbContext,
         UserService userService,
-        DispatchTripService dispatchTripService,
+        IShipmentRequestTripCreationService tripCreationService,
         IAuditService? auditService = null)
     {
         _dbContext = dbContext;
         _userService = userService;
-        _dispatchTripService = dispatchTripService;
+        _tripCreationService = tripCreationService;
         _auditService = auditService;
     }
 
@@ -324,34 +323,15 @@ public sealed class ShipmentRequestService
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        if (!request.RequestedPickupTime.HasValue)
-        {
-            throw new BusinessRuleViolationException("Requested pickup time is required to convert.");
-        }
-
-        var pickupTime = request.RequestedPickupTime.Value;
-
-        var command = new CreateDispatchTripCommand(
-            request.CustomerId,
-            null,
-            null,
-            null,
-            new[]
-            {
-                new DispatchTripStopInput(
-                    TripStopType.Pickup,
-                    request.PickupLocation,
-                    pickupTime),
-                new DispatchTripStopInput(
-                    TripStopType.Dropoff,
-                    request.DropoffLocation,
-                    pickupTime)
-            });
-
-        var trip = await _dispatchTripService.CreateDraftAsync(command, actor, cancellationToken);
+        var tripId = await _tripCreationService.CreateDraftTripFromApprovedRequestAsync(
+            new CreateTripFromShipmentRequestCommand(
+                request.Id,
+                request.RequestedPickupTime),
+            actor,
+            cancellationToken);
 
         request.Status = ShipmentRequestStatus.ConvertedToTrip;
-        request.ConvertedTripId = trip.Id;
+        request.ConvertedTripId = tripId;
 
         _auditService?.AddEntry(
             actor.UserId,
@@ -364,7 +344,7 @@ public sealed class ShipmentRequestService
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return (request, trip.Id);
+        return (request, tripId);
     }
 
     private async Task EnsureCustomerExistsAsync(Guid customerId, CancellationToken cancellationToken)

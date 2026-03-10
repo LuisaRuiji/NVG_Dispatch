@@ -14,9 +14,9 @@ tmp-*.log
 # User-specific
 *.csproj.user
 
-# Tests
-NVGInventory.Tests/
-
 # Docs (except README.md)
 *.md
 !README.md
+!Docs/Architecture/01-Module-Inventory.md
+!Docs/Architecture/02-Safe-Refactor-Plan.md
+!Docs/Architecture/03-Identity-Semantics.md

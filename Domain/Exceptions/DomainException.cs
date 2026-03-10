@@ -59,9 +59,12 @@ public sealed class ConcurrencyConflictException : DomainException
 
 public sealed class ConflictDomainException : DomainException
 {
-    public ConflictDomainException(string message)
+    public object? Details { get; }
+
+    public ConflictDomainException(string message, object? details = null)
         : base(message, "CONFLICT", (int)HttpStatusCode.Conflict)
     {
+        Details = details;
     }
 }
 

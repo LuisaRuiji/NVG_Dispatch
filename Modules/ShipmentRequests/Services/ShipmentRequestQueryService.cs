@@ -2,8 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using NVGInventory.Data;
 using NVGInventory.Domain.Exceptions;
 using NVGInventory.Domain.Services;
-using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
+using NVGInventory.Modules.Dispatching.Services;
 using NVGInventory.Modules.ShipmentRequests.Entities;
 using NVGInventory.Modules.ShipmentRequests.Enums;
 
@@ -62,7 +62,13 @@ public sealed record CustomerShipmentDetail(
     DateTime? DropoffTime,
     DateTime? DeliveredTime,
     TripDocumentState PodState,
-    IReadOnlyCollection<TripStop> Stops);
+    IReadOnlyCollection<CustomerShipmentStop> Stops);
+
+public sealed record CustomerShipmentStop(
+    TripStopType StopType,
+    string LocationText,
+    DateTime? ScheduledAt,
+    DateTime? ActualAt);
 
 public sealed record CustomerShipmentTimelineEntry(
     TripStatus FromStatus,
@@ -78,10 +84,14 @@ public sealed record CustomerShipmentDocument(
 public sealed class ShipmentRequestQueryService
 {
     private readonly InventoryDbContext _dbContext;
+    private readonly IDispatchShipmentReadService _dispatchShipmentReadService;
 
-    public ShipmentRequestQueryService(InventoryDbContext dbContext)
+    public ShipmentRequestQueryService(
+        InventoryDbContext dbContext,
+        IDispatchShipmentReadService dispatchShipmentReadService)
     {
         _dbContext = dbContext;
+        _dispatchShipmentReadService = dispatchShipmentReadService;
     }
 
     public async Task<PagedQueryResult<ShipmentRequestListItem>> GetCustomerRequestsAsync(
@@ -182,44 +192,15 @@ public sealed class ShipmentRequestQueryService
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.DispatchTrips
-            .AsNoTracking()
-            .Where(trip => trip.CustomerId == customerId);
+        var result = await _dispatchShipmentReadService.GetCustomerShipmentsAsync(
+            customerId,
+            page,
+            pageSize,
+            cancellationToken);
 
-        var total = await query.CountAsync(cancellationToken);
-
-        var items = await query
-            .OrderByDescending(trip => trip.UpdatedAt ?? trip.CreatedAt)
-            .ThenByDescending(trip => trip.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(trip => new CustomerShipmentListItem(
-                trip.Id,
-                _dbContext.DispatchTripStops
-                    .Where(stop => stop.TripId == trip.Id && stop.StopType == TripStopType.Pickup)
-                    .Select(stop => stop.LocationText)
-                    .FirstOrDefault() ?? string.Empty,
-                _dbContext.DispatchTripStops
-                    .Where(stop => stop.TripId == trip.Id && stop.StopType == TripStopType.Dropoff)
-                    .Select(stop => stop.LocationText)
-                    .FirstOrDefault() ?? string.Empty,
-                trip.Status,
-                _dbContext.DispatchTripStops
-                    .Where(stop => stop.TripId == trip.Id && stop.StopType == TripStopType.Pickup)
-                    .Select(stop => stop.ScheduledAt)
-                    .FirstOrDefault(),
-                _dbContext.DispatchTripStatusHistories
-                    .Where(history => history.TripId == trip.Id && history.ToStatus == TripStatus.Delivered)
-                    .OrderByDescending(history => history.EventAt)
-                    .Select(history => (DateTime?)history.EventAt)
-                    .FirstOrDefault(),
-                _dbContext.DispatchTripDocuments
-                    .Where(doc => doc.TripId == trip.Id && doc.IsActive && doc.Type == TripDocumentType.Pod)
-                    .Select(doc => (TripDocumentState?)doc.State)
-                    .FirstOrDefault() ?? TripDocumentState.Missing))
-            .ToListAsync(cancellationToken);
-
-        return new PagedQueryResult<CustomerShipmentListItem>(items, total);
+        return new PagedQueryResult<CustomerShipmentListItem>(
+            result.Items.Select(MapListItem).ToList(),
+            result.TotalCount);
     }
 
     public async Task<CustomerShipmentDetail> GetCustomerShipmentDetailAsync(
@@ -227,44 +208,12 @@ public sealed class ShipmentRequestQueryService
         Guid customerId,
         CancellationToken cancellationToken = default)
     {
-        var trip = await _dbContext.DispatchTrips
-            .AsNoTracking()
-            .Include(t => t.Stops)
-            .FirstOrDefaultAsync(t => t.Id == tripId && t.CustomerId == customerId, cancellationToken);
+        var detail = await _dispatchShipmentReadService.GetCustomerShipmentDetailAsync(
+            tripId,
+            customerId,
+            cancellationToken);
 
-        if (trip is null)
-        {
-            throw new NotFoundException("Shipment not found.");
-        }
-
-        var pickupLocation = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Pickup)?.LocationText
-            ?? string.Empty;
-        var dropoffLocation = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff)?.LocationText
-            ?? string.Empty;
-        var pickupTime = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Pickup)?.ScheduledAt;
-        var dropoffTime = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff)?.ScheduledAt;
-        var deliveredTime = await _dbContext.DispatchTripStatusHistories
-            .AsNoTracking()
-            .Where(history => history.TripId == trip.Id && history.ToStatus == TripStatus.Delivered)
-            .OrderByDescending(history => history.EventAt)
-            .Select(history => (DateTime?)history.EventAt)
-            .FirstOrDefaultAsync(cancellationToken);
-        var podState = await _dbContext.DispatchTripDocuments
-            .AsNoTracking()
-            .Where(doc => doc.TripId == trip.Id && doc.IsActive && doc.Type == TripDocumentType.Pod)
-            .Select(doc => (TripDocumentState?)doc.State)
-            .FirstOrDefaultAsync(cancellationToken) ?? TripDocumentState.Missing;
-
-        return new CustomerShipmentDetail(
-            trip.Id,
-            trip.Status,
-            pickupLocation,
-            dropoffLocation,
-            pickupTime,
-            dropoffTime,
-            deliveredTime,
-            podState,
-            trip.Stops.OrderBy(stop => stop.StopType).ToList());
+        return MapDetail(detail);
     }
 
     public async Task<IReadOnlyCollection<CustomerShipmentTimelineEntry>> GetCustomerShipmentTimelineAsync(
@@ -272,26 +221,11 @@ public sealed class ShipmentRequestQueryService
         Guid customerId,
         CancellationToken cancellationToken = default)
     {
-        var tripExists = await _dbContext.DispatchTrips
-            .AsNoTracking()
-            .AnyAsync(trip => trip.Id == tripId && trip.CustomerId == customerId, cancellationToken);
-
-        if (!tripExists)
-        {
-            throw new NotFoundException("Shipment not found.");
-        }
-
-        var items = await _dbContext.DispatchTripStatusHistories
-            .AsNoTracking()
-            .Where(history => history.TripId == tripId && history.EventType == TripHistoryEventType.StatusChange)
-            .OrderBy(history => history.EventAt)
-            .Select(history => new CustomerShipmentTimelineEntry(
-                history.FromStatus,
-                history.ToStatus,
-                history.EventAt))
-            .ToListAsync(cancellationToken);
-
-        return items;
+        var entries = await _dispatchShipmentReadService.GetCustomerShipmentTimelineAsync(
+            tripId,
+            customerId,
+            cancellationToken);
+        return entries.Select(MapTimelineEntry).ToList();
     }
 
     public async Task<IReadOnlyCollection<CustomerShipmentDocument>> GetCustomerShipmentDocumentsAsync(
@@ -299,26 +233,57 @@ public sealed class ShipmentRequestQueryService
         Guid customerId,
         CancellationToken cancellationToken = default)
     {
-        var tripExists = await _dbContext.DispatchTrips
-            .AsNoTracking()
-            .AnyAsync(trip => trip.Id == tripId && trip.CustomerId == customerId, cancellationToken);
+        var docs = await _dispatchShipmentReadService.GetCustomerShipmentDocumentsAsync(
+            tripId,
+            customerId,
+            cancellationToken);
+        return docs.Select(MapDocument).ToList();
+    }
 
-        if (!tripExists)
-        {
-            throw new NotFoundException("Shipment not found.");
-        }
+    private static CustomerShipmentListItem MapListItem(DispatchCustomerShipmentListItem item)
+    {
+        return new CustomerShipmentListItem(
+            item.TripId,
+            item.PickupLocation,
+            item.DropoffLocation,
+            item.Status,
+            item.PickupTime,
+            item.DeliveredTime,
+            item.PodState);
+    }
 
-        var docs = await _dbContext.DispatchTripDocuments
-            .AsNoTracking()
-            .Where(doc => doc.TripId == tripId && doc.IsActive && doc.Type == TripDocumentType.Pod)
-            .OrderByDescending(doc => doc.UploadedAt)
-            .Select(doc => new CustomerShipmentDocument(
-                doc.Type,
-                doc.State,
-                doc.StorageKey,
-                doc.UploadedAt))
-            .ToListAsync(cancellationToken);
+    private static CustomerShipmentDetail MapDetail(DispatchCustomerShipmentDetail detail)
+    {
+        return new CustomerShipmentDetail(
+            detail.TripId,
+            detail.Status,
+            detail.PickupLocation,
+            detail.DropoffLocation,
+            detail.PickupTime,
+            detail.DropoffTime,
+            detail.DeliveredTime,
+            detail.PodState,
+            detail.Stops.Select(stop => new CustomerShipmentStop(
+                stop.StopType,
+                stop.LocationText,
+                stop.ScheduledAt,
+                stop.ActualAt)).ToList());
+    }
 
-        return docs;
+    private static CustomerShipmentTimelineEntry MapTimelineEntry(DispatchCustomerShipmentTimelineEntry entry)
+    {
+        return new CustomerShipmentTimelineEntry(
+            entry.FromStatus,
+            entry.ToStatus,
+            entry.EventAt);
+    }
+
+    private static CustomerShipmentDocument MapDocument(DispatchCustomerShipmentDocument document)
+    {
+        return new CustomerShipmentDocument(
+            document.Type,
+            document.State,
+            document.StorageKey,
+            document.UploadedAt);
     }
 }

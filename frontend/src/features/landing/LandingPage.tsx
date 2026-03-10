@@ -11,7 +11,6 @@ import {
     Users,
     Clock,
     ShieldCheck,
-    ChevronRight,
     Activity,
     Layers
 } from "lucide-react";
@@ -68,7 +67,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
     };
 
     return (
-        <div className="min-h-screen bg-[#F5F7FA] text-[#1A1A1A] font-sans selection:bg-[#1F3A5F] selection:text-white">
+        <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary selection:text-white">
             <ToastHost toasts={toasts} />
             {/* 1. Navbar */}
             <nav
@@ -78,24 +77,24 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                     }`}
             >
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded bg-[#1F3A5F] flex items-center justify-center text-white font-bold">
+                    <div className="w-8 h-8 rounded bg-primary flex items-center justify-center text-white font-bold">
                         N
                     </div>
-                    <span className="font-bold text-xl tracking-tight text-[#1F3A5F]">NVG Dispatch</span>
+                    <span className="font-bold text-xl tracking-tight text-primary">NVG Dispatch</span>
                 </div>
 
                 {/* Desktop Nav */}
                 <div className="hidden md:flex items-center gap-8 font-medium text-sm">
-                    <a href="#platform" className="hover:text-[#E5533D] transition-colors">Platform</a>
-                    <a href="#workflow" className="hover:text-[#E5533D] transition-colors">Workflow</a>
-                    <a href="#customer-portal" className="hover:text-[#E5533D] transition-colors">Customer Portal</a>
+                    <a href="#platform" className="hover:text-accent transition-colors">Platform</a>
+                    <a href="#workflow" className="hover:text-accent transition-colors">Workflow</a>
+                    <a href="#customer-portal" className="hover:text-accent transition-colors">Customer Portal</a>
                 </div>
 
                 <div className="hidden md:flex items-center gap-4">
-                    <Link to="/login" className="text-sm font-medium hover:text-[#E5533D] transition-colors">Login</Link>
+                    <Link to="/login" className="text-sm font-medium hover:text-accent transition-colors">Login</Link>
                     <Link
                         to="/login"
-                        className="bg-[#E5533D] text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-[#d44834] transition-all hover:scale-105 active:scale-95 shadow-md shadow-[#E5533D]/20"
+                        className="bg-accent text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-accent/90 transition-all hover:scale-105 active:scale-95 shadow-md shadow-accent/20"
                     >
                         Request Demo
                     </Link>
@@ -103,7 +102,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
 
                 {/* Mobile Menu Toggle */}
                 <button
-                    className="md:hidden text-[#1F3A5F]"
+                    className="md:hidden text-primary"
                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 >
                     {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -120,7 +119,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                     <Link to="/login" className="text-left text-xl font-medium">Login</Link>
                     <Link
                         to="/login"
-                        className="bg-[#E5533D] text-white px-6 py-3 rounded-xl text-center font-medium mt-4"
+                        className="bg-accent text-white px-6 py-3 rounded-xl text-center font-medium mt-4"
                     >
                         Request Demo
                     </Link>
@@ -130,15 +129,15 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             {/* 2. Hero Section */}
             <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 px-6 overflow-hidden">
                 {/* Background decorative elements */}
-                <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-[#1F3A5F]/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
+                <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
 
                 <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                     <div className="max-w-2xl relative z-10">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#1F3A5F]/10 text-[#1F3A5F] text-xs font-semibold mb-6 uppercase tracking-wider">
-                            <span className="w-2 h-2 rounded-full bg-[#E5533D] animate-pulse" />
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold mb-6 uppercase tracking-wider">
+                            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
                             NVG Logistics Platform
                         </div>
-                        <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-[#1F3A5F] leading-[1.1] mb-6 tracking-tight">
+                        <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-primary leading-[1.1] mb-6 tracking-tight">
                             Run Your Container Dispatch Without Paper
                         </h1>
                         <p className="text-lg md:text-xl text-gray-600 mb-10 leading-relaxed max-w-xl">
@@ -147,14 +146,14 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                         <div className="flex flex-col sm:flex-row gap-4">
                             <Link
                                 to="/login"
-                                className="bg-[#E5533D] text-white px-8 py-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-[#d44834] hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl shadow-[#E5533D]/20"
+                                className="bg-accent text-white px-8 py-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-accent/90 hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl shadow-accent/20"
                             >
                                 Request Demo
                                 <ArrowRight size={18} />
                             </Link>
                             <Link
                                 to="/login"
-                                className="bg-white text-[#1F3A5F] border border-gray-200 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 transition-all hover:border-gray-300 hover:-translate-y-0.5 shadow-sm text-center"
+                                className="bg-white text-primary border border-gray-200 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 transition-all hover:border-gray-300 hover:-translate-y-0.5 shadow-sm text-center"
                             >
                                 Login
                             </Link>
@@ -162,8 +161,8 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                     </div>
 
                     {/* Hero Image/Mockup */}
-                    <div className="relative z-10 w-full rounded-2xl bg-white border border-gray-200 shadow-2xl shadow-[#1F3A5F]/10 overflow-hidden transform lg:translate-x-8 lg:scale-105">
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#1F3A5F]/5 to-transparent pointer-events-none" />
+                    <div className="relative z-10 w-full rounded-2xl bg-white border border-gray-200 shadow-2xl shadow-primary/10 overflow-hidden transform lg:translate-x-8 lg:scale-105">
+                        <div className="absolute inset-0 bg-gradient-to-t from-primary/5 to-transparent pointer-events-none" />
                         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
                             <div className="w-3 h-3 rounded-full bg-red-400" />
                             <div className="w-3 h-3 rounded-full bg-amber-400" />
@@ -183,14 +182,14 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                                     <div key={i} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-gray-500 text-xs font-medium">{stat.label}</span>
-                                            <stat.icon size={14} className="text-[#1F3A5F]" />
+                                            <stat.icon size={14} className="text-primary" />
                                         </div>
-                                        <span className="text-2xl font-bold font-mono text-[#1F3A5F]">{stat.val}</span>
+                                        <span className="text-2xl font-bold font-mono text-primary">{stat.val}</span>
                                     </div>
                                 ))}
                             </div>
                             <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-                                <div className="px-4 py-3 border-b border-gray-50 font-medium text-sm flex justify-between items-center bg-[#1F3A5F] text-white">
+                                <div className="px-4 py-3 border-b border-gray-50 font-medium text-sm flex justify-between items-center bg-primary text-white">
                                     Live Dispatch Activity
                                     <span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -203,7 +202,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                                             <div className="flex items-center gap-3">
                                                 <div className={`w-2 h-2 rounded-full ${i === 2 ? 'bg-amber-400' : 'bg-green-400'}`} />
                                                 <div>
-                                                    <p className="text-[#1F3A5F] font-semibold text-sm">TRK-00{i}</p>
+                                                    <p className="text-primary font-semibold text-sm">TRK-00{i}</p>
                                                     <p className="text-gray-500 mt-0.5">En route to Port Terminal {i}</p>
                                                 </div>
                                             </div>
@@ -224,7 +223,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             <section id="platform" className="py-24 bg-white relative">
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="text-center mb-16 max-w-2xl mx-auto">
-                        <h2 className="text-3xl md:text-5xl font-bold text-[#1F3A5F] mb-6">Platform Overview</h2>
+                        <h2 className="text-3xl md:text-5xl font-bold text-primary mb-6">Platform Overview</h2>
                         <p className="text-gray-600 text-lg">Centralize operations, verify documents, and dispatch smartly from one ecosystem.</p>
                     </div>
 
@@ -265,14 +264,14 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                                 className={`flex flex-col ${feature.reverse ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-12 md:gap-24`}
                             >
                                 <div className="flex-1 space-y-6">
-                                    <div className="w-16 h-16 bg-[#F5F7FA] rounded-2xl flex items-center justify-center text-[#E5533D]">
+                                    <div className="w-16 h-16 bg-background rounded-2xl flex items-center justify-center text-accent">
                                         <feature.icon size={32} />
                                     </div>
-                                    <h3 className="text-3xl font-bold text-[#1F3A5F]">{feature.title}</h3>
+                                    <h3 className="text-3xl font-bold text-primary">{feature.title}</h3>
                                     <p className="text-lg text-gray-600 leading-relaxed">{feature.desc}</p>
                                 </div>
                                 <div className={`flex-1 w-full ${feature.mobile ? 'md:w-1/2 flex justify-center' : ''}`}>
-                                    <div className={`bg-white border border-gray-200 shadow-xl shadow-[#1F3A5F]/5 overflow-hidden flex items-center justify-center relative group
+                                    <div className={`bg-white border border-gray-200 shadow-xl shadow-primary/5 overflow-hidden flex items-center justify-center relative group
                     ${feature.mobile ? 'rounded-[2rem] md:rounded-[2.5rem] w-full max-w-[320px] aspect-[9/19] p-4 border-8 border-gray-900 bg-gray-50' : 'rounded-2xl aspect-[16/10] p-2'}
                   `}>
                                         <div className="w-full h-full bg-gray-50 rounded-xl border border-gray-100 flex flex-col items-center justify-center p-8 text-center">
@@ -290,15 +289,15 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             </section>
 
             {/* 4. Workflow Section */}
-            <section id="workflow" className="py-24 bg-[#1F3A5F] text-white">
+            <section id="workflow" className="py-24 bg-primary text-white">
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="text-center mb-16">
                         <h2 className="text-3xl md:text-5xl font-bold mb-4">How NVG Dispatch Works</h2>
-                        <p className="text-[#a1b3c7] text-lg">5-step operational workflow for end-to- natural logistics.</p>
+                        <p className="text-muted-foreground text-lg">5-step operational workflow for end-to- natural logistics.</p>
                     </div>
 
                     <div className="relative">
-                        <div className="hidden md:block absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-[#1F3A5F] via-[#E5533D]/50 to-[#1F3A5F] -translate-y-1/2" />
+                        <div className="hidden md:block absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-primary via-accent/50 to-primary -translate-y-1/2" />
 
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
                             {[
@@ -309,11 +308,11 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                                 { title: "Completion", desc: "Customer downloads proof of delivery", icon: FileText }
                             ].map((step, idx) => (
                                 <div key={idx} className="relative z-10 flex flex-col items-center text-center group">
-                                    <div className="w-16 h-16 rounded-2xl bg-[#0f2038] border border-white/10 shadow-lg flex items-center justify-center text-[#E5533D] mb-6 group-hover:scale-110 group-hover:bg-[#E5533D] group-hover:text-white group-hover:border-[#E5533D] transition-all duration-300">
+                                    <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-white/10 shadow-lg flex items-center justify-center text-accent mb-6 group-hover:scale-110 group-hover:bg-accent group-hover:text-white group-hover:border-accent transition-all duration-300">
                                         <step.icon size={28} />
                                     </div>
                                     <h4 className="font-bold text-white mb-2">{step.title}</h4>
-                                    <p className="text-sm text-[#a1b3c7] max-w-[180px] leading-snug">{step.desc}</p>
+                                    <p className="text-sm text-muted-foreground max-w-[180px] leading-snug">{step.desc}</p>
                                 </div>
                             ))}
                         </div>
@@ -322,7 +321,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             </section>
 
             {/* 5. Platform Features */}
-            <section className="py-24 bg-[#F5F7FA]">
+            <section className="py-24 bg-background">
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {[
@@ -331,11 +330,11 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                             { title: "Paperless Logistics", desc: "Digitize WAYBILL, ATW, and POD documents.", icon: FileText },
                             { title: "Customer Shipment Portal", desc: "Provide customers real-time shipment visibility.", icon: Users },
                         ].map((feature, idx) => (
-                            <div key={idx} className="bg-white p-8 rounded-2xl border border-gray-200 hover:border-[#1F3A5F]/20 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                                <div className="w-12 h-12 bg-[#F5F7FA] rounded-xl flex items-center justify-center text-[#1F3A5F] mb-6">
+                            <div key={idx} className="bg-white p-8 rounded-2xl border border-gray-200 hover:border-primary/20 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                                <div className="w-12 h-12 bg-background rounded-xl flex items-center justify-center text-primary mb-6">
                                     <feature.icon size={24} />
                                 </div>
-                                <h3 className="text-xl font-bold text-[#1F3A5F] mb-3 leading-tight">{feature.title}</h3>
+                                <h3 className="text-xl font-bold text-primary mb-3 leading-tight">{feature.title}</h3>
                                 <p className="text-gray-600 text-sm leading-relaxed">{feature.desc}</p>
                             </div>
                         ))}
@@ -346,12 +345,12 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             {/* 6. Operations Credibility Section */}
             <section className="py-24 bg-white border-y border-gray-100">
                 <div className="max-w-4xl mx-auto px-6 text-center">
-                    <div className="w-16 h-16 bg-[#1F3A5F]/5 rounded-2xl flex items-center justify-center text-[#1F3A5F] mx-auto mb-8">
+                    <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center text-primary mx-auto mb-8">
                         <Layers size={32} />
                     </div>
-                    <h2 className="text-3xl md:text-5xl font-bold text-[#1F3A5F] mb-12">Built for Real Dispatch Operations</h2>
+                    <h2 className="text-3xl md:text-5xl font-bold text-primary mb-12">Built for Real Dispatch Operations</h2>
 
-                    <div className="bg-[#F5F7FA] rounded-2xl p-8 md:p-12 text-left border border-gray-100 shadow-sm">
+                    <div className="bg-background rounded-2xl p-8 md:p-12 text-left border border-gray-100 shadow-sm">
                         <ul className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {[
                                 "Prevent driver and truck scheduling conflicts",
@@ -361,7 +360,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                                 "Full trip history and audit logging"
                             ].map((point, idx) => (
                                 <li key={idx} className="flex items-start gap-4">
-                                    <div className="mt-1 w-6 h-6 rounded-full bg-[#E5533D]/10 flex flex-shrink-0 items-center justify-center text-[#E5533D]">
+                                    <div className="mt-1 w-6 h-6 rounded-full bg-accent/10 flex flex-shrink-0 items-center justify-center text-accent">
                                         <CheckCircle2 size={16} />
                                     </div>
                                     <span className="text-gray-800 font-medium leading-relaxed">{point}</span>
@@ -374,21 +373,21 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
 
             {/* 7. Call To Action */}
             <section className="py-32 bg-[#eef1f6] relative overflow-hidden">
-                <div className="absolute inset-0 bg-[#E5533D]/[0.02]" />
+                <div className="absolute inset-0 bg-accent/[0.02]" />
                 <div className="max-w-4xl mx-auto px-6 relative z-10 text-center">
-                    <h2 className="text-4xl md:text-6xl font-extrabold text-[#1F3A5F] mb-8 tracking-tight">
+                    <h2 className="text-4xl md:text-6xl font-extrabold text-primary mb-8 tracking-tight">
                         Start Modernizing Your Dispatch Operations
                     </h2>
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                         <Link
                             to="/login"
-                            className="bg-[#E5533D] text-white px-8 py-4 rounded-xl font-medium hover:bg-[#d44834] hover:scale-105 active:scale-95 transition-all shadow-lg shadow-[#E5533D]/20 text-lg"
+                            className="bg-accent text-white px-8 py-4 rounded-xl font-medium hover:bg-accent/90 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-accent/20 text-lg"
                         >
                             Request Demo
                         </Link>
                         <Link
                             to="/login"
-                            className="bg-white text-[#1F3A5F] border border-gray-200 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 hover:scale-105 active:scale-95 transition-all shadow-sm text-lg text-center"
+                            className="bg-white text-primary border border-gray-200 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 hover:scale-105 active:scale-95 transition-all shadow-sm text-lg text-center"
                         >
                             Login
                         </Link>
@@ -397,7 +396,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             </section>
 
             {/* 8. Footer */}
-            <footer className="bg-[#0f2038] text-white pt-20 pb-10 px-6 mt-auto">
+            <footer className="bg-slate-900 text-white pt-20 pb-10 px-6 mt-auto">
                 <div className="max-w-7xl mx-auto">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-12 mb-16">
                         <div className="col-span-1 md:col-span-2">
@@ -407,7 +406,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                                 </div>
                                 <span className="font-bold text-xl tracking-tight">NVG Dispatch</span>
                             </div>
-                            <p className="text-[#a1b3c7] text-sm mb-8 max-w-sm">
+                            <p className="text-muted-foreground text-sm mb-8 max-w-sm">
                                 Paperless Drayage Dispatch for Modern Logistics.
                             </p>
                             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-green-400">
@@ -418,7 +417,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
 
                         <div>
                             <h4 className="font-bold mb-6 text-white uppercase text-xs tracking-wider">Platform</h4>
-                            <ul className="space-y-4 text-[#a1b3c7] text-sm font-medium">
+                            <ul className="space-y-4 text-muted-foreground text-sm font-medium">
                                 <li><a href="#" className="hover:text-white transition-colors">Features</a></li>
                                 <li><a href="#" className="hover:text-white transition-colors">Workflow</a></li>
                                 <li><a href="#" className="hover:text-white transition-colors">Integrations</a></li>
@@ -427,7 +426,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
 
                         <div>
                             <h4 className="font-bold mb-6 text-white uppercase text-xs tracking-wider">Customer Portal</h4>
-                            <ul className="space-y-4 text-[#a1b3c7] text-sm font-medium">
+                            <ul className="space-y-4 text-muted-foreground text-sm font-medium">
                                 <li><Link to="/login" className="hover:text-white transition-colors">Submit Request</Link></li>
                                 <li><Link to="/login" className="hover:text-white transition-colors">Track Shipment</Link></li>
                                 <li><Link to="/login" className="hover:text-white transition-colors">Download Documents</Link></li>
@@ -436,15 +435,15 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
 
                         <div>
                             <h4 className="font-bold mb-6 text-white uppercase text-xs tracking-wider">Support</h4>
-                            <ul className="space-y-4 text-[#a1b3c7] text-sm font-medium">
+                            <ul className="space-y-4 text-muted-foreground text-sm font-medium">
                                 <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
                                 <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-                                <li><Link to="/login" className="text-[#E5533D] hover:text-white transition-colors">Login</Link></li>
+                                <li><Link to="/login" className="text-accent hover:text-white transition-colors">Login</Link></li>
                             </ul>
                         </div>
                     </div>
 
-                    <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[#a1b3c7] text-xs">
+                    <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-muted-foreground text-xs">
                         <p>© {new Date().getFullYear()} NVG Dispatch. All rights reserved.</p>
                         <div className="flex gap-6">
                             <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
@@ -469,7 +468,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                         <div className="flex items-start justify-between gap-4">
                             <div>
                                 <p className="text-xs uppercase tracking-[0.25em] text-gray-400">Sign In</p>
-                                <h2 className="mt-2 text-2xl font-semibold text-[#1F3A5F]">Welcome back</h2>
+                                <h2 className="mt-2 text-2xl font-semibold text-primary">Welcome back</h2>
                             </div>
                             <button
                                 onClick={closeLogin}
@@ -500,7 +499,7 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                             <button
                                 type="submit"
                                 disabled={submitting}
-                                className="w-full rounded-lg bg-[#1F3A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#182f4d] disabled:opacity-70"
+                                className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
                             >
                                 {submitting ? "Signing in..." : "Sign in"}
                             </button>

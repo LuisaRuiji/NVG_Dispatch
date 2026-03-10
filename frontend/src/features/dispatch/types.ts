@@ -34,12 +34,20 @@ export type DispatchTripListItem = {
   uploadedDocumentCount: number;
   requiredDocumentCount: number;
   documents: DispatchTripDocumentChecklist[];
+  podState: TripDocumentState;
+  closeDocumentReady: boolean;
+  missingRequiredDocumentCount: number;
+  rejectedRequiredDocumentCount: number;
+  closeDocumentBlockReason?: string | null;
   createdAt: string;
   updatedAt?: string | null;
   pickupLocation?: string | null;
   dropoffLocation?: string | null;
   pickupScheduledAt?: string | null;
   dropoffScheduledAt?: string | null;
+  plannedStart?: string | null;
+  plannedEnd?: string | null;
+  plannedDurationMinutes?: number | null;
   latePickup?: boolean;
   lateDelivery?: boolean;
   onHoldMinutes?: number | null;
@@ -59,16 +67,53 @@ export type DispatchTripSummary = {
   requiredDocumentCount: number;
   documents: DispatchTripDocumentChecklist[];
   podState: TripDocumentState;
+  closeDocumentReady: boolean;
+  missingRequiredDocumentCount: number;
+  rejectedRequiredDocumentCount: number;
+  closeDocumentBlockReason?: string | null;
   createdByUserId?: string | null;
   createdByUsername?: string | null;
   createdAt: string;
   updatedAt?: string | null;
   pickupScheduledAt?: string | null;
   dropoffScheduledAt?: string | null;
+  plannedStart?: string | null;
+  plannedEnd?: string | null;
+  plannedDurationMinutes?: number | null;
   latePickup?: boolean;
   lateDelivery?: boolean;
   onHoldMinutes?: number | null;
   rowVersion: string;
+};
+
+export type DispatchAssignmentGroupBy = "driver" | "truck";
+
+export type DispatchAssignmentDayTripItem = {
+  tripId: string;
+  tripReference: string;
+  status: TripStatus;
+  customer: DispatchCustomerSummary;
+  driverUserId?: string | null;
+  driverUsername?: string | null;
+  truckAssetId?: string | null;
+  truckAssetCode?: string | null;
+  plannedStart: string;
+  plannedEnd: string;
+  plannedDurationMinutes: number;
+  hasOverlap: boolean;
+};
+
+export type DispatchAssignmentDayGroup = {
+  groupKey: string;
+  groupLabel: string;
+  hasOverlap: boolean;
+  trips: DispatchAssignmentDayTripItem[];
+};
+
+export type DispatchAssignmentDayView = {
+  day: string;
+  groupBy: DispatchAssignmentGroupBy;
+  groups: DispatchAssignmentDayGroup[];
 };
 
 export type DispatchTripDocumentChecklist = {

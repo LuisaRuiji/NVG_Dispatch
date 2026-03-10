@@ -1,4 +1,10 @@
-import type { AssetDto } from "../../lib/api/types";
+type AssetDto = {
+  id: string;
+  assetTag: string;
+  type: "TRUCK" | "TRAILER";
+  status: "ACTIVE" | "INACTIVE";
+  location: string;
+};
 
 const sampleAssets: AssetDto[] = [
   {

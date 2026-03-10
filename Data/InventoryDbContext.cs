@@ -3,10 +3,14 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Entities;
 using NVGInventory.Domain.Enums;
+using NVGInventory.Modules.Audit.Persistence.Configurations;
+using NVGInventory.Modules.DocumentManagement.Persistence.Configurations;
 using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
+using NVGInventory.Modules.Dispatching.Persistence.Configurations;
 using NVGInventory.Modules.ShipmentRequests.Entities;
 using NVGInventory.Modules.ShipmentRequests.Enums;
+using NVGInventory.Modules.ShipmentRequests.Persistence.Configurations;
 
 namespace NVGInventory.Data;
 
@@ -75,11 +79,16 @@ public sealed class InventoryDbContext : DbContext
         ConfigureApprovals(modelBuilder);
         ConfigureApprovalActions(modelBuilder);
         ConfigureStockLogs(modelBuilder);
-        ConfigureAuditLogs(modelBuilder);
         ConfigureAuthEvents(modelBuilder);
         ConfigureModuleSettings(modelBuilder);
         ConfigureDispatching(modelBuilder);
-        ConfigureShipmentRequests(modelBuilder);
+        modelBuilder.ApplyConfiguration(new TripDocumentConfiguration());
+        modelBuilder.ApplyConfiguration(new TripConfiguration());
+        modelBuilder.ApplyConfiguration(new TripStopConfiguration());
+        modelBuilder.ApplyConfiguration(new TripStatusHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new ShipmentRequestConfiguration());
+        modelBuilder.ApplyConfiguration(new ShipmentRequestDocumentConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditLogConfiguration());
 
         modelBuilder.Entity<Role>().HasData(SeedData.Roles);
         modelBuilder.Entity<Workflow>().HasData(SeedData.Workflows);
@@ -942,36 +951,6 @@ public sealed class InventoryDbContext : DbContext
         });
     }
 
-    private static void ConfigureAuditLogs(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<AuditLog>(entity =>
-        {
-            entity.ToTable("audit_logs");
-            entity.HasKey(log => log.Id);
-            entity.Property(log => log.Id).HasColumnName("id");
-            entity.Property(log => log.ActorUserId).HasColumnName("actor_user_id");
-            entity.Property(log => log.ActorRole).HasColumnName("actor_role").HasMaxLength(200);
-            entity.Property(log => log.TripId).HasColumnName("trip_id");
-            entity.Property(log => log.Action).HasColumnName("action").HasMaxLength(120).IsRequired();
-            entity.Property(log => log.EntityType).HasColumnName("entity_type").HasMaxLength(50).IsRequired();
-            entity.Property(log => log.EntityId).HasColumnName("entity_id");
-            entity.Property(log => log.BeforeJson).HasColumnName("before_json");
-            entity.Property(log => log.AfterJson).HasColumnName("after_json");
-            entity.Property(log => log.TraceId).HasColumnName("trace_id").HasMaxLength(64);
-            entity.Property(log => log.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
-
-            entity.HasOne(log => log.Actor)
-                .WithMany()
-                .HasForeignKey(log => log.ActorUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(log => log.ActorUserId);
-            entity.HasIndex(log => log.TripId);
-            entity.HasIndex(log => new { log.EntityType, log.EntityId, log.CreatedAt })
-                .IsDescending(false, false, true);
-        });
-    }
-
     private static void ConfigureAuthEvents(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AuthEvent>(entity =>
@@ -1038,76 +1017,6 @@ public sealed class InventoryDbContext : DbContext
 
     private static void ConfigureDispatching(ModelBuilder modelBuilder)
     {
-        var statusConverter = new ValueConverter<TripStatus, string>(
-            value =>
-                value == TripStatus.Draft ? "DRAFT" :
-                value == TripStatus.Dispatched ? "DISPATCHED" :
-                value == TripStatus.EnroutePickup ? "ENROUTE_PICKUP" :
-                value == TripStatus.AtPickup ? "AT_PICKUP" :
-                value == TripStatus.Loaded ? "LOADED" :
-                value == TripStatus.EnrouteDropoff ? "ENROUTE_DROPOFF" :
-                value == TripStatus.AtDropoff ? "AT_DROPOFF" :
-                value == TripStatus.Delivered ? "DELIVERED" :
-                value == TripStatus.Closed ? "CLOSED" :
-                value == TripStatus.Cancelled ? "CANCELLED" :
-                value == TripStatus.OnHold ? "ON_HOLD" :
-                value == TripStatus.FailedAttempt ? "FAILED_ATTEMPT" :
-                "DRAFT",
-            value =>
-                value == "DRAFT" ? TripStatus.Draft :
-                value == "DISPATCHED" ? TripStatus.Dispatched :
-                value == "ENROUTE_PICKUP" ? TripStatus.EnroutePickup :
-                value == "AT_PICKUP" ? TripStatus.AtPickup :
-                value == "LOADED" ? TripStatus.Loaded :
-                value == "ENROUTE_DROPOFF" ? TripStatus.EnrouteDropoff :
-                value == "AT_DROPOFF" ? TripStatus.AtDropoff :
-                value == "DELIVERED" ? TripStatus.Delivered :
-                value == "CLOSED" ? TripStatus.Closed :
-                value == "CANCELLED" ? TripStatus.Cancelled :
-                value == "ON_HOLD" ? TripStatus.OnHold :
-                value == "FAILED_ATTEMPT" ? TripStatus.FailedAttempt :
-                TripStatus.Draft);
-
-        var historyEventConverter = new ValueConverter<TripHistoryEventType, string>(
-            value =>
-                value == TripHistoryEventType.ScheduleUpdated ? "SCHEDULE_UPDATED" :
-                value == TripHistoryEventType.StatusCorrected ? "STATUS_CORRECTED" :
-                "STATUS_CHANGE",
-            value =>
-                value == "SCHEDULE_UPDATED" ? TripHistoryEventType.ScheduleUpdated :
-                value == "STATUS_CORRECTED" ? TripHistoryEventType.StatusCorrected :
-                TripHistoryEventType.StatusChange);
-
-        var stopTypeConverter = new ValueConverter<TripStopType, string>(
-            value => value == TripStopType.Pickup ? "PICKUP" : "DROPOFF",
-            value => value == "PICKUP" ? TripStopType.Pickup : TripStopType.Dropoff);
-
-        var docTypeConverter = new ValueConverter<TripDocumentType, string>(
-            value =>
-                value == TripDocumentType.Waybill ? "WAYBILL" :
-                value == TripDocumentType.Pod ? "POD" :
-                value == TripDocumentType.Atw ? "ATW" :
-                "WAYBILL",
-            value =>
-                value == "WAYBILL" ? TripDocumentType.Waybill :
-                value == "POD" ? TripDocumentType.Pod :
-                value == "ATW" ? TripDocumentType.Atw :
-                TripDocumentType.Waybill);
-
-        var docStateConverter = new ValueConverter<TripDocumentState, string>(
-            value =>
-                value == TripDocumentState.Missing ? "MISSING" :
-                value == TripDocumentState.Uploaded ? "UPLOADED" :
-                value == TripDocumentState.Verified ? "VERIFIED" :
-                value == TripDocumentState.Rejected ? "REJECTED" :
-                "MISSING",
-            value =>
-                value == "MISSING" ? TripDocumentState.Missing :
-                value == "UPLOADED" ? TripDocumentState.Uploaded :
-                value == "VERIFIED" ? TripDocumentState.Verified :
-                value == "REJECTED" ? TripDocumentState.Rejected :
-                TripDocumentState.Missing);
-
         modelBuilder.Entity<Customer>(entity =>
         {
             entity.ToTable("dispatch_customers");
@@ -1123,289 +1032,6 @@ public sealed class InventoryDbContext : DbContext
             entity.HasIndex(customer => customer.Name);
         });
 
-        modelBuilder.Entity<Trip>(entity =>
-        {
-            entity.ToTable("dispatch_trips");
-            entity.HasKey(trip => trip.Id);
-            entity.Property(trip => trip.Id).HasColumnName("id");
-            entity.Property(trip => trip.CustomerId).HasColumnName("customer_id");
-            entity.Property(trip => trip.DriverUserId).HasColumnName("driver_user_id");
-            entity.Property(trip => trip.TruckAssetId).HasColumnName("truck_asset_id");
-            entity.Property(trip => trip.Status)
-                .HasColumnName("status")
-                .HasConversion(statusConverter)
-                .HasMaxLength(30)
-                .IsRequired();
-            entity.Property(trip => trip.PodPending).HasColumnName("pod_pending").HasDefaultValue(false).IsRequired();
-            entity.Property(trip => trip.HoldPreviousStatus)
-                .HasColumnName("hold_previous_status")
-                .HasConversion(statusConverter)
-                .HasMaxLength(30);
-            entity.Property(trip => trip.Notes).HasColumnName("notes").HasMaxLength(400);
-            entity.Property(trip => trip.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
-            entity.Property(trip => trip.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(trip => trip.RowVersion)
-                .HasColumnName("row_version")
-                .IsRowVersion();
-
-            entity.HasOne(trip => trip.Customer)
-                .WithMany(customer => customer.Trips)
-                .HasForeignKey(trip => trip.CustomerId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(trip => trip.Driver)
-                .WithMany()
-                .HasForeignKey(trip => trip.DriverUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(trip => trip.TruckAsset)
-                .WithMany()
-                .HasForeignKey(trip => trip.TruckAssetId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(trip => trip.Status);
-            entity.HasIndex(trip => trip.DriverUserId);
-            entity.HasIndex(trip => new { trip.DriverUserId, trip.Status });
-            entity.HasIndex(trip => trip.CustomerId);
-            entity.HasIndex(trip => trip.TruckAssetId);
-            entity.HasIndex(trip => new { trip.TruckAssetId, trip.Status });
-        });
-
-        modelBuilder.Entity<TripStop>(entity =>
-        {
-            entity.ToTable("dispatch_trip_stops");
-            entity.HasKey(stop => stop.Id);
-            entity.Property(stop => stop.Id).HasColumnName("id");
-            entity.Property(stop => stop.TripId).HasColumnName("trip_id");
-            entity.Property(stop => stop.StopType)
-                .HasColumnName("stop_type")
-                .HasConversion(stopTypeConverter)
-                .HasMaxLength(20)
-                .IsRequired();
-            entity.Property(stop => stop.LocationText).HasColumnName("location_text").HasMaxLength(300).IsRequired();
-            entity.Property(stop => stop.ScheduledAt).HasColumnName("scheduled_at");
-            entity.Property(stop => stop.ActualAt).HasColumnName("actual_at");
-            entity.Property(stop => stop.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
-
-            entity.HasOne(stop => stop.Trip)
-                .WithMany(trip => trip.Stops)
-                .HasForeignKey(stop => stop.TripId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(stop => stop.TripId);
-            entity.HasIndex(stop => new { stop.TripId, stop.StopType, stop.ScheduledAt });
-            entity.HasIndex(stop => new { stop.StopType, stop.ScheduledAt });
-        });
-
-        modelBuilder.Entity<TripStatusHistory>(entity =>
-        {
-            entity.ToTable("dispatch_trip_status_history");
-            entity.HasKey(history => history.Id);
-            entity.Property(history => history.Id).HasColumnName("id");
-            entity.Property(history => history.TripId).HasColumnName("trip_id");
-            entity.Property(history => history.EventType)
-                .HasColumnName("event_type")
-                .HasConversion(historyEventConverter)
-                .HasMaxLength(30)
-                .HasDefaultValue(TripHistoryEventType.StatusChange)
-                .IsRequired();
-            entity.Property(history => history.FromStatus)
-                .HasColumnName("from_status")
-                .HasConversion(statusConverter)
-                .HasMaxLength(30)
-                .IsRequired();
-            entity.Property(history => history.ToStatus)
-                .HasColumnName("to_status")
-                .HasConversion(statusConverter)
-                .HasMaxLength(30)
-                .IsRequired();
-            entity.Property(history => history.ActorUserId).HasColumnName("actor_user_id");
-            entity.Property(history => history.Remarks).HasColumnName("remarks").HasMaxLength(400);
-            entity.Property(history => history.EventAt).HasColumnName("event_at");
-            entity.Property(history => history.RecordedAt)
-                .HasColumnName("recorded_at")
-                .HasDefaultValueSql("SYSUTCDATETIME()");
-
-            entity.HasOne(history => history.Trip)
-                .WithMany(trip => trip.StatusHistory)
-                .HasForeignKey(history => history.TripId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(history => history.Actor)
-                .WithMany()
-                .HasForeignKey(history => history.ActorUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(history => history.TripId);
-            entity.HasIndex(history => new { history.TripId, history.EventAt });
-            entity.HasIndex(history => new { history.TripId, history.RecordedAt });
-        });
-
-        modelBuilder.Entity<TripDocument>(entity =>
-        {
-            entity.ToTable("dispatch_trip_documents");
-            entity.HasKey(doc => doc.Id);
-            entity.Property(doc => doc.Id).HasColumnName("id");
-            entity.Property(doc => doc.TripId).HasColumnName("trip_id");
-            entity.Property(doc => doc.Type)
-                .HasColumnName("doc_type")
-                .HasConversion(docTypeConverter)
-                .HasMaxLength(20)
-                .IsRequired();
-            entity.Property(doc => doc.State)
-                .HasColumnName("state")
-                .HasConversion(docStateConverter)
-                .HasMaxLength(20)
-                .IsRequired();
-            entity.Property(doc => doc.SupersedesDocumentId).HasColumnName("supersedes_document_id");
-            entity.Property(doc => doc.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
-            entity.Property(doc => doc.StorageKey).HasColumnName("storage_key").HasMaxLength(500).IsRequired();
-            entity.Property(doc => doc.UploadedByUserId).HasColumnName("uploaded_by_user_id");
-            entity.Property(doc => doc.VerifiedByUserId).HasColumnName("verified_by_user_id");
-            entity.Property(doc => doc.RejectedByUserId).HasColumnName("rejected_by_user_id");
-            entity.Property(doc => doc.Remarks).HasColumnName("remarks").HasMaxLength(500);
-            entity.Property(doc => doc.UploadedAt).HasColumnName("uploaded_at").HasDefaultValueSql("SYSUTCDATETIME()");
-            entity.Property(doc => doc.VerifiedAt).HasColumnName("verified_at");
-            entity.Property(doc => doc.RejectedAt).HasColumnName("rejected_at");
-            entity.Property(doc => doc.RowVersion)
-                .HasColumnName("row_version")
-                .IsRowVersion();
-
-            entity.HasOne(doc => doc.Trip)
-                .WithMany(trip => trip.Documents)
-                .HasForeignKey(doc => doc.TripId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(doc => doc.UploadedBy)
-                .WithMany()
-                .HasForeignKey(doc => doc.UploadedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(doc => doc.VerifiedBy)
-                .WithMany()
-                .HasForeignKey(doc => doc.VerifiedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(doc => doc.RejectedBy)
-                .WithMany()
-                .HasForeignKey(doc => doc.RejectedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(doc => doc.SupersedesDocument)
-                .WithMany()
-                .HasForeignKey(doc => doc.SupersedesDocumentId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(doc => doc.TripId);
-            entity.HasIndex(doc => new { doc.TripId, doc.Type, doc.IsActive });
-            entity.HasIndex(doc => new { doc.TripId, doc.Type, doc.State });
-            entity.HasIndex(doc => new { doc.TripId, doc.Type, doc.IsActive, doc.State });
-        });
     }
 
-    private static void ConfigureShipmentRequests(ModelBuilder modelBuilder)
-    {
-        var statusConverter = new ValueConverter<ShipmentRequestStatus, string>(
-            value =>
-                value == ShipmentRequestStatus.Draft ? "DRAFT" :
-                value == ShipmentRequestStatus.Submitted ? "SUBMITTED" :
-                value == ShipmentRequestStatus.Approved ? "APPROVED" :
-                value == ShipmentRequestStatus.Rejected ? "REJECTED" :
-                "CONVERTED_TO_TRIP",
-            value =>
-                value == "DRAFT" ? ShipmentRequestStatus.Draft :
-                value == "SUBMITTED" ? ShipmentRequestStatus.Submitted :
-                value == "APPROVED" ? ShipmentRequestStatus.Approved :
-                value == "REJECTED" ? ShipmentRequestStatus.Rejected :
-                ShipmentRequestStatus.ConvertedToTrip);
-
-        var docTypeConverter = new ValueConverter<ShipmentRequestDocumentType, string>(
-            value =>
-                value == ShipmentRequestDocumentType.Invoice ? "INVOICE" :
-                value == ShipmentRequestDocumentType.CargoManifest ? "CARGO_MANIFEST" :
-                value == ShipmentRequestDocumentType.DeliveryInstructions ? "DELIVERY_INSTRUCTIONS" :
-                "OTHER",
-            value =>
-                value == "INVOICE" ? ShipmentRequestDocumentType.Invoice :
-                value == "CARGO_MANIFEST" ? ShipmentRequestDocumentType.CargoManifest :
-                value == "DELIVERY_INSTRUCTIONS" ? ShipmentRequestDocumentType.DeliveryInstructions :
-                ShipmentRequestDocumentType.Other);
-
-        modelBuilder.Entity<ShipmentRequest>(entity =>
-        {
-            entity.ToTable("shipment_requests");
-            entity.HasKey(request => request.Id);
-            entity.Property(request => request.Id).HasColumnName("id");
-            entity.Property(request => request.CustomerId).HasColumnName("customer_id");
-            entity.Property(request => request.Status)
-                .HasColumnName("status")
-                .HasConversion(statusConverter)
-                .HasMaxLength(30)
-                .IsRequired();
-            entity.Property(request => request.PickupLocation).HasColumnName("pickup_location").HasMaxLength(300).IsRequired();
-            entity.Property(request => request.DropoffLocation).HasColumnName("dropoff_location").HasMaxLength(300).IsRequired();
-            entity.Property(request => request.RequestedPickupTime).HasColumnName("requested_pickup_time");
-            entity.Property(request => request.CargoDescription).HasColumnName("cargo_description").HasMaxLength(500);
-            entity.Property(request => request.CargoWeight).HasColumnName("cargo_weight").HasColumnType("decimal(18,3)");
-            entity.Property(request => request.SpecialInstructions).HasColumnName("special_instructions").HasMaxLength(600);
-            entity.Property(request => request.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
-            entity.Property(request => request.CreatedByUserId).HasColumnName("created_by_user_id");
-            entity.Property(request => request.ApprovedAt).HasColumnName("approved_at");
-            entity.Property(request => request.ApprovedByUserId).HasColumnName("approved_by_user_id");
-            entity.Property(request => request.ConvertedTripId).HasColumnName("converted_trip_id");
-
-            entity.HasOne(request => request.Customer)
-                .WithMany()
-                .HasForeignKey(request => request.CustomerId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(request => request.CreatedByUser)
-                .WithMany()
-                .HasForeignKey(request => request.CreatedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(request => request.ApprovedByUser)
-                .WithMany()
-                .HasForeignKey(request => request.ApprovedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(request => request.ConvertedTrip)
-                .WithMany()
-                .HasForeignKey(request => request.ConvertedTripId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(request => request.CustomerId);
-            entity.HasIndex(request => request.Status);
-            entity.HasIndex(request => new { request.CustomerId, request.Status });
-        });
-
-        modelBuilder.Entity<ShipmentRequestDocument>(entity =>
-        {
-            entity.ToTable("shipment_request_documents");
-            entity.HasKey(doc => doc.Id);
-            entity.Property(doc => doc.Id).HasColumnName("id");
-            entity.Property(doc => doc.RequestId).HasColumnName("request_id");
-            entity.Property(doc => doc.DocumentType)
-                .HasColumnName("document_type")
-                .HasConversion(docTypeConverter)
-                .HasMaxLength(40)
-                .IsRequired();
-            entity.Property(doc => doc.StorageKey).HasColumnName("storage_key").HasMaxLength(500).IsRequired();
-            entity.Property(doc => doc.UploadedByUserId).HasColumnName("uploaded_by_user_id");
-            entity.Property(doc => doc.UploadedAt).HasColumnName("uploaded_at").HasDefaultValueSql("SYSUTCDATETIME()");
-
-            entity.HasOne(doc => doc.Request)
-                .WithMany(request => request.Documents)
-                .HasForeignKey(doc => doc.RequestId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(doc => doc.UploadedByUser)
-                .WithMany()
-                .HasForeignKey(doc => doc.UploadedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(doc => doc.RequestId);
-            entity.HasIndex(doc => new { doc.RequestId, doc.DocumentType });
-        });
-    }
 }
