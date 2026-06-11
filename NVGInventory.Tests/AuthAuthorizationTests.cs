@@ -56,8 +56,10 @@ public sealed class AuthAuthorizationTests : IDisposable
         var payload = await response.Content.ReadFromJsonAsync<LoginResponse>();
         Assert.NotNull(payload);
         Assert.False(string.IsNullOrWhiteSpace(payload!.AccessToken));
+        Assert.True(string.IsNullOrWhiteSpace(payload.RefreshToken));
         Assert.Equal(user.Id, payload.UserId);
         Assert.Contains(RoleNames.InventoryOfficer, payload.Roles);
+        AssertRefreshCookieHardened(GetRefreshCookie(response));
 
         var handler = new JwtSecurityTokenHandler();
         var tokenValidationParameters = new TokenValidationParameters
@@ -78,6 +80,46 @@ public sealed class AuthAuthorizationTests : IDisposable
         Assert.Equal(user.Id.ToString(), token.Claims.First(c => c.Type == JwtRegisteredClaimNames.Sub).Value);
         Assert.Equal(username, token.Claims.First(c => c.Type == JwtRegisteredClaimNames.UniqueName).Value);
         Assert.Contains(token.Claims, c => c.Type == "role" && c.Value == RoleNames.InventoryOfficer);
+    }
+
+    [SqlServerFact]
+    public async Task Refresh_UsesHttpOnlyCookieAndRequiresCsrfHeader()
+    {
+        var username = $"io_refresh_{Guid.NewGuid():N}";
+        var password = "plaintext";
+        await CreateUserAsync(username, password, RoleNames.InventoryOfficer);
+
+        var loginResponse = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(username, password));
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var refreshCookie = GetRefreshCookie(loginResponse);
+        AssertRefreshCookieHardened(refreshCookie);
+        var cookieHeader = refreshCookie.Split(';', 2)[0];
+
+        using var missingCsrfRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+        {
+            Content = JsonContent.Create(new RefreshTokenRequest())
+        };
+        missingCsrfRequest.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+
+        var missingCsrfResponse = await _client.SendAsync(missingCsrfRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, missingCsrfResponse.StatusCode);
+
+        using var refreshRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+        {
+            Content = JsonContent.Create(new RefreshTokenRequest())
+        };
+        refreshRequest.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+        refreshRequest.Headers.Add("X-NVG-CSRF", "1");
+
+        var refreshResponse = await _client.SendAsync(refreshRequest);
+        Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);
+
+        var payload = await refreshResponse.Content.ReadFromJsonAsync<RefreshTokenResponse>();
+        Assert.NotNull(payload);
+        Assert.False(string.IsNullOrWhiteSpace(payload!.AccessToken));
+        Assert.True(string.IsNullOrWhiteSpace(payload.RefreshToken));
+        AssertRefreshCookieHardened(GetRefreshCookie(refreshResponse));
     }
 
     [SqlServerFact]
@@ -348,5 +390,20 @@ public sealed class AuthAuthorizationTests : IDisposable
             signingCredentials: creds);
 
         return handler.WriteToken(token);
+    }
+
+    private static string GetRefreshCookie(HttpResponseMessage response)
+    {
+        Assert.True(response.Headers.TryGetValues("Set-Cookie", out var setCookies));
+        return Assert.Single(
+            setCookies.Where(value => value.StartsWith("nvg_refresh_token=", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static void AssertRefreshCookieHardened(string cookie)
+    {
+        Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=strict", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("secure", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("path=/api/auth", cookie, StringComparison.OrdinalIgnoreCase);
     }
 }

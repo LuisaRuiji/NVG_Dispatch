@@ -20,7 +20,7 @@ internal static class DevSeedData
 
         const string seedUsername = "Superadmin";
         const string seedEmail = "Superadmin@nvg.com";
-        const string seedPassword = "Super123!";
+        const string seedPassword = "SuperAdminDemo1!";
 
         var existing = await dbContext.Users.FirstOrDefaultAsync(u => u.Username == seedUsername, cancellationToken);
         if (existing is null)

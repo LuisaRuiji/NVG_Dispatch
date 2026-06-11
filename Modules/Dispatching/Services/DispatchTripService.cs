@@ -16,12 +16,21 @@ public sealed record DispatchTripStopInput(
     string LocationText,
     DateTime? ScheduledAt);
 
+public sealed record DispatchTripFinancialInput(
+    decimal? Rate,
+    decimal? Payroll,
+    decimal? Allowance,
+    decimal? FuelAmount,
+    decimal? FuelPricePerLiter,
+    string? OfficialReceiptNumber);
+
 public sealed record CreateDispatchTripCommand(
     Guid CustomerId,
     Guid? DriverUserId,
     Guid? TruckAssetId,
     string? Notes,
-    IReadOnlyCollection<DispatchTripStopInput>? Stops);
+    IReadOnlyCollection<DispatchTripStopInput>? Stops,
+    DispatchTripFinancialInput? Financials = null);
 
 public sealed record UpdateDispatchTripCommand(
     Guid CustomerId,
@@ -30,7 +39,8 @@ public sealed record UpdateDispatchTripCommand(
     string? Notes,
     IReadOnlyCollection<DispatchTripStopInput>? Stops,
     string? Remarks,
-    byte[] RowVersion);
+    byte[] RowVersion,
+    DispatchTripFinancialInput? Financials = null);
 
 public sealed record DispatchTripCommand(
     Guid TripId,
@@ -113,6 +123,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         await _userService.EnsureActiveUserAsync(actor.UserId, cancellationToken);
 
         EnsureScheduledStops(command.Stops);
+        EnsureFinancialsValid(command.Financials);
 
         var customer = await _dbContext.DispatchCustomers
             .FirstOrDefaultAsync(c => c.Id == command.CustomerId, cancellationToken);
@@ -154,6 +165,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             CreatedAt = now,
             UpdatedAt = now
         };
+        var providedFinancialFields = ApplyFinancials(trip, command.Financials);
 
         _dbContext.DispatchTrips.Add(trip);
 
@@ -179,7 +191,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             EntityTypes.DispatchTrip,
             trip.Id,
             null,
-            new { trip.Status },
+            new { trip.Status, EncryptedFinancialFields = providedFinancialFields },
             tripId: trip.Id);
 
         await SaveChangesAsync(cancellationToken);
@@ -224,6 +236,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         var originalPickup = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
         var originalDropoff = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
         var updateRemarks = string.IsNullOrWhiteSpace(command.Remarks) ? null : command.Remarks.Trim();
+        EnsureFinancialsValid(command.Financials);
 
         var customerChanged = command.CustomerId != trip.CustomerId;
 
@@ -313,6 +326,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             scheduleChanged = true;
         }
         trip.Notes = command.Notes;
+        var financialChangedFields = ApplyFinancials(trip, command.Financials);
         trip.UpdatedAt = DateTime.UtcNow;
 
         if (command.Stops is not null)
@@ -432,6 +446,18 @@ public sealed class DispatchTripService : ITripLifecycleService
                 trip.Id,
                 before,
                 after,
+                tripId: trip.Id);
+        }
+
+        if (financialChangedFields.Count > 0)
+        {
+            _auditService.AddEntry(
+                actor.UserId,
+                AuditActions.DispatchTripUpdated,
+                EntityTypes.DispatchTrip,
+                trip.Id,
+                new { EncryptedFinancialFields = financialChangedFields, Values = "redacted" },
+                new { EncryptedFinancialFields = financialChangedFields, Values = "redacted", Remarks = updateRemarks },
                 tripId: trip.Id);
         }
 
@@ -1488,6 +1514,78 @@ public sealed class DispatchTripService : ITripLifecycleService
         {
             throw new BusinessRuleViolationException("Remarks are required when marking POD pending.");
         }
+    }
+
+    private static IReadOnlyCollection<string> ApplyFinancials(Trip trip, DispatchTripFinancialInput? financials)
+    {
+        var changedFields = new List<string>();
+        if (financials is null)
+        {
+            return changedFields;
+        }
+
+        UpdateDecimal(nameof(Trip.Rate), trip.Rate, financials.Rate, value => trip.Rate = value);
+        UpdateDecimal(nameof(Trip.Payroll), trip.Payroll, financials.Payroll, value => trip.Payroll = value);
+        UpdateDecimal(nameof(Trip.Allowance), trip.Allowance, financials.Allowance, value => trip.Allowance = value);
+        UpdateDecimal(nameof(Trip.FuelAmount), trip.FuelAmount, financials.FuelAmount, value => trip.FuelAmount = value);
+        UpdateDecimal(
+            nameof(Trip.FuelPricePerLiter),
+            trip.FuelPricePerLiter,
+            financials.FuelPricePerLiter,
+            value => trip.FuelPricePerLiter = value);
+
+        var officialReceiptNumber = NormalizeSensitiveText(financials.OfficialReceiptNumber);
+        if (!string.Equals(trip.OfficialReceiptNumber, officialReceiptNumber, StringComparison.Ordinal))
+        {
+            trip.OfficialReceiptNumber = officialReceiptNumber;
+            changedFields.Add(nameof(Trip.OfficialReceiptNumber));
+        }
+
+        return changedFields;
+
+        void UpdateDecimal(string fieldName, decimal? current, decimal? next, Action<decimal?> apply)
+        {
+            if (current == next)
+            {
+                return;
+            }
+
+            apply(next);
+            changedFields.Add(fieldName);
+        }
+    }
+
+    private static void EnsureFinancialsValid(DispatchTripFinancialInput? financials)
+    {
+        if (financials is null)
+        {
+            return;
+        }
+
+        EnsureNonNegative(financials.Rate, nameof(financials.Rate));
+        EnsureNonNegative(financials.Payroll, nameof(financials.Payroll));
+        EnsureNonNegative(financials.Allowance, nameof(financials.Allowance));
+        EnsureNonNegative(financials.FuelAmount, nameof(financials.FuelAmount));
+        EnsureNonNegative(financials.FuelPricePerLiter, nameof(financials.FuelPricePerLiter));
+
+        var officialReceiptNumber = NormalizeSensitiveText(financials.OfficialReceiptNumber);
+        if (officialReceiptNumber is { Length: > 120 })
+        {
+            throw new BusinessRuleViolationException("Official receipt number must be 120 characters or fewer.");
+        }
+    }
+
+    private static void EnsureNonNegative(decimal? value, string fieldName)
+    {
+        if (value < 0)
+        {
+            throw new BusinessRuleViolationException($"{fieldName} cannot be negative.");
+        }
+    }
+
+    private static string? NormalizeSensitiveText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static DispatchTripStopInput? ResolveStopInput(

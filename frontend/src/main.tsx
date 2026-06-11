@@ -42,13 +42,18 @@ import PortalRequestDetailPage from "@/features/portal/PortalRequestDetailPage";
 import PortalShipmentsPage from "@/features/portal/PortalShipmentsPage";
 import PortalShipmentDetailPage from "@/features/portal/PortalShipmentDetailPage";
 import { setUnauthorizedHandler } from "@/lib/api";
-import { loadMeIfTokenExists, logout } from "@/features/auth/authStore";
+import { loadMeIfTokenExists, logout, refreshSession } from "@/features/auth/authStore";
 import RoleGate from "@/components/RoleGate";
 import { initTheme } from "@/lib/theme";
 
-setUnauthorizedHandler(() => {
+setUnauthorizedHandler(async () => {
+  if (await refreshSession()) {
+    return true;
+  }
+
   logout();
   window.location.assign("/login");
+  return false;
 });
 
 initTheme();

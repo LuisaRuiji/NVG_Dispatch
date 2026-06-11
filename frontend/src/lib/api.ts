@@ -4,17 +4,17 @@ import { emitMaintenance } from "@/lib/maintenanceBus";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
 
 let accessToken: string | null = null;
-let onUnauthorized: (() => void) | null = null;
+let onUnauthorized: (() => boolean | Promise<boolean>) | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
-export function setUnauthorizedHandler(handler: (() => void) | null) {
+export function setUnauthorizedHandler(handler: (() => boolean | Promise<boolean>) | null) {
   onUnauthorized = handler;
 }
 
-type RequestInitEx = RequestInit & { auth?: boolean };
+type RequestInitEx = RequestInit & { auth?: boolean; retryOnUnauthorized?: boolean };
 
 type ApiErrorPayload = {
   errorCode?: string;
@@ -75,7 +75,8 @@ export async function api<T>(path: string, init: RequestInitEx = {}): Promise<T>
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  const { auth: _auth, retryOnUnauthorized = true, ...fetchInit } = init;
+  const res = await fetch(`${API_BASE_URL}${path}`, { credentials: "include", ...fetchInit, headers });
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
@@ -85,9 +86,13 @@ export async function api<T>(path: string, init: RequestInitEx = {}): Promise<T>
       raw.trim() ||
       `${res.status} ${res.statusText}`.trim();
 
-    if (res.status === 401 && init.auth !== false) {
+    if (res.status === 401 && init.auth !== false && retryOnUnauthorized) {
+      const recovered = await onUnauthorized?.();
+      if (recovered) {
+        return api<T>(path, { ...init, retryOnUnauthorized: false });
+      }
+
       emitToast("Session expired", "error");
-      onUnauthorized?.();
     }
 
     if (apiError?.errorCode === "MODULE_DISABLED") {
@@ -111,7 +116,7 @@ export async function downloadFile(path: string, filename: string) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  const res = await fetch(`${API_BASE_URL}${path}`, { credentials: "include", headers });
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "");

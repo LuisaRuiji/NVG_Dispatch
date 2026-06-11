@@ -722,6 +722,56 @@ namespace NVGInventory.Data.Migrations
                     b.ToTable("loan_line_returns", "dbo");
                 });
 
+            modelBuilder.Entity("NVGInventory.Domain.Entities.MfaChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedByIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("created_by_ip");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("method");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("UserId", "ConsumedAt");
+
+                    b.ToTable("mfa_challenges", "dbo");
+                });
+
             modelBuilder.Entity("NVGInventory.Domain.Entities.ModuleSetting", b =>
                 {
                     b.Property<string>("ModuleKey")
@@ -914,6 +964,79 @@ namespace NVGInventory.Data.Migrations
                     b.HasIndex("ReceivedByUserId");
 
                     b.ToTable("purchase_order_receipts", "dbo");
+                });
+
+            modelBuilder.Entity("NVGInventory.Domain.Entities.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedByIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("created_by_ip");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("family_id");
+
+                    b.Property<Guid?>("ReplacedByTokenId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("replaced_by_token_id");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("RevokedByIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("revoked_by_ip");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("revoked_reason");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "RevokedAt");
+
+                    b.ToTable("refresh_tokens", "dbo");
                 });
 
             modelBuilder.Entity("NVGInventory.Domain.Entities.Request", b =>
@@ -1178,14 +1301,14 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnName("id");
 
                     b.Property<string>("Address")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)")
-                        .HasColumnName("address");
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
+                        .HasColumnName("address_encrypted");
 
                     b.Property<string>("ContactEmail")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("contact_email");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("contact_email_encrypted");
 
                     b.Property<string>("ContactName")
                         .HasMaxLength(120)
@@ -1193,9 +1316,9 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnName("contact_name");
 
                     b.Property<string>("ContactPhone")
-                        .HasMaxLength(60)
-                        .HasColumnType("nvarchar(60)")
-                        .HasColumnName("contact_phone");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("contact_phone_encrypted");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -1251,11 +1374,35 @@ namespace NVGInventory.Data.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<bool>("MfaEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("mfa_enabled");
+
+                    b.Property<DateTime?>("MfaEnabledAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("mfa_enabled_at");
+
+                    b.Property<DateTime?>("MfaLastVerifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("mfa_last_verified_at");
+
+                    b.Property<string>("MfaSecretKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("mfa_secret_key");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("password_hash");
+
+                    b.Property<string>("PendingMfaSecretKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("pending_mfa_secret_key");
 
                     b.Property<string>("Username")
                         .IsRequired()
@@ -1459,24 +1606,24 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnName("id");
 
                     b.Property<string>("Address")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)")
-                        .HasColumnName("address");
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
+                        .HasColumnName("address_encrypted");
 
                     b.Property<string>("Contact")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("contact");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("contact_encrypted");
 
                     b.Property<string>("ContactEmail")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("contact_email");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("contact_email_encrypted");
 
                     b.Property<string>("ContactPerson")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("contact_person");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("contact_person_encrypted");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -1491,9 +1638,9 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnName("name");
 
                     b.Property<string>("Phone")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("phone");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("phone_encrypted");
 
                     b.HasKey("Id");
 
@@ -1509,6 +1656,11 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("id");
 
+                    b.Property<string>("Allowance")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("allowance_encrypted");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -1523,6 +1675,16 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("driver_user_id");
 
+                    b.Property<string>("FuelAmount")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("fuel_amount_encrypted");
+
+                    b.Property<string>("FuelPricePerLiter")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("fuel_price_per_liter_encrypted");
+
                     b.Property<string>("HoldPreviousStatus")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)")
@@ -1533,11 +1695,26 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("nvarchar(400)")
                         .HasColumnName("notes");
 
+                    b.Property<string>("OfficialReceiptNumber")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("official_receipt_number_encrypted");
+
+                    b.Property<string>("Payroll")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("payroll_encrypted");
+
                     b.Property<bool>("PodPending")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false)
                         .HasColumnName("pod_pending");
+
+                    b.Property<string>("Rate")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("rate_encrypted");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -2080,6 +2257,17 @@ namespace NVGInventory.Data.Migrations
                     b.Navigation("ReceivedBy");
                 });
 
+            modelBuilder.Entity("NVGInventory.Domain.Entities.MfaChallenge", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("NVGInventory.Domain.Entities.ModuleSetting", b =>
                 {
                     b.HasOne("NVGInventory.Domain.Entities.User", "UpdatedBy")
@@ -2145,6 +2333,17 @@ namespace NVGInventory.Data.Migrations
                     b.Navigation("PurchaseOrderLine");
 
                     b.Navigation("ReceivedBy");
+                });
+
+            modelBuilder.Entity("NVGInventory.Domain.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("NVGInventory.Domain.Entities.Request", b =>

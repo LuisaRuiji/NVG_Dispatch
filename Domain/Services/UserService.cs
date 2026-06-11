@@ -28,6 +28,8 @@ public sealed class UserService
             throw new BusinessRuleViolationException("Password is required.");
         }
 
+        PasswordPolicy.EnsureValid(command.Password);
+
         var username = command.Username.Trim();
         var exists = await _dbContext.Users
             .AnyAsync(user => user.Username == username, cancellationToken);
@@ -205,6 +207,8 @@ public sealed class UserService
         {
             throw new BusinessRuleViolationException("Password is required.");
         }
+
+        PasswordPolicy.EnsureValid(newPassword);
 
         var user = await _dbContext.Users
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);

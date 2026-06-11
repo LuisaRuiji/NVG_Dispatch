@@ -129,6 +129,15 @@ export type DispatchTripStop = {
   actualAt?: string | null;
 };
 
+export type DispatchTripFinancials = {
+  rate?: number | null;
+  payroll?: number | null;
+  allowance?: number | null;
+  fuelAmount?: number | null;
+  fuelPricePerLiter?: number | null;
+  officialReceiptNumber?: string | null;
+};
+
 export type DispatchTripDocument = {
   id: string;
   type: TripDocumentType;
@@ -199,6 +208,7 @@ export type DispatchTripDetail = {
   history: DispatchTripHistory[];
   docVerificationEnabled: boolean;
   rowVersion: string;
+  financials?: DispatchTripFinancials | null;
 };
 
 export type DispatchTripStatusRequest = {

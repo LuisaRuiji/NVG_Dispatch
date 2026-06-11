@@ -50,6 +50,14 @@ public sealed record DispatchTripDocumentChecklist(
     TripDocumentType Type,
     TripDocumentState State);
 
+public sealed record DispatchTripFinancialDetail(
+    decimal? Rate,
+    decimal? Payroll,
+    decimal? Allowance,
+    decimal? FuelAmount,
+    decimal? FuelPricePerLiter,
+    string? OfficialReceiptNumber);
+
 public sealed record DispatchTripDetail(
     Guid Id,
     TripStatus Status,
@@ -67,6 +75,7 @@ public sealed record DispatchTripDetail(
     IReadOnlyCollection<TripStop> Stops,
     IReadOnlyCollection<TripDocument> Documents,
     IReadOnlyCollection<TripStatusHistory> History,
+    DispatchTripFinancialDetail? Financials,
     byte[] RowVersion);
 
 public sealed record DispatchTripSummary(
@@ -319,7 +328,7 @@ public sealed class DispatchTripQueryService
 
         EnsureTripAccess(trip, actor);
 
-        return MapTripDetail(trip);
+        return MapTripDetail(trip, CanViewFinancials(actor));
     }
 
     public async Task<DispatchTripSummary> GetTripSummaryAsync(
@@ -522,7 +531,7 @@ public sealed class DispatchTripQueryService
             throw new NotFoundException("Trip not found.");
         }
 
-        return MapTripDetail(trip);
+        return MapTripDetail(trip, includeFinancials: false);
     }
 
     public async Task<IReadOnlyCollection<TripStatusHistory>> GetTripHistoryAsync(
@@ -701,7 +710,7 @@ public sealed class DispatchTripQueryService
         throw new ForbiddenDomainException("Trip access denied.");
     }
 
-    private DispatchTripDetail MapTripDetail(Trip trip)
+    private DispatchTripDetail MapTripDetail(Trip trip, bool includeFinancials)
     {
         var history = trip.StatusHistory
             .OrderBy(h => h.EventAt)
@@ -730,7 +739,21 @@ public sealed class DispatchTripQueryService
             trip.Stops,
             documents,
             history,
+            includeFinancials
+                ? new DispatchTripFinancialDetail(
+                    trip.Rate,
+                    trip.Payroll,
+                    trip.Allowance,
+                    trip.FuelAmount,
+                    trip.FuelPricePerLiter,
+                    trip.OfficialReceiptNumber)
+                : null,
             trip.RowVersion);
+    }
+
+    private static bool CanViewFinancials(DispatchActorContext actor)
+    {
+        return actor.IsManager || actor.IsFinance || actor.IsCeo;
     }
 
     private static List<DispatchTripListItem> AttachPlannedWindow(List<DispatchTripListItem> items)

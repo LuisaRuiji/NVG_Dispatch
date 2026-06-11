@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
+using NVGInventory.Security;
 
 namespace NVGInventory.Modules.Dispatching.Persistence.Configurations;
 
@@ -39,6 +40,8 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
                 value == "ON_HOLD" ? TripStatus.OnHold :
                 value == "FAILED_ATTEMPT" ? TripStatus.FailedAttempt :
                 TripStatus.Draft);
+        var sensitiveDecimalConverter = SensitiveFieldValueConverters.CreateNullableSensitiveDecimalConverter();
+        var sensitiveStringConverter = SensitiveFieldValueConverters.CreateNullableSensitiveStringConverter();
 
         entity.ToTable("dispatch_trips");
         entity.HasKey(trip => trip.Id);
@@ -57,6 +60,30 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
             .HasConversion(statusConverter)
             .HasMaxLength(30);
         entity.Property(trip => trip.Notes).HasColumnName("notes").HasMaxLength(400);
+        entity.Property(trip => trip.Rate)
+            .HasColumnName("rate_encrypted")
+            .HasConversion(sensitiveDecimalConverter)
+            .HasMaxLength(512);
+        entity.Property(trip => trip.Payroll)
+            .HasColumnName("payroll_encrypted")
+            .HasConversion(sensitiveDecimalConverter)
+            .HasMaxLength(512);
+        entity.Property(trip => trip.Allowance)
+            .HasColumnName("allowance_encrypted")
+            .HasConversion(sensitiveDecimalConverter)
+            .HasMaxLength(512);
+        entity.Property(trip => trip.FuelAmount)
+            .HasColumnName("fuel_amount_encrypted")
+            .HasConversion(sensitiveDecimalConverter)
+            .HasMaxLength(512);
+        entity.Property(trip => trip.FuelPricePerLiter)
+            .HasColumnName("fuel_price_per_liter_encrypted")
+            .HasConversion(sensitiveDecimalConverter)
+            .HasMaxLength(512);
+        entity.Property(trip => trip.OfficialReceiptNumber)
+            .HasColumnName("official_receipt_number_encrypted")
+            .HasConversion(sensitiveStringConverter)
+            .HasMaxLength(512);
         entity.Property(trip => trip.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
         entity.Property(trip => trip.UpdatedAt).HasColumnName("updated_at");
         entity.Property(trip => trip.RowVersion)

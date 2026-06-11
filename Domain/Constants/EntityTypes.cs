@@ -8,6 +8,7 @@ public static class EntityTypes
     public const string PurchaseOrderReceipt = "purchase_order_receipt";
     public const string InventoryAdjustment = "inventory_adjustment";
     public const string Supplier = "supplier";
+    public const string User = "user";
     public const string LoanReturn = "loan_return";
     public const string DispatchTrip = "dispatch_trip";
     public const string DispatchTripDocument = "dispatch_trip_document";

@@ -11,7 +11,7 @@ public sealed class DemoDataSeeder
 {
     public const string SuperAdminUsername = "Superadmin";
     public const string SuperAdminEmail = "Superadmin@nvg.com";
-    public const string SuperAdminPassword = "Super123!";
+    public const string SuperAdminPassword = "SuperAdminDemo1!";
 
     private readonly InventoryDbContext _dbContext;
     private readonly UserService _userService;
@@ -60,6 +60,7 @@ public sealed class DemoDataSeeder
 
         if (resetDatabase)
         {
+            DatabaseResetGuard.EnsureSafeToReset(_environment, _dbContext);
             await _dbContext.Database.EnsureDeletedAsync(cancellationToken);
             await _dbContext.Database.MigrateAsync(cancellationToken);
         }

@@ -25,6 +25,7 @@ public sealed class SqlServerWebApplicationFactory : WebApplicationFactory<Progr
         SetEnvironmentVariable("Jwt__Audience", JwtAudience);
         SetEnvironmentVariable("Jwt__Key", _jwtSigningKey);
         SetEnvironmentVariable("Jwt__AccessTokenMinutes", "60");
+        SetEnvironmentVariable("Jwt__RefreshTokenDays", "7");
     }
 
     public string JwtIssuer { get; }
@@ -46,9 +47,16 @@ public sealed class SqlServerWebApplicationFactory : WebApplicationFactory<Progr
                 ["Jwt:Issuer"] = JwtIssuer,
                 ["Jwt:Audience"] = JwtAudience,
                 ["Jwt:AccessTokenMinutes"] = "60",
+                ["Jwt:RefreshTokenDays"] = "7",
                 ["FrontendBaseUrl"] = "http://localhost:5173",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
-                ["ConnectionStrings:DefaultConnection"] = _connectionString
+                ["ConnectionStrings:DefaultConnection"] = _connectionString,
+                ["RateLimiting:Global:PermitLimit"] = "10000",
+                ["RateLimiting:Global:WindowMinutes"] = "1",
+                ["RateLimiting:Global:QueueLimit"] = "0",
+                ["RateLimiting:Auth:PermitLimit"] = "10000",
+                ["RateLimiting:Auth:WindowMinutes"] = "1",
+                ["RateLimiting:Auth:QueueLimit"] = "0"
             };
 
             config.AddInMemoryCollection(settings);

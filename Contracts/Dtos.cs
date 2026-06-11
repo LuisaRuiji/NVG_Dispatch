@@ -73,12 +73,53 @@ public sealed record LoginRequest(string Username, string Password);
 public sealed record LoginResponse(
     string AccessToken,
     Guid UserId,
-    IReadOnlyCollection<string> Roles);
+    IReadOnlyCollection<string> Roles,
+    DateTime ExpiresAtUtc,
+    string? RefreshToken = null);
+
+public sealed record MfaRequiredResponse(
+    bool MfaRequired,
+    Guid ChallengeId,
+    string Method,
+    DateTime ExpiresAtUtc);
+
+public sealed record MfaVerifyRequest(Guid ChallengeId, string Code);
+
+public sealed record MfaSetupResponse(string SecretKey, string OtpAuthUri);
+
+public sealed record MfaConfirmRequest(string Code);
+
+public sealed record MfaDisableRequest(string Code);
+
+public sealed record MfaStatusResponse(
+    bool Enabled,
+    DateTime? EnabledAt,
+    DateTime? LastVerifiedAt);
+
+public sealed record StepUpRequest(string Code);
+
+public sealed record StepUpResponse(
+    string AccessToken,
+    Guid UserId,
+    IReadOnlyCollection<string> Roles,
+    DateTime ExpiresAtUtc);
+
+public sealed record RefreshTokenRequest(string? RefreshToken = null);
+
+public sealed record RefreshTokenResponse(
+    string AccessToken,
+    Guid UserId,
+    IReadOnlyCollection<string> Roles,
+    DateTime ExpiresAtUtc,
+    string? RefreshToken = null);
+
+public sealed record LogoutRequest(string? RefreshToken = null);
 
 public sealed record CurrentUserResponse(
     Guid UserId,
     string Username,
-    IReadOnlyCollection<string> Roles);
+    IReadOnlyCollection<string> Roles,
+    bool MfaEnabled);
 
 public sealed record CreateSupplierRequest(
     string Name,
@@ -639,12 +680,29 @@ public sealed record DispatchTripStopRequest(
     string LocationText,
     DateTime? ScheduledAt);
 
+public sealed record DispatchTripFinancialRequest(
+    decimal? Rate,
+    decimal? Payroll,
+    decimal? Allowance,
+    decimal? FuelAmount,
+    decimal? FuelPricePerLiter,
+    string? OfficialReceiptNumber);
+
+public sealed record DispatchTripFinancialResponse(
+    decimal? Rate,
+    decimal? Payroll,
+    decimal? Allowance,
+    decimal? FuelAmount,
+    decimal? FuelPricePerLiter,
+    string? OfficialReceiptNumber);
+
 public sealed record CreateDispatchTripRequest(
     Guid CustomerId,
     Guid? DriverUserId,
     Guid? TruckAssetId,
     string? Notes,
-    IReadOnlyCollection<DispatchTripStopRequest>? Stops);
+    IReadOnlyCollection<DispatchTripStopRequest>? Stops,
+    DispatchTripFinancialRequest? Financials = null);
 
 public sealed record CreateDispatchTripResponse(Guid TripId, TripStatus Status);
 
@@ -655,7 +713,8 @@ public sealed record UpdateDispatchTripRequest(
     string? Notes,
     IReadOnlyCollection<DispatchTripStopRequest>? Stops,
     string? Remarks = null,
-    string RowVersion = "");
+    string RowVersion = "",
+    DispatchTripFinancialRequest? Financials = null);
 
 public sealed record DispatchTripActionRequest(
     Guid DriverUserId,
@@ -830,7 +889,8 @@ public sealed record DispatchTripDetailResponse(
     IReadOnlyCollection<DispatchTripDocumentResponse> Documents,
     IReadOnlyCollection<DispatchTripHistoryResponse> History,
     bool DocVerificationEnabled,
-    string RowVersion);
+    string RowVersion,
+    DispatchTripFinancialResponse? Financials = null);
 
 public sealed record DispatchAssignmentDayTripItemResponse(
     Guid TripId,

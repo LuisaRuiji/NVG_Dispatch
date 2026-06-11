@@ -1,5 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { applyTheme, getStoredTheme, type Theme } from "@/lib/theme";
+import {
+  confirmMfa,
+  disableMfa,
+  getMfaStatus,
+  setupMfa
+} from "@/features/auth/authStore";
+import type { MfaSetupResponse, MfaStatusResponse } from "@/features/auth/types";
 
 type Props = {
   open: boolean;
@@ -18,9 +25,69 @@ export default function AccountSettingsModal({
   roles,
   primaryRole
 }: Props) {
-  const [tab, setTab] = useState<"profile" | "appearance">("profile");
+  const [tab, setTab] = useState<"profile" | "security" | "appearance">("profile");
   const [theme, setTheme] = useState<Theme>(() => getStoredTheme() ?? "light");
+  const [mfaStatus, setMfaStatus] = useState<MfaStatusResponse | null>(null);
+  const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaMessage, setMfaMessage] = useState<string | null>(null);
   const roleList = useMemo(() => roles.join(", "), [roles]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    void getMfaStatus()
+      .then(setMfaStatus)
+      .catch(() => setMfaStatus(null));
+  }, [open]);
+
+  async function beginSetup() {
+    try {
+      setMfaBusy(true);
+      setMfaMessage(null);
+      setMfaSetup(await setupMfa());
+      setMfaCode("");
+    } catch (error) {
+      console.error(error);
+      setMfaMessage("Unable to start MFA setup.");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function confirmSetup() {
+    try {
+      setMfaBusy(true);
+      setMfaMessage(null);
+      const status = await confirmMfa(mfaCode);
+      setMfaStatus(status);
+      setMfaSetup(null);
+      setMfaCode("");
+      setMfaMessage("MFA enabled.");
+    } catch (error) {
+      console.error(error);
+      setMfaMessage("Invalid MFA code.");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function disableCurrentMfa() {
+    try {
+      setMfaBusy(true);
+      setMfaMessage(null);
+      const status = await disableMfa(mfaCode);
+      setMfaStatus(status);
+      setMfaCode("");
+      setMfaMessage("MFA disabled.");
+    } catch (error) {
+      console.error(error);
+      setMfaMessage("Invalid MFA code.");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
 
   if (!open) return null;
 
@@ -62,6 +129,16 @@ export default function AccountSettingsModal({
             Profile
           </button>
           <button
+            onClick={() => setTab("security")}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+              tab === "security"
+                ? "bg-[#175C99] text-white"
+                : "border border-slate-200 text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            Security
+          </button>
+          <button
             onClick={() => setTab("appearance")}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
               tab === "appearance"
@@ -93,6 +170,81 @@ export default function AccountSettingsModal({
               <p className="text-xs uppercase text-slate-400">Role Group</p>
               <p className="mt-1 text-slate-600">{roleList || "—"}</p>
             </div>
+          </div>
+        ) : tab === "security" ? (
+          <div className="mt-6 space-y-4 text-sm text-slate-600">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs uppercase text-slate-400">Multi-factor authentication</p>
+              <p className="mt-1 font-semibold text-slate-900">
+                {mfaStatus?.enabled ? "Enabled" : "Not enabled"}
+              </p>
+            </div>
+
+            {mfaSetup ? (
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div>
+                  <p className="text-xs uppercase text-slate-400">Secret</p>
+                  <input
+                    readOnly
+                    value={mfaSetup.secretKey}
+                    className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-slate-400">Authenticator URI</p>
+                  <input
+                    readOnly
+                    value={mfaSetup.otpAuthUri}
+                    className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-slate-400">Code</p>
+                  <input
+                    value={mfaCode}
+                    onChange={(event) => setMfaCode(event.target.value)}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                  />
+                </div>
+                <button
+                  onClick={confirmSetup}
+                  disabled={mfaBusy}
+                  className="rounded-lg bg-[#175C99] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  Confirm
+                </button>
+              </div>
+            ) : mfaStatus?.enabled ? (
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <p className="text-xs uppercase text-slate-400">Disable MFA</p>
+                <input
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                />
+                <button
+                  onClick={disableCurrentMfa}
+                  disabled={mfaBusy}
+                  className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 disabled:opacity-60"
+                >
+                  Disable
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={beginSetup}
+                disabled={mfaBusy}
+                className="rounded-lg bg-[#175C99] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                Set up MFA
+              </button>
+            )}
+
+            {mfaMessage ? <p className="text-xs text-slate-500">{mfaMessage}</p> : null}
           </div>
         ) : (
           <div className="mt-6 space-y-4 text-sm text-slate-600">

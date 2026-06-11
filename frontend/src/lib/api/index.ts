@@ -18,17 +18,26 @@ import type {
   LoginRequest,
   LoginResponse,
   ManagerDecisionRequest,
+  MfaRequiredResponse,
+  MfaVerifyRequest,
   RequestDetailResponse,
   RequestListItemResponse,
   RequestStatus,
   RequestType,
   SubmitMaintenanceIssueRequest,
   SubmitMaintenanceIssueResponse,
+  RefreshTokenRequest,
+  RefreshTokenResponse,
+  StepUpRequest,
+  StepUpResponse,
   SubmitRequestResponse
 } from "@/lib/api/types";
 
 export const authApi = {
-  login: (payload: LoginRequest) => apiPost<LoginResponse>("/api/auth/login", payload),
+  login: (payload: LoginRequest) => apiPost<LoginResponse | MfaRequiredResponse>("/api/auth/login", payload),
+  verifyMfa: (payload: MfaVerifyRequest) => apiPost<LoginResponse>("/api/auth/mfa/verify", payload),
+  stepUp: (payload: StepUpRequest, token: string) => apiPost<StepUpResponse>("/api/auth/step-up", payload, token),
+  refresh: (payload: RefreshTokenRequest) => apiPost<RefreshTokenResponse>("/api/auth/refresh", payload),
   me: (token: string) => apiGet<CurrentUserResponse>("/api/auth/me", token)
 };
 

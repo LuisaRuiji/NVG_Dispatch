@@ -1,23 +1,21 @@
 services:
   api:
     build: .
-    container_name: erp_api
+    container_name: nvg_api
+    env_file:
+      - .env
     ports:
       - "8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__DefaultConnection: "Server=db;Database=ERP;User=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
-      Jwt__Key: "${JWT_KEY}"
-      Jwt__Issuer: "ERP"
-      Jwt__Audience: "ERP"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
     depends_on:
       - db
 
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: erp_db
+    container_name: nvg_db
     environment:
-      SA_PASSWORD: "${SA_PASSWORD}"
+      SA_PASSWORD: ${SA_PASSWORD:?SA_PASSWORD is required}
       ACCEPT_EULA: "Y"
     ports:
       - "1433:1433"

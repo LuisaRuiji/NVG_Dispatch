@@ -11,6 +11,7 @@ using NVGInventory.Modules.Dispatching.Persistence.Configurations;
 using NVGInventory.Modules.ShipmentRequests.Entities;
 using NVGInventory.Modules.ShipmentRequests.Enums;
 using NVGInventory.Modules.ShipmentRequests.Persistence.Configurations;
+using NVGInventory.Security;
 
 namespace NVGInventory.Data;
 
@@ -44,6 +45,8 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<StockLog> StockLogs => Set<StockLog>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AuthEvent> AuthEvents => Set<AuthEvent>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<MfaChallenge> MfaChallenges => Set<MfaChallenge>();
     public DbSet<ModuleSetting> ModuleSettings => Set<ModuleSetting>();
     public DbSet<Customer> DispatchCustomers => Set<Customer>();
     public DbSet<Trip> DispatchTrips => Set<Trip>();
@@ -80,6 +83,8 @@ public sealed class InventoryDbContext : DbContext
         ConfigureApprovalActions(modelBuilder);
         ConfigureStockLogs(modelBuilder);
         ConfigureAuthEvents(modelBuilder);
+        ConfigureRefreshTokens(modelBuilder);
+        ConfigureMfaChallenges(modelBuilder);
         ConfigureModuleSettings(modelBuilder);
         ConfigureDispatching(modelBuilder);
         modelBuilder.ApplyConfiguration(new TripDocumentConfiguration());
@@ -106,6 +111,11 @@ public sealed class InventoryDbContext : DbContext
             entity.Property(user => user.Email).HasColumnName("email").HasMaxLength(255);
             entity.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(255).IsRequired();
             entity.Property(user => user.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            entity.Property(user => user.MfaEnabled).HasColumnName("mfa_enabled").HasDefaultValue(false).IsRequired();
+            entity.Property(user => user.MfaSecretKey).HasColumnName("mfa_secret_key").HasMaxLength(512);
+            entity.Property(user => user.PendingMfaSecretKey).HasColumnName("pending_mfa_secret_key").HasMaxLength(512);
+            entity.Property(user => user.MfaEnabledAt).HasColumnName("mfa_enabled_at");
+            entity.Property(user => user.MfaLastVerifiedAt).HasColumnName("mfa_last_verified_at");
             entity.Property(user => user.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
             entity.Property(user => user.CustomerId).HasColumnName("customer_id");
             entity.HasIndex(user => user.Username).IsUnique();
@@ -267,14 +277,25 @@ public sealed class InventoryDbContext : DbContext
     {
         modelBuilder.Entity<Supplier>(entity =>
         {
+            var sensitiveStringConverter = SensitiveFieldValueConverters.CreateNullableSensitiveStringConverter();
+
             entity.ToTable("suppliers");
             entity.HasKey(supplier => supplier.Id);
             entity.Property(supplier => supplier.Id).HasColumnName("id");
             entity.Property(supplier => supplier.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
             entity.Property(supplier => supplier.ContactName).HasColumnName("contact_name").HasMaxLength(120);
-            entity.Property(supplier => supplier.ContactPhone).HasColumnName("contact_phone").HasMaxLength(60);
-            entity.Property(supplier => supplier.ContactEmail).HasColumnName("contact_email").HasMaxLength(200);
-            entity.Property(supplier => supplier.Address).HasColumnName("address").HasMaxLength(300);
+            entity.Property(supplier => supplier.ContactPhone)
+                .HasColumnName("contact_phone_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(512);
+            entity.Property(supplier => supplier.ContactEmail)
+                .HasColumnName("contact_email_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(512);
+            entity.Property(supplier => supplier.Address)
+                .HasColumnName("address_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(1024);
             entity.Property(supplier => supplier.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
             entity.Property(supplier => supplier.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
 
@@ -989,6 +1010,62 @@ public sealed class InventoryDbContext : DbContext
         });
     }
 
+    private static void ConfigureRefreshTokens(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.ToTable("refresh_tokens");
+            entity.HasKey(token => token.Id);
+            entity.Property(token => token.Id).HasColumnName("id");
+            entity.Property(token => token.UserId).HasColumnName("user_id");
+            entity.Property(token => token.FamilyId).HasColumnName("family_id");
+            entity.Property(token => token.TokenHash).HasColumnName("token_hash").HasMaxLength(128).IsRequired();
+            entity.Property(token => token.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(token => token.ExpiresAt).HasColumnName("expires_at").IsRequired();
+            entity.Property(token => token.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(token => token.ReplacedByTokenId).HasColumnName("replaced_by_token_id");
+            entity.Property(token => token.CreatedByIp).HasColumnName("created_by_ip").HasMaxLength(64);
+            entity.Property(token => token.RevokedByIp).HasColumnName("revoked_by_ip").HasMaxLength(64);
+            entity.Property(token => token.UserAgent).HasColumnName("user_agent").HasMaxLength(400);
+            entity.Property(token => token.RevokedReason).HasColumnName("revoked_reason").HasMaxLength(40);
+
+            entity.HasOne(token => token.User)
+                .WithMany()
+                .HasForeignKey(token => token.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(token => token.TokenHash).IsUnique();
+            entity.HasIndex(token => new { token.UserId, token.RevokedAt });
+            entity.HasIndex(token => token.FamilyId);
+            entity.HasIndex(token => token.ExpiresAt);
+        });
+    }
+
+    private static void ConfigureMfaChallenges(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MfaChallenge>(entity =>
+        {
+            entity.ToTable("mfa_challenges");
+            entity.HasKey(challenge => challenge.Id);
+            entity.Property(challenge => challenge.Id).HasColumnName("id");
+            entity.Property(challenge => challenge.UserId).HasColumnName("user_id");
+            entity.Property(challenge => challenge.Method).HasColumnName("method").HasMaxLength(40).IsRequired();
+            entity.Property(challenge => challenge.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(challenge => challenge.ExpiresAt).HasColumnName("expires_at").IsRequired();
+            entity.Property(challenge => challenge.ConsumedAt).HasColumnName("consumed_at");
+            entity.Property(challenge => challenge.CreatedByIp).HasColumnName("created_by_ip").HasMaxLength(64);
+            entity.Property(challenge => challenge.UserAgent).HasColumnName("user_agent").HasMaxLength(400);
+
+            entity.HasOne(challenge => challenge.User)
+                .WithMany()
+                .HasForeignKey(challenge => challenge.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(challenge => new { challenge.UserId, challenge.ConsumedAt });
+            entity.HasIndex(challenge => challenge.ExpiresAt);
+        });
+    }
+
     private static void ConfigureModuleSettings(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<ModuleSetting>(entity =>
@@ -1019,15 +1096,32 @@ public sealed class InventoryDbContext : DbContext
     {
         modelBuilder.Entity<Customer>(entity =>
         {
+            var sensitiveStringConverter = SensitiveFieldValueConverters.CreateNullableSensitiveStringConverter();
+
             entity.ToTable("dispatch_customers");
             entity.HasKey(customer => customer.Id);
             entity.Property(customer => customer.Id).HasColumnName("id");
             entity.Property(customer => customer.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
-            entity.Property(customer => customer.Address).HasColumnName("address").HasMaxLength(300);
-            entity.Property(customer => customer.Contact).HasColumnName("contact").HasMaxLength(200);
-            entity.Property(customer => customer.ContactPerson).HasColumnName("contact_person").HasMaxLength(200);
-            entity.Property(customer => customer.ContactEmail).HasColumnName("contact_email").HasMaxLength(200);
-            entity.Property(customer => customer.Phone).HasColumnName("phone").HasMaxLength(50);
+            entity.Property(customer => customer.Address)
+                .HasColumnName("address_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(1024);
+            entity.Property(customer => customer.Contact)
+                .HasColumnName("contact_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(512);
+            entity.Property(customer => customer.ContactPerson)
+                .HasColumnName("contact_person_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(512);
+            entity.Property(customer => customer.ContactEmail)
+                .HasColumnName("contact_email_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(512);
+            entity.Property(customer => customer.Phone)
+                .HasColumnName("phone_encrypted")
+                .HasConversion(sensitiveStringConverter)
+                .HasMaxLength(512);
             entity.Property(customer => customer.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
             entity.HasIndex(customer => customer.Name);
         });

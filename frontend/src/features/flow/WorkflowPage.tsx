@@ -159,8 +159,17 @@ export default function WorkflowPage() {
         username: form.username,
         password: form.password
       });
-      const me = await authApi.me(response.accessToken);
-      setSessions((prev) => ({ ...prev, [key]: { token: response.accessToken, user: me } }));
+      if (!("accessToken" in response)) {
+        updateLoginForm(key, {
+          loading: false,
+          error: "MFA is required for this account. Use the main login flow."
+        });
+        return;
+      }
+
+      const accessToken = response.accessToken;
+      const me = await authApi.me(accessToken);
+      setSessions((prev) => ({ ...prev, [key]: { token: accessToken, user: me } }));
       updateLoginForm(key, { loading: false });
     } catch (error) {
       updateLoginForm(key, {

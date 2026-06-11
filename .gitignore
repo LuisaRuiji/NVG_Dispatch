@@ -10,6 +10,15 @@ frontend/dist/
 # Logs/temp
 tmp-*.log
 *.log
+.env
+!.env.example
+creds.txt
+
+# ASP.NET Core local/deployment configuration
+appsettings*.json
+**/appsettings*.json
+!appsettings.example.json
+!**/appsettings.example.json
 
 # User-specific
 *.csproj.user
@@ -17,6 +26,8 @@ tmp-*.log
 # Docs (except README.md)
 *.md
 !README.md
+!POLICY.md
+!SECURITY.md
 !Docs/Architecture/01-Module-Inventory.md
 !Docs/Architecture/02-Safe-Refactor-Plan.md
 !Docs/Architecture/03-Identity-Semantics.md

@@ -1,8 +1,45 @@
 export type LoginRequest = { username: string; password: string };
-export type LoginResponse = { accessToken: string; userId?: string; roles?: string[] };
+export type LoginResponse = {
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresAtUtc?: string;
+  userId?: string;
+  roles?: string[];
+};
+
+export type MfaRequiredResponse = {
+  mfaRequired: true;
+  challengeId: string;
+  method: string;
+  expiresAtUtc: string;
+};
+
+export type MfaVerifyRequest = {
+  challengeId: string;
+  code: string;
+};
+
+export type MfaSetupResponse = {
+  secretKey: string;
+  otpAuthUri: string;
+};
+
+export type MfaStatusResponse = {
+  enabled: boolean;
+  enabledAt?: string | null;
+  lastVerifiedAt?: string | null;
+};
+
+export type StepUpResponse = {
+  accessToken: string;
+  expiresAtUtc: string;
+  userId: string;
+  roles: string[];
+};
 
 export type MeResponse = {
   userId: string;
   username: string;
   roles: string[];
+  mfaEnabled?: boolean;
 };

@@ -5,6 +5,7 @@ using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,11 @@ using NVGInventory.Security;
 using NVGInventory.Modules.Dispatching;
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureSensitiveFieldProtector(builder.Configuration);
+if (!builder.Environment.IsDevelopment())
+{
+    SensitiveFieldProtector.RequireConfigured();
+}
 
 // Add services to the container.
 
@@ -71,8 +77,11 @@ builder.Services.AddDbContext<InventoryDbContext>(options =>
     options.UseSqlServer(connectionString);
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<MfaOptions>(builder.Configuration.GetSection(MfaOptions.SectionName));
 builder.Services.Configure<DispatchingOptions>(builder.Configuration.GetSection(DispatchingOptions.SectionName));
 builder.Services.AddSingleton<JwtTokenService>();
+builder.Services.AddSingleton<TotpAuthenticator>();
+builder.Services.AddSingleton<IAuthorizationHandler, RecentMfaRequirementHandler>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AuthEventService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
@@ -113,11 +122,15 @@ builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.Shipme
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestQueryService>();
 builder.Services.AddScoped<DemoDataSeeder>();
 builder.Services.AddScoped<PerformanceDataSeeder>();
+builder.Services.AddScoped<SensitiveFieldRotationService>();
+builder.Services.AddScoped<PiiFieldEncryptionMigrationService>();
 builder.Services.Configure<IntegrityCheckJobOptions>(builder.Configuration.GetSection("BackgroundJobs:IntegrityCheck"));
 builder.Services.AddHostedService<IntegrityCheckHostedService>();
-var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+var corsSection = builder.Configuration.GetSection("Cors:AllowedOrigins");
+var corsOrigins = corsSection.Get<string[]>() ?? Array.Empty<string>();
 var frontendBaseUrl = builder.Configuration["FrontendBaseUrl"];
 var allowedOrigins = corsOrigins
+    .Concat(SplitOrigins(corsSection.Value))
     .Concat(SplitOrigins(frontendBaseUrl))
     .Select(origin => origin.Trim())
     .Where(origin => !string.IsNullOrWhiteSpace(origin))
@@ -134,7 +147,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(allowedOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
@@ -160,10 +174,17 @@ builder.Services
             IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
             NameClaimType = System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.UniqueName,
             RoleClaimType = "role",
-            ClockSkew = TimeSpan.FromMinutes(1)
+            ClockSkew = TimeSpan.FromMinutes(jwtOptions.ClockSkewMinutes <= 0 ? 1 : jwtOptions.ClockSkewMinutes)
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicies.RequireRecentMfa, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new RecentMfaRequirement());
+    });
+});
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -195,24 +216,12 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddRateLimiter(options =>
 {
-    var permitLimit = builder.Configuration.GetValue("RateLimiting:Login:PermitLimit", 5);
-    var windowMinutes = builder.Configuration.GetValue("RateLimiting:Login:WindowMinutes", 1);
-    var queueLimit = builder.Configuration.GetValue("RateLimiting:Login:QueueLimit", 0);
-
-    if (permitLimit <= 0)
-    {
-        permitLimit = 5;
-    }
-
-    if (windowMinutes <= 0)
-    {
-        windowMinutes = 1;
-    }
-
-    if (queueLimit < 0)
-    {
-        queueLimit = 0;
-    }
+    var globalPermitLimit = GetRateLimitInt(builder.Configuration, "RateLimiting:Global:PermitLimit", 120);
+    var globalWindowMinutes = GetRateLimitInt(builder.Configuration, "RateLimiting:Global:WindowMinutes", 1);
+    var globalQueueLimit = GetRateLimitInt(builder.Configuration, "RateLimiting:Global:QueueLimit", 0, allowZero: true);
+    var authPermitLimit = GetRateLimitInt(builder.Configuration, "RateLimiting:Auth:PermitLimit", 5, "RateLimiting:Login:PermitLimit");
+    var authWindowMinutes = GetRateLimitInt(builder.Configuration, "RateLimiting:Auth:WindowMinutes", 1, "RateLimiting:Login:WindowMinutes");
+    var authQueueLimit = GetRateLimitInt(builder.Configuration, "RateLimiting:Auth:QueueLimit", 0, "RateLimiting:Login:QueueLimit", allowZero: true);
 
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.OnRejected = async (context, cancellationToken) =>
@@ -224,6 +233,11 @@ builder.Services.AddRateLimiter(options =>
         }
 
         httpContext.Response.ContentType = "application/json";
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            httpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+        }
+
         var payload = new ApiErrorResponse(
             "RATE_LIMITED",
             "Too many requests. Please try again later.",
@@ -231,15 +245,26 @@ builder.Services.AddRateLimiter(options =>
         await httpContext.Response.WriteAsJsonAsync(payload, cancellationToken);
     };
 
-    options.AddPolicy("login", httpContext =>
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetRateLimitPartitionKey(httpContext),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = globalPermitLimit,
+                Window = TimeSpan.FromMinutes(globalWindowMinutes),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = globalQueueLimit
+            }));
+
+    options.AddPolicy("auth-sensitive", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = permitLimit,
-                Window = TimeSpan.FromMinutes(windowMinutes),
+                PermitLimit = authPermitLimit,
+                Window = TimeSpan.FromMinutes(authWindowMinutes),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = queueLimit
+                QueueLimit = authQueueLimit
             }));
 });
 
@@ -252,6 +277,14 @@ var seedDemo = args.Any(arg =>
 var seedPerf = args.Any(arg =>
     string.Equals(arg, "seed-perf", StringComparison.OrdinalIgnoreCase)
     || string.Equals(arg, "--seed-perf", StringComparison.OrdinalIgnoreCase));
+
+var rotateEncryptionKey = args.Any(arg =>
+    string.Equals(arg, "rotate-encryption-key", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(arg, "--rotate-encryption-key", StringComparison.OrdinalIgnoreCase));
+
+var migratePiiEncryption = args.Any(arg =>
+    string.Equals(arg, "migrate-pii-encryption", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(arg, "--migrate-pii-encryption", StringComparison.OrdinalIgnoreCase));
 
 if (seedPerf)
 {
@@ -275,6 +308,29 @@ if (seedDemo)
     using var scope = app.Services.CreateScope();
     var seeder = scope.ServiceProvider.GetRequiredService<DemoDataSeeder>();
     await seeder.SeedAsync(reset, CancellationToken.None);
+    return;
+}
+
+if (rotateEncryptionKey)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+    await db.Database.MigrateAsync(CancellationToken.None);
+    var rotationService = scope.ServiceProvider.GetRequiredService<SensitiveFieldRotationService>();
+    var result = await rotationService.RotateDispatchFinancialFieldsAsync(CancellationToken.None);
+    Console.WriteLine($"Rotated encrypted dispatch financial fields for {result.TripsUpdated} trip(s).");
+    return;
+}
+
+if (migratePiiEncryption)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+    await db.Database.MigrateAsync(CancellationToken.None);
+    var migrationService = scope.ServiceProvider.GetRequiredService<PiiFieldEncryptionMigrationService>();
+    var result = await migrationService.MigrateAsync(CancellationToken.None);
+    Console.WriteLine(
+        $"Encrypted PII for {result.DispatchCustomersUpdated} dispatch customer(s) and {result.SuppliersUpdated} supplier(s).");
     return;
 }
 
@@ -443,13 +499,24 @@ if (app.Environment.IsDevelopment())
 
 if (!app.Environment.IsDevelopment())
 {
+    app.Use(async (context, next) =>
+    {
+        context.Response.OnStarting(() =>
+        {
+            ApplyProductionSecurityHeaders(context);
+            return Task.CompletedTask;
+        });
+
+        await next();
+    });
+
     app.UseHttpsRedirection();
 }
 
 app.UseCors("Frontend");
-app.UseRateLimiter();
 
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseMiddleware<ModuleMaintenanceMiddleware>();
 
@@ -487,7 +554,7 @@ app.MapGet("/health", async (InventoryDbContext dbContext, CancellationToken can
             timestamp = DateTime.UtcNow
         }, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
-});
+}).DisableRateLimiting();
 
 app.Run();
 
@@ -516,6 +583,93 @@ static int ParseIntArg(string[] args, string name, int defaultValue)
     }
 
     return defaultValue;
+}
+
+static int GetRateLimitInt(
+    IConfiguration configuration,
+    string key,
+    int defaultValue,
+    string? fallbackKey = null,
+    bool allowZero = false)
+{
+    var value = configuration.GetValue<int?>(key);
+    if (!value.HasValue && !string.IsNullOrWhiteSpace(fallbackKey))
+    {
+        value = configuration.GetValue<int?>(fallbackKey);
+    }
+
+    if (!value.HasValue)
+    {
+        return defaultValue;
+    }
+
+    return allowZero
+        ? Math.Max(0, value.Value)
+        : value.Value > 0 ? value.Value : defaultValue;
+}
+
+static string GetRateLimitPartitionKey(HttpContext context)
+{
+    var userId = context.User?.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                 ?? context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!string.IsNullOrWhiteSpace(userId))
+    {
+        return $"user:{userId}";
+    }
+
+    var remoteIp = context.Connection.RemoteIpAddress?.ToString();
+    return string.IsNullOrWhiteSpace(remoteIp) ? "ip:unknown" : $"ip:{remoteIp}";
+}
+
+static void ApplyProductionSecurityHeaders(HttpContext context)
+{
+    var headers = context.Response.Headers;
+
+    SetHeaderIfMissing(headers, "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    SetHeaderIfMissing(headers, "X-Content-Type-Options", "nosniff");
+    SetHeaderIfMissing(headers, "Referrer-Policy", "no-referrer");
+    SetHeaderIfMissing(headers, "Permissions-Policy", "camera=(), geolocation=(), microphone=()");
+    SetHeaderIfMissing(headers, "X-Frame-Options", "DENY");
+
+    if (IsHttpsRequest(context))
+    {
+        SetHeaderIfMissing(headers, "Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+}
+
+static bool IsHttpsRequest(HttpContext context)
+{
+    if (context.Request.IsHttps)
+    {
+        return true;
+    }
+
+    var forwardedProto = context.Request.Headers["X-Forwarded-Proto"].FirstOrDefault();
+    return string.Equals(forwardedProto, "https", StringComparison.OrdinalIgnoreCase);
+}
+
+static void SetHeaderIfMissing(IHeaderDictionary headers, string name, string value)
+{
+    if (!headers.ContainsKey(name))
+    {
+        headers[name] = value;
+    }
+}
+
+static void ConfigureSensitiveFieldProtector(IConfiguration configuration)
+{
+    var keyRing = configuration.GetSection("Encryption:Keys")
+        .GetChildren()
+        .Where(section => !string.IsNullOrWhiteSpace(section.Key) && !string.IsNullOrWhiteSpace(section.Value))
+        .ToDictionary(section => section.Key, section => section.Value!, StringComparer.Ordinal);
+
+    if (keyRing.Count > 0)
+    {
+        SensitiveFieldProtector.ConfigureKeyRing(configuration["Encryption:CurrentKeyId"], keyRing);
+        return;
+    }
+
+    SensitiveFieldProtector.Configure(configuration["EncryptionKey"]);
 }
 
 sealed class CountingStream : Stream

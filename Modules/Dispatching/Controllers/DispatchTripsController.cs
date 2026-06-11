@@ -309,7 +309,8 @@ public sealed class DispatchTripsController : ControllerBase
             request.TruckAssetId,
             request.Notes,
             request.Stops?.Select(stop => new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt))
-                .ToList());
+                .ToList(),
+            MapFinancials(request.Financials));
 
         var trip = await _tripLifecycleService.CreateDraftAsync(command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
@@ -335,7 +336,8 @@ public sealed class DispatchTripsController : ControllerBase
             request.Stops?.Select(stop => new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt))
                 .ToList(),
             request.Remarks,
-            rowVersion);
+            rowVersion,
+            MapFinancials(request.Financials));
 
         var trip = await _tripLifecycleService.UpdateTripAsync(tripId, command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
@@ -393,7 +395,8 @@ public sealed class DispatchTripsController : ControllerBase
                 entry.EventAt,
                 entry.RecordedAt)).ToList(),
             _options.DocVerificationEnabled,
-            Convert.ToBase64String(detail.RowVersion));
+            Convert.ToBase64String(detail.RowVersion),
+            MapFinancialResponse(detail.Financials));
 
         return Ok(response);
     }
@@ -788,6 +791,32 @@ public sealed class DispatchTripsController : ControllerBase
             doc.UploadedAt,
             doc.VerifiedAt,
             doc.RejectedAt));
+    }
+
+    private static DispatchTripFinancialInput? MapFinancials(DispatchTripFinancialRequest? financials)
+    {
+        return financials is null
+            ? null
+            : new DispatchTripFinancialInput(
+                financials.Rate,
+                financials.Payroll,
+                financials.Allowance,
+                financials.FuelAmount,
+                financials.FuelPricePerLiter,
+                financials.OfficialReceiptNumber);
+    }
+
+    private static DispatchTripFinancialResponse? MapFinancialResponse(DispatchTripFinancialDetail? financials)
+    {
+        return financials is null
+            ? null
+            : new DispatchTripFinancialResponse(
+                financials.Rate,
+                financials.Payroll,
+                financials.Allowance,
+                financials.FuelAmount,
+                financials.FuelPricePerLiter,
+                financials.OfficialReceiptNumber);
     }
 
     private DispatchActorContext BuildActor()

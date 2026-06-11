@@ -23,6 +23,43 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken?: string | null;
+  expiresAtUtc: string;
+  userId: string;
+  roles: string[];
+}
+
+export interface MfaRequiredResponse {
+  mfaRequired: true;
+  challengeId: string;
+  method: string;
+  expiresAtUtc: string;
+}
+
+export interface MfaVerifyRequest {
+  challengeId: string;
+  code: string;
+}
+
+export interface StepUpRequest {
+  code: string;
+}
+
+export interface StepUpResponse {
+  accessToken: string;
+  expiresAtUtc: string;
+  userId: string;
+  roles: string[];
+}
+
+export interface RefreshTokenRequest {
+  refreshToken?: string | null;
+}
+
+export interface RefreshTokenResponse {
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresAtUtc: string;
   userId: string;
   roles: string[];
 }
@@ -31,6 +68,7 @@ export interface CurrentUserResponse {
   userId: string;
   username: string;
   roles: string[];
+  mfaEnabled?: boolean;
 }
 
 export interface RequestLineInputDto {

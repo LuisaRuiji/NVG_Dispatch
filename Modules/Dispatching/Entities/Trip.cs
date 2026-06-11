@@ -16,6 +16,12 @@ public sealed class Trip
     public bool PodPending { get; set; }
     public TripStatus? HoldPreviousStatus { get; set; }
     public string? Notes { get; set; }
+    public decimal? Rate { get; set; }
+    public decimal? Payroll { get; set; }
+    public decimal? Allowance { get; set; }
+    public decimal? FuelAmount { get; set; }
+    public decimal? FuelPricePerLiter { get; set; }
+    public string? OfficialReceiptNumber { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();

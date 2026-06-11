@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -33,7 +34,10 @@ public sealed class JwtTokenService
             SecurityAlgorithms.HmacSha256);
     }
 
-    public TokenResult CreateAccessToken(User user, IReadOnlyCollection<string> roles)
+    public TokenResult CreateAccessToken(
+        User user,
+        IReadOnlyCollection<string> roles,
+        DateTime? mfaPerformedAtUtc = null)
     {
         var now = DateTime.UtcNow;
         var expires = now.AddMinutes(_options.AccessTokenMinutes);
@@ -43,8 +47,18 @@ public sealed class JwtTokenService
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new(JwtRegisteredClaimNames.Jti, jti)
+            new(JwtRegisteredClaimNames.Jti, jti),
+            new("amr", "pwd")
         };
+
+        if (mfaPerformedAtUtc.HasValue)
+        {
+            var mfaAt = new DateTimeOffset(DateTime.SpecifyKind(mfaPerformedAtUtc.Value, DateTimeKind.Utc))
+                .ToUnixTimeSeconds()
+                .ToString(CultureInfo.InvariantCulture);
+            claims.Add(new Claim("amr", "mfa"));
+            claims.Add(new Claim("mfa_at", mfaAt));
+        }
 
         foreach (var role in roles)
         {

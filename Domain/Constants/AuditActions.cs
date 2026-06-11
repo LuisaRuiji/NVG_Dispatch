@@ -26,6 +26,13 @@ public static class AuditActions
     public const string SupplierCreated = "SUPPLIER_CREATED";
     public const string SupplierDeactivated = "SUPPLIER_DEACTIVATED";
 
+    public const string UserCreated = "USER_CREATED";
+    public const string UserRoleAssigned = "USER_ROLE_ASSIGNED";
+    public const string UserRolesReplaced = "USER_ROLES_REPLACED";
+    public const string UserStatusUpdated = "USER_STATUS_UPDATED";
+    public const string UserPasswordReset = "USER_PASSWORD_RESET";
+    public const string UserDeactivated = "USER_DEACTIVATED";
+
     public const string DispatchTripCreated = "DISPATCH_TRIP_CREATED";
     public const string DispatchTripUpdated = "DISPATCH_TRIP_UPDATED";
     public const string DispatchTripDispatched = "DISPATCH_TRIP_DISPATCHED";

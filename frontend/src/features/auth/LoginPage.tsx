@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getDefaultRoute, login } from "./authStore";
+import { getDefaultRoute, isMfaRequiredResponse, login, verifyMfaLogin } from "./authStore";
 import { useToast } from "@/lib/useToast";
 import ToastHost from "@/components/ToastHost";
 
@@ -8,12 +8,26 @@ export default function LoginPage() {
   const nav = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
   const { toasts, show } = useToast();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
+      if (mfaChallengeId) {
+        const me = await verifyMfaLogin({ challengeId: mfaChallengeId, code: mfaCode });
+        nav(getDefaultRoute(me));
+        return;
+      }
+
       const me = await login({ username, password });
+      if (isMfaRequiredResponse(me)) {
+        setMfaChallengeId(me.challengeId);
+        setMfaCode("");
+        return;
+      }
+
       nav(getDefaultRoute(me));
     } catch (e: any) {
       console.error(e);
@@ -42,25 +56,40 @@ export default function LoginPage() {
               <h2 className="mt-2 text-2xl font-semibold text-foreground">Welcome back</h2>
             </div>
             <form onSubmit={onSubmit} className="space-y-4">
-              <div>
-                <label className="text-xs uppercase text-muted-foreground">Username</label>
-                <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase text-muted-foreground">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm"
-                />
-              </div>
+              {!mfaChallengeId ? (
+                <>
+                  <div>
+                    <label className="text-xs uppercase text-muted-foreground">Username</label>
+                    <input
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase text-muted-foreground">Password</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-xs uppercase text-muted-foreground">Authenticator code</label>
+                  <input
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value)}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                  />
+                </div>
+              )}
               <button type="submit" className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">
-                Sign in
+                {mfaChallengeId ? "Verify" : "Sign in"}
               </button>
             </form>
           </div>

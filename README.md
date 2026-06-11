@@ -11,6 +11,8 @@ dotnet test
 Notes:
 - The database name must end with `_Tests` or tests will refuse to run.
 - The fixture drops and recreates the test database at the start of the test run.
+- Demo/performance reseeding also refuses destructive resets unless the database name ends
+  with `_Dev`, `_Demo`, `_Perf`, or `_Tests`.
 
 ## Auth (JWT)
 Set a signing key (32+ chars) via user-secrets or environment variable `JWT__KEY`.
@@ -21,16 +23,14 @@ Authorization: Bearer <token>
 ```
 
 Passwords are stored using BCrypt hashes.
+New and reset passwords must be at least 15 characters and include one uppercase letter,
+one number, and one special character.
 
 Current user endpoint:
 - `GET /api/auth/me`
 
-Dev seed users (Development only):
-- `io1` / `plaintext`
-- `mgr1` / `plaintext`
-- `drv1` / `plaintext`
-
-Password is configured in `appsettings.Development.json` under `Seed:DevPassword`.
+Dev seed user (Development only):
+- `Superadmin` / `SuperAdminDemo1!`
 
 Example (PowerShell):
 ```powershell

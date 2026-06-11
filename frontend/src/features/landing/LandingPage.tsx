@@ -14,7 +14,7 @@ import {
     Activity,
     Layers
 } from "lucide-react";
-import { login, getDefaultRoute } from "@/features/auth/authStore";
+import { getDefaultRoute, isMfaRequiredResponse, login, verifyMfaLogin } from "@/features/auth/authStore";
 import { useToast } from "@/lib/useToast";
 import ToastHost from "@/components/ToastHost";
 
@@ -30,6 +30,8 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
     const [loginOpen, setLoginOpen] = useState(initialLoginOpen);
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [mfaCode, setMfaCode] = useState("");
+    const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const { toasts, show } = useToast();
 
@@ -47,6 +49,8 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
 
     const closeLogin = () => {
         setLoginOpen(false);
+        setMfaChallengeId(null);
+        setMfaCode("");
         if (location.pathname === "/login") {
             nav("/", { replace: true });
         }
@@ -56,7 +60,19 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
         e.preventDefault();
         try {
             setSubmitting(true);
+            if (mfaChallengeId) {
+                const me = await verifyMfaLogin({ challengeId: mfaChallengeId, code: mfaCode });
+                nav(getDefaultRoute(me), { replace: true });
+                return;
+            }
+
             const me = await login({ username, password });
+            if (isMfaRequiredResponse(me)) {
+                setMfaChallengeId(me.challengeId);
+                setMfaCode("");
+                return;
+            }
+
             nav(getDefaultRoute(me), { replace: true });
         } catch (e: any) {
             console.error(e);
@@ -479,29 +495,44 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                         </div>
 
                         <form onSubmit={handleLogin} className="mt-6 space-y-4">
-                            <div>
-                                <label className="text-xs uppercase text-gray-500">Username</label>
-                                <input
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs uppercase text-gray-500">Password</label>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
-                                />
-                            </div>
+                            {!mfaChallengeId ? (
+                                <>
+                                    <div>
+                                        <label className="text-xs uppercase text-gray-500">Username</label>
+                                        <input
+                                            value={username}
+                                            onChange={(e) => setUsername(e.target.value)}
+                                            className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase text-gray-500">Password</label>
+                                        <input
+                                            type="password"
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <div>
+                                    <label className="text-xs uppercase text-gray-500">Authenticator code</label>
+                                    <input
+                                        value={mfaCode}
+                                        onChange={(e) => setMfaCode(e.target.value)}
+                                        inputMode="numeric"
+                                        autoComplete="one-time-code"
+                                        className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
+                                    />
+                                </div>
+                            )}
                             <button
                                 type="submit"
                                 disabled={submitting}
                                 className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
                             >
-                                {submitting ? "Signing in..." : "Sign in"}
+                                {submitting ? "Signing in..." : mfaChallengeId ? "Verify" : "Sign in"}
                             </button>
                         </form>
                     </div>
