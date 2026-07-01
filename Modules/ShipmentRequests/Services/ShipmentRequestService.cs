@@ -1,11 +1,17 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Exceptions;
 using NVGInventory.Domain.Services;
+using NVGInventory.Hubs;
+using NVGInventory.Hubs.Events;
+using NVGInventory.Modules.Dispatching.Entities;
+using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.Dispatching.Services;
 using NVGInventory.Modules.ShipmentRequests.Entities;
 using NVGInventory.Modules.ShipmentRequests.Enums;
+using NVGInventory.Services;
 
 namespace NVGInventory.Modules.ShipmentRequests.Services;
 
@@ -14,6 +20,11 @@ public sealed record CreateShipmentRequestCommand(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
@@ -24,6 +35,11 @@ public sealed record UpdateShipmentRequestCommand(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
@@ -41,17 +57,23 @@ public sealed class ShipmentRequestService
     private readonly UserService _userService;
     private readonly IShipmentRequestTripCreationService _tripCreationService;
     private readonly IAuditService? _auditService;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly IVaiaCacheService? _cacheService;
 
     public ShipmentRequestService(
         InventoryDbContext dbContext,
         UserService userService,
         IShipmentRequestTripCreationService tripCreationService,
-        IAuditService? auditService = null)
+        IAuditService? auditService = null,
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IVaiaCacheService? cacheService = null)
     {
         _dbContext = dbContext;
         _userService = userService;
         _tripCreationService = tripCreationService;
         _auditService = auditService;
+        _serviceScopeFactory = serviceScopeFactory;
+        _cacheService = cacheService;
     }
 
     public async Task<ShipmentRequest> CreateDraftAsync(
@@ -71,6 +93,11 @@ public sealed class ShipmentRequestService
             PickupLocation = command.PickupLocation.Trim(),
             DropoffLocation = command.DropoffLocation.Trim(),
             RequestedPickupTime = command.RequestedPickupTime,
+            ContainerSize = ToStorageValue(command.ContainerSize),
+            TripType = ToStorageValue(command.TripType),
+            ContainerNumber = Normalize(command.ContainerNumber),
+            ShippingLine = Normalize(command.ShippingLine),
+            BookingNumber = Normalize(command.BookingNumber),
             CargoDescription = Normalize(command.CargoDescription),
             CargoWeight = command.CargoWeight,
             SpecialInstructions = Normalize(command.SpecialInstructions),
@@ -89,6 +116,7 @@ public sealed class ShipmentRequestService
             new { request.Status, request.CustomerId });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
         return request;
     }
 
@@ -117,6 +145,11 @@ public sealed class ShipmentRequestService
         request.PickupLocation = command.PickupLocation.Trim();
         request.DropoffLocation = command.DropoffLocation.Trim();
         request.RequestedPickupTime = command.RequestedPickupTime;
+        request.ContainerSize = ToStorageValue(command.ContainerSize);
+        request.TripType = ToStorageValue(command.TripType);
+        request.ContainerNumber = Normalize(command.ContainerNumber);
+        request.ShippingLine = Normalize(command.ShippingLine);
+        request.BookingNumber = Normalize(command.BookingNumber);
         request.CargoDescription = Normalize(command.CargoDescription);
         request.CargoWeight = command.CargoWeight;
         request.SpecialInstructions = Normalize(command.SpecialInstructions);
@@ -130,6 +163,7 @@ public sealed class ShipmentRequestService
             new { request.Status });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
         return request;
     }
 
@@ -154,6 +188,7 @@ public sealed class ShipmentRequestService
             throw new ConflictDomainException("Only draft requests can be submitted.");
         }
 
+        var submittedAt = DateTime.UtcNow;
         request.Status = ShipmentRequestStatus.Submitted;
 
         _auditService?.AddEntry(
@@ -165,6 +200,8 @@ public sealed class ShipmentRequestService
             new { request.Status });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
+        QueueShipmentRequestSubmittedBroadcast(request.Id, submittedAt);
         return request;
     }
 
@@ -217,6 +254,7 @@ public sealed class ShipmentRequestService
             new { request.Id, doc.DocumentType });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
         return doc;
     }
 
@@ -253,6 +291,13 @@ public sealed class ShipmentRequestService
             new { request.Status });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
+        await QueuePushToCustomerUsersAsync(
+            request.CustomerId,
+            "Shipment Request Approved",
+            "Your request has been approved and is being processed",
+            new Dictionary<string, string> { ["requestId"] = request.Id.ToString() },
+            cancellationToken);
         return request;
     }
 
@@ -293,6 +338,7 @@ public sealed class ShipmentRequestService
             new { request.Status, Remarks = remarks });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
         return request;
     }
 
@@ -332,6 +378,7 @@ public sealed class ShipmentRequestService
 
         request.Status = ShipmentRequestStatus.ConvertedToTrip;
         request.ConvertedTripId = tripId;
+        await CarryOverAtwToTripAsync(request.Id, tripId, actor.UserId, cancellationToken);
 
         _auditService?.AddEntry(
             actor.UserId,
@@ -343,6 +390,7 @@ public sealed class ShipmentRequestService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
 
         return (request, tripId);
     }
@@ -379,5 +427,176 @@ public sealed class ShipmentRequestService
         }
 
         return value.Trim();
+    }
+
+    private static string ToStorageValue(ContainerSize value)
+    {
+        return value switch
+        {
+            ContainerSize.TwentyFt => "TWENTY_FT",
+            ContainerSize.FortyFt => "FORTY_FT",
+            ContainerSize.FortyHC => "FORTY_HC",
+            _ => "TWENTY_FT"
+        };
+    }
+
+    private static string ToStorageValue(TripType value)
+    {
+        return value switch
+        {
+            TripType.PortPickup => "PORT_PICKUP",
+            TripType.PortDropoff => "PORT_DROPOFF",
+            TripType.YardTransfer => "YARD_TRANSFER",
+            TripType.LongHaul => "LONG_HAUL",
+            _ => "PORT_PICKUP"
+        };
+    }
+
+    private async Task CarryOverAtwToTripAsync(
+        Guid requestId,
+        Guid tripId,
+        Guid actorUserId,
+        CancellationToken cancellationToken)
+    {
+        var atw = await _dbContext.ShipmentRequestDocuments
+            .AsNoTracking()
+            .Where(doc => doc.RequestId == requestId && doc.DocumentType == ShipmentRequestDocumentType.Atw)
+            .OrderByDescending(doc => doc.UploadedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (atw is null)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        _dbContext.DispatchTripDocuments.Add(new TripDocument
+        {
+            Id = Guid.NewGuid(),
+            TripId = tripId,
+            Type = TripDocumentType.Atw,
+            State = TripDocumentState.Uploaded,
+            StorageKey = atw.StorageKey,
+            UploadedByUserId = actorUserId,
+            UploadedAt = now,
+            IsActive = true,
+            Remarks = "ATW carried over from shipment request."
+        });
+    }
+
+    private async Task InvalidateShipmentRequestCachesAsync(Guid customerId, CancellationToken cancellationToken)
+    {
+        if (_cacheService is null)
+        {
+            return;
+        }
+
+        _cacheService.Invalidate(VaiaCacheKeys.DispatchKpis);
+
+        var customerUserIds = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.CustomerId == customerId)
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var customerUserId in customerUserIds)
+        {
+            _cacheService.Invalidate(VaiaCacheKeys.CustomerKpis(customerUserId));
+        }
+    }
+
+    private async Task QueuePushToCustomerUsersAsync(
+        Guid customerId,
+        string title,
+        string body,
+        Dictionary<string, string>? data,
+        CancellationToken cancellationToken)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        var customerUserIds = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.CustomerId == customerId)
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var userId in customerUserIds)
+        {
+            QueuePushToUser(userId, title, body, data);
+        }
+    }
+
+    private void QueuePushToUser(
+        Guid userId,
+        string title,
+        string body,
+        Dictionary<string, string>? data = null)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ShipmentRequestService>>();
+            try
+            {
+                var pushService = scope.ServiceProvider.GetRequiredService<IPushNotificationService>();
+                await pushService.SendToUserAsync(userId, title, body, data);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to queue shipment request push notification for user {UserId}.", userId);
+            }
+        });
+    }
+
+    private void QueueShipmentRequestSubmittedBroadcast(Guid requestId, DateTime submittedAt)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ShipmentRequestService>>();
+            try
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+                var hubContext = scope.ServiceProvider
+                    .GetRequiredService<IHubContext<VaiaDispatchHub, IVaiaDispatchClient>>();
+                var request = await dbContext.ShipmentRequests
+                    .Include(item => item.Customer)
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.Id == requestId);
+                if (request is null)
+                {
+                    return;
+                }
+
+                var e = new ShipmentRequestSubmittedEvent(
+                    request.Id,
+                    request.Customer?.Name ?? "Unknown customer",
+                    request.PickupLocation,
+                    request.DropoffLocation,
+                    submittedAt);
+
+                await hubContext.Clients
+                    .Group(VaiaDispatchHub.DispatchOpsGroup)
+                    .ShipmentRequestSubmitted(e);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Failed to broadcast shipment request submission for request {RequestId}.",
+                    requestId);
+            }
+        });
     }
 }

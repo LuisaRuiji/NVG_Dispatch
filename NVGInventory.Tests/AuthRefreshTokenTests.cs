@@ -36,6 +36,50 @@ public sealed class AuthRefreshTokenTests
     }
 
     [Fact]
+    public async Task TryLoginAsync_RememberMeControlsRefreshTokenLifetime()
+    {
+        using var dbContext = CreateDbContext();
+        await SeedUserAsync(dbContext);
+        var service = CreateService(dbContext);
+
+        var sessionLogin = await service.TryLoginAsync(new LoginCommand("test_user", Password));
+        var rememberedLogin = await service.TryLoginAsync(new LoginCommand("test_user", Password), rememberMe: true);
+
+        Assert.True(sessionLogin.Success);
+        Assert.True(rememberedLogin.Success);
+
+        var tokens = await dbContext.RefreshTokens
+            .OrderBy(token => token.CreatedAt)
+            .ToListAsync();
+
+        Assert.Equal(2, tokens.Count);
+        Assert.InRange(tokens[0].ExpiresAt - tokens[0].CreatedAt, TimeSpan.FromHours(11), TimeSpan.FromHours(13));
+        Assert.InRange(tokens[1].ExpiresAt - tokens[1].CreatedAt, TimeSpan.FromDays(6), TimeSpan.FromDays(8));
+        Assert.False(sessionLogin.Result!.RefreshTokenIsPersistent);
+        Assert.True(rememberedLogin.Result!.RefreshTokenIsPersistent);
+    }
+
+    [Fact]
+    public async Task TryRefreshAsync_PreservesOriginalRememberedExpiry()
+    {
+        using var dbContext = CreateDbContext();
+        await SeedUserAsync(dbContext);
+        var service = CreateService(dbContext);
+        var login = await service.TryLoginAsync(new LoginCommand("test_user", Password), rememberMe: true);
+        var originalExpiresAt = login.Result!.RefreshTokenExpiresAtUtc;
+
+        var refresh = await service.TryRefreshAsync(login.Result.RefreshToken, "127.0.0.1", "test-agent");
+
+        Assert.True(refresh.Success);
+        Assert.NotNull(refresh.Result);
+        Assert.True(refresh.Result!.RefreshTokenIsPersistent);
+        Assert.Equal(originalExpiresAt, refresh.Result.RefreshTokenExpiresAtUtc);
+
+        var active = await dbContext.RefreshTokens.SingleAsync(token => token.RevokedAt == null);
+        Assert.Equal(originalExpiresAt, active.ExpiresAt);
+    }
+
+    [Fact]
     public async Task TryRefreshAsync_RotatesRefreshTokenAndRejectsReuse()
     {
         using var dbContext = CreateDbContext();

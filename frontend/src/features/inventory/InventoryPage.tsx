@@ -226,7 +226,6 @@ export default function InventoryPage() {
       {viewItem ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setViewItem(null)}
           role="presentation"
         >
           <div
@@ -288,12 +287,6 @@ export default function InventoryPage() {
       {editItem && editForm ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => {
-            if (!saving) {
-              setEditItem(null);
-              setEditForm(null);
-            }
-          }}
           role="presentation"
         >
           <div
@@ -449,7 +442,6 @@ export default function InventoryPage() {
       {archiveItem ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setArchiveItem(null)}
           role="presentation"
         >
           <div

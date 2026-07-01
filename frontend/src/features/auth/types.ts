@@ -1,10 +1,11 @@
-export type LoginRequest = { username: string; password: string };
+export type LoginRequest = { username: string; password: string; rememberMe?: boolean };
 export type LoginResponse = {
   accessToken: string;
   refreshToken?: string | null;
   expiresAtUtc?: string;
   userId?: string;
   roles?: string[];
+  mustChangePassword?: boolean;
 };
 
 export type MfaRequiredResponse = {
@@ -17,6 +18,7 @@ export type MfaRequiredResponse = {
 export type MfaVerifyRequest = {
   challengeId: string;
   code: string;
+  rememberMe?: boolean;
 };
 
 export type MfaSetupResponse = {
@@ -42,4 +44,5 @@ export type MeResponse = {
   username: string;
   roles: string[];
   mfaEnabled?: boolean;
+  mustChangePassword?: boolean;
 };

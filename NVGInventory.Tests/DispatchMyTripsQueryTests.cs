@@ -109,7 +109,7 @@ public class DispatchMyTripsQueryTests : SqlServerIntegrationTestBase
     }
 
     [SqlServerFact]
-    public async Task RequiredDocumentCount_AlwaysIncludesPod()
+    public async Task RequiredDocumentCount_IncludesFullCloseDocumentSet()
     {
         Guid driverId;
         await using (var setup = CreateDbContext())
@@ -130,7 +130,12 @@ public class DispatchMyTripsQueryTests : SqlServerIntegrationTestBase
             var result = await service.GetMyTripsAsync(driverId, includeClosed: true, null, null, 1, 10);
             var item = Assert.Single(result.Items);
 
-            Assert.Equal(1, item.RequiredDocumentCount);
+            Assert.Equal(6, item.RequiredDocumentCount);
+            Assert.Contains(item.Documents, doc => doc.Type == TripDocumentType.Atw);
+            Assert.Contains(item.Documents, doc => doc.Type == TripDocumentType.Eir);
+            Assert.Contains(item.Documents, doc => doc.Type == TripDocumentType.GatePass);
+            Assert.Contains(item.Documents, doc => doc.Type == TripDocumentType.Dr);
+            Assert.Contains(item.Documents, doc => doc.Type == TripDocumentType.Waybill);
             Assert.Contains(item.Documents, doc => doc.Type == TripDocumentType.Pod);
         }
     }

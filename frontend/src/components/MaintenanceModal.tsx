@@ -10,7 +10,6 @@ export default function MaintenanceModal({ open, message, onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-      onClick={onClose}
       role="presentation"
     >
       <div

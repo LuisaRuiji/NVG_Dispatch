@@ -6,19 +6,15 @@ public static class DispatchDocumentRules
 {
     public static IReadOnlyCollection<TripDocumentType> GetRequiredDocumentTypes(DispatchingOptions options)
     {
-        var required = new List<TripDocumentType> { TripDocumentType.Pod };
-
-        if (options.RequireWaybill)
-        {
-            required.Add(TripDocumentType.Waybill);
-        }
-
-        if (options.RequireATW)
-        {
-            required.Add(TripDocumentType.Atw);
-        }
-
-        return required;
+        return
+        [
+            TripDocumentType.Atw,
+            TripDocumentType.Eir,
+            TripDocumentType.GatePass,
+            TripDocumentType.Dr,
+            TripDocumentType.Waybill,
+            TripDocumentType.Pod
+        ];
     }
 
     public static int GetRequiredDocumentCount(DispatchingOptions options)

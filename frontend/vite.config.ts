@@ -11,6 +11,7 @@ export default defineConfig({
     }
   },
   server: {
+    allowedHosts: [".devtunnels.ms"],
     port: 5173
   }
 });

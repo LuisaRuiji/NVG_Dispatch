@@ -19,6 +19,7 @@ export type AssetStatus = "ACTIVE" | "INACTIVE";
 export interface LoginRequest {
   username: string;
   password: string;
+  rememberMe?: boolean;
 }
 
 export interface LoginResponse {
@@ -27,6 +28,7 @@ export interface LoginResponse {
   expiresAtUtc: string;
   userId: string;
   roles: string[];
+  mustChangePassword?: boolean;
 }
 
 export interface MfaRequiredResponse {
@@ -39,6 +41,7 @@ export interface MfaRequiredResponse {
 export interface MfaVerifyRequest {
   challengeId: string;
   code: string;
+  rememberMe?: boolean;
 }
 
 export interface StepUpRequest {
@@ -62,6 +65,7 @@ export interface RefreshTokenResponse {
   expiresAtUtc: string;
   userId: string;
   roles: string[];
+  mustChangePassword?: boolean;
 }
 
 export interface CurrentUserResponse {
@@ -69,6 +73,7 @@ export interface CurrentUserResponse {
   username: string;
   roles: string[];
   mfaEnabled?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface RequestLineInputDto {

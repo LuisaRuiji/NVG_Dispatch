@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NVGInventory.Data;
@@ -6,8 +7,11 @@ using NVGInventory.Domain.Entities;
 using NVGInventory.Domain.Enums;
 using NVGInventory.Domain.Exceptions;
 using NVGInventory.Domain.Services;
+using NVGInventory.Hubs;
+using NVGInventory.Hubs.Events;
 using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
+using NVGInventory.Services;
 
 namespace NVGInventory.Modules.Dispatching.Services;
 
@@ -30,7 +34,13 @@ public sealed record CreateDispatchTripCommand(
     Guid? TruckAssetId,
     string? Notes,
     IReadOnlyCollection<DispatchTripStopInput>? Stops,
-    DispatchTripFinancialInput? Financials = null);
+    DispatchTripFinancialInput? Financials = null,
+    string? ContainerNumber = null,
+    string? EirNumber = null,
+    string? BookingNumber = null,
+    string? ShippingLine = null,
+    string? ContainerSize = null,
+    string? TripType = null);
 
 public sealed record UpdateDispatchTripCommand(
     Guid CustomerId,
@@ -40,7 +50,13 @@ public sealed record UpdateDispatchTripCommand(
     IReadOnlyCollection<DispatchTripStopInput>? Stops,
     string? Remarks,
     byte[] RowVersion,
-    DispatchTripFinancialInput? Financials = null);
+    DispatchTripFinancialInput? Financials = null,
+    string? ContainerNumber = null,
+    string? EirNumber = null,
+    string? BookingNumber = null,
+    string? ShippingLine = null,
+    string? ContainerSize = null,
+    string? TripType = null);
 
 public sealed record DispatchTripCommand(
     Guid TripId,
@@ -99,19 +115,26 @@ public sealed class DispatchTripService : ITripLifecycleService
     private readonly IDispatchDocumentReadService _documentReadService;
     private readonly IAuditService _auditService;
     private readonly DispatchingOptions _options;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly IVaiaCacheService? _cacheService;
+    private readonly List<PendingTripStatusBroadcast> _pendingStatusBroadcasts = [];
 
     public DispatchTripService(
         InventoryDbContext dbContext,
         UserService userService,
         IDispatchDocumentReadService documentReadService,
         IOptions<DispatchingOptions> options,
-        IAuditService auditService)
+        IAuditService auditService,
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IVaiaCacheService? cacheService = null)
     {
         _dbContext = dbContext;
         _userService = userService;
         _documentReadService = documentReadService;
         _auditService = auditService;
         _options = options.Value ?? new DispatchingOptions();
+        _serviceScopeFactory = serviceScopeFactory;
+        _cacheService = cacheService;
     }
 
     public async Task<Trip> CreateDraftAsync(
@@ -162,6 +185,12 @@ public sealed class DispatchTripService : ITripLifecycleService
             Status = TripStatus.Draft,
             PodPending = false,
             Notes = command.Notes,
+            ContainerNumber = NormalizeOperationalText(command.ContainerNumber),
+            EirNumber = NormalizeOperationalText(command.EirNumber),
+            BookingNumber = NormalizeOperationalText(command.BookingNumber),
+            ShippingLine = NormalizeOperationalText(command.ShippingLine),
+            ContainerSize = NormalizeOperationalText(command.ContainerSize),
+            TripType = NormalizeOperationalText(command.TripType),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -195,6 +224,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: trip.Id);
 
         await SaveChangesAsync(cancellationToken);
+        TriggerPostDeliveryRecommendations(trip.Id, trip.Status);
         return trip;
     }
 
@@ -326,6 +356,12 @@ public sealed class DispatchTripService : ITripLifecycleService
             scheduleChanged = true;
         }
         trip.Notes = command.Notes;
+        trip.ContainerNumber = NormalizeOperationalText(command.ContainerNumber);
+        trip.EirNumber = NormalizeOperationalText(command.EirNumber);
+        trip.BookingNumber = NormalizeOperationalText(command.BookingNumber);
+        trip.ShippingLine = NormalizeOperationalText(command.ShippingLine);
+        trip.ContainerSize = NormalizeOperationalText(command.ContainerSize);
+        trip.TripType = NormalizeOperationalText(command.TripType);
         var financialChangedFields = ApplyFinancials(trip, command.Financials);
         trip.UpdatedAt = DateTime.UtcNow;
 
@@ -462,6 +498,19 @@ public sealed class DispatchTripService : ITripLifecycleService
         }
 
         await SaveChangesAsync(cancellationToken);
+        InvalidateTripUpdateCaches(
+            assignmentChanged,
+            financialChangedFields.Count > 0,
+            originalDriverUserId,
+            trip.DriverUserId);
+        if (assignmentChanged && trip.DriverUserId.HasValue && originalDriverUserId != trip.DriverUserId)
+        {
+            QueuePushToUser(
+                trip.DriverUserId.Value,
+                "New Trip Assigned",
+                $"Container {trip.ContainerNumber ?? "pending"} assigned to you",
+                new Dictionary<string, string> { ["tripId"] = trip.Id.ToString() });
+        }
         return trip;
     }
 
@@ -493,6 +542,8 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new BusinessRuleViolationException("Dispatching requires an assigned driver.");
         }
 
+        EnforceTruckDispatchReadiness(command.TripId, command.TruckAssetId, actor, command.Remarks);
+
         EnsureScheduledStops(trip.Stops.Select(stop => new DispatchTripStopInput(
             stop.StopType,
             stop.LocationText,
@@ -516,6 +567,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         }
 
         var (pickupAt, dropoffAt) = GetScheduledWindow(trip.Stops);
+        await EnforceAtwDispatchReadinessAsync(trip.Id, actor, command.Remarks, cancellationToken);
         await EnforceAssignmentConflictsAsync(
             trip.Id,
             command.DriverUserId,
@@ -547,6 +599,12 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: trip.Id);
 
         await SaveChangesAsync(cancellationToken);
+        InvalidateAssignmentCaches(command.DriverUserId);
+        QueuePushToUser(
+            command.DriverUserId,
+            "New Trip Assigned",
+            $"Container {trip.ContainerNumber ?? "pending"} assigned to you",
+            new Dictionary<string, string> { ["tripId"] = trip.Id.ToString() });
         return trip;
     }
 
@@ -694,22 +752,7 @@ public sealed class DispatchTripService : ITripLifecycleService
                 throw new ConflictDomainException("Trip must be delivered before closing.");
             }
 
-            if (_options.DocVerificationEnabled)
-            {
-                var hasVerifiedPod = await _documentReadService.HasVerifiedPodAsync(trip.Id, cancellationToken);
-                if (!hasVerifiedPod)
-                {
-                    throw new ConflictDomainException("Closing requires a verified POD.");
-                }
-            }
-            else
-            {
-                var hasUploadedOrVerifiedPod = await _documentReadService.HasUploadedOrVerifiedPodAsync(trip.Id, cancellationToken);
-                if (!hasUploadedOrVerifiedPod && !trip.PodPending)
-                {
-                    throw new ConflictDomainException("Closing requires POD upload or POD pending.");
-                }
-            }
+            await EnforceCloseDocumentReadinessAsync(trip.Id, actor, remarks, cancellationToken);
 
             trip.Status = TripStatus.Closed;
             trip.UpdatedAt = DateTime.UtcNow;
@@ -731,6 +774,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         AddHistory(trip.Id, fromStatus, trip.Status, actor.UserId, remarks, command.EventAt);
         AddStatusAudit(actor.UserId, trip.Id, trip.Status);
         await SaveChangesAsync(cancellationToken);
+        TriggerPostDeliveryRecommendations(trip.Id, trip.Status);
         return trip;
     }
 
@@ -1385,6 +1429,137 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: tripId);
     }
 
+    private async Task EnforceAtwDispatchReadinessAsync(
+        Guid tripId,
+        DispatchActorContext actor,
+        string? remarks,
+        CancellationToken cancellationToken)
+    {
+        var hasVerifiedAtw = await _documentReadService.HasVerifiedDocumentAsync(
+            tripId,
+            TripDocumentType.Atw,
+            cancellationToken);
+        if (hasVerifiedAtw)
+        {
+            return;
+        }
+
+        if (!actor.IsManager)
+        {
+            throw new ConflictDomainException("ATW must be uploaded and verified before dispatching.");
+        }
+
+        if (string.IsNullOrWhiteSpace(remarks))
+        {
+            throw new BusinessRuleViolationException("Remarks are required to override missing or unverified ATW.");
+        }
+
+        _auditService.AddEntry(
+            actor.UserId,
+            AuditActions.DispatchTripConflictOverride,
+            EntityTypes.DispatchTrip,
+            tripId,
+            null,
+            new
+            {
+                Reason = "ATW_NOT_VERIFIED",
+                Remarks = remarks.Trim()
+            },
+            tripId: tripId);
+    }
+
+    private void EnforceTruckDispatchReadiness(
+        Guid tripId,
+        Guid? truckAssetId,
+        DispatchActorContext actor,
+        string? remarks)
+    {
+        if (truckAssetId.HasValue)
+        {
+            return;
+        }
+
+        if (!actor.IsManager)
+        {
+            throw new ConflictDomainException("A truck must be assigned before dispatching.");
+        }
+
+        if (string.IsNullOrWhiteSpace(remarks))
+        {
+            throw new BusinessRuleViolationException("Remarks are required to override missing truck assignment.");
+        }
+
+        _auditService.AddEntry(
+            actor.UserId,
+            AuditActions.DispatchTripConflictOverride,
+            EntityTypes.DispatchTrip,
+            tripId,
+            null,
+            new
+            {
+                Reason = "TRUCK_NOT_ASSIGNED",
+                Remarks = remarks.Trim()
+            },
+            tripId: tripId);
+    }
+
+    private async Task EnforceCloseDocumentReadinessAsync(
+        Guid tripId,
+        DispatchActorContext actor,
+        string? remarks,
+        CancellationToken cancellationToken)
+    {
+        var missing = new List<string>();
+        foreach (var documentType in DispatchDocumentRules.GetRequiredDocumentTypes(_options))
+        {
+            if (documentType == TripDocumentType.Waybill)
+            {
+                var hasGeneratedWaybill = await _dbContext.GeneratedWaybills
+                    .AsNoTracking()
+                    .AnyAsync(waybill => waybill.TripId == tripId && waybill.IsActive, cancellationToken);
+                if (!hasGeneratedWaybill)
+                {
+                    missing.Add("Waybill must be generated.");
+                }
+
+                continue;
+            }
+
+            var hasVerified = await _documentReadService.HasVerifiedDocumentAsync(
+                tripId,
+                documentType,
+                cancellationToken);
+            if (!hasVerified)
+            {
+                missing.Add($"{GetDocumentLabel(documentType)} must be verified.");
+            }
+        }
+
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(remarks))
+        {
+            throw new BusinessRuleViolationException("Remarks are required to override incomplete close documents.");
+        }
+
+        _auditService.AddEntry(
+            actor.UserId,
+            AuditActions.DispatchTripConflictOverride,
+            EntityTypes.DispatchTrip,
+            tripId,
+            null,
+            new
+            {
+                Reason = "CLOSE_DOCUMENTS_INCOMPLETE",
+                Missing = missing,
+                Remarks = remarks.Trim()
+            },
+            tripId: tripId);
+    }
+
     private static object BuildConflictDetails(
         string summary,
         IReadOnlyCollection<AssignmentConflictDetail> conflicts)
@@ -1404,6 +1579,20 @@ public sealed class DispatchTripService : ITripLifecycleService
                 WindowEnd = conflict.WindowEnd,
                 Message = BuildConflictItemMessage(conflict)
             }).ToList()
+        };
+    }
+
+    private static string GetDocumentLabel(TripDocumentType documentType)
+    {
+        return documentType switch
+        {
+            TripDocumentType.Atw => "ATW",
+            TripDocumentType.Eir => "EIR",
+            TripDocumentType.GatePass => "Gate Pass",
+            TripDocumentType.Dr => "DR",
+            TripDocumentType.Pod => "POD",
+            TripDocumentType.Waybill => "Waybill",
+            _ => documentType.ToString()
         };
     }
 
@@ -1486,6 +1675,15 @@ public sealed class DispatchTripService : ITripLifecycleService
             EventAt = eventAt,
             RecordedAt = DateTime.UtcNow
         });
+
+        if (fromStatus != toStatus)
+        {
+            _pendingStatusBroadcasts.Add(new PendingTripStatusBroadcast(
+                tripId,
+                fromStatus,
+                toStatus,
+                eventAt));
+        }
     }
 
     private void AddStatusAudit(Guid actorUserId, Guid tripId, TripStatus toStatus)
@@ -1584,6 +1782,11 @@ public sealed class DispatchTripService : ITripLifecycleService
     }
 
     private static string? NormalizeSensitiveText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string? NormalizeOperationalText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
@@ -1739,11 +1942,292 @@ public sealed class DispatchTripService : ITripLifecycleService
         try
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
+            var broadcasts = _pendingStatusBroadcasts.ToList();
+            _pendingStatusBroadcasts.Clear();
+            await InvalidateStatusChangeCachesAsync(broadcasts, cancellationToken);
+            foreach (var broadcast in broadcasts)
+            {
+                QueueTripStatusChangedBroadcast(broadcast);
+            }
         }
         catch (DbUpdateConcurrencyException)
         {
             throw new ConcurrencyConflictException("The trip was updated by another user. Please refresh and retry.");
         }
+    }
+
+    private async Task InvalidateStatusChangeCachesAsync(
+        IReadOnlyCollection<PendingTripStatusBroadcast> broadcasts,
+        CancellationToken cancellationToken)
+    {
+        if (broadcasts.Count == 0)
+        {
+            return;
+        }
+
+        await QueueDeliveryPushNotificationsAsync(broadcasts, cancellationToken);
+
+        if (_cacheService is null)
+        {
+            return;
+        }
+
+        _cacheService.Invalidate(VaiaCacheKeys.DispatchKpis);
+        _cacheService.Invalidate(VaiaCacheKeys.SystemKpis);
+        _cacheService.Invalidate(VaiaCacheKeys.DriverAvailability);
+        _cacheService.Invalidate(VaiaCacheKeys.TruckAvailability);
+
+        if (broadcasts.Any(broadcast => broadcast.NewStatus == TripStatus.Cancelled))
+        {
+            _cacheService.Invalidate(VaiaCacheKeys.PendingUnassignedTrips);
+        }
+
+        if (broadcasts.Any(broadcast => broadcast.NewStatus == TripStatus.Closed))
+        {
+            _cacheService.InvalidatePrefix(VaiaCacheKeys.TripSummaryReport);
+            _cacheService.InvalidatePrefix(VaiaCacheKeys.DriverPerformanceReport);
+            _cacheService.InvalidatePrefix(VaiaCacheKeys.DeliveryTimeReport);
+        }
+
+        var tripIds = broadcasts.Select(broadcast => broadcast.TripId).Distinct().ToList();
+        var tripScopes = await _dbContext.DispatchTrips
+            .AsNoTracking()
+            .Where(trip => tripIds.Contains(trip.Id))
+            .Select(trip => new TripCacheScope(trip.Id, trip.DriverUserId, trip.CustomerId))
+            .ToListAsync(cancellationToken);
+
+        foreach (var driverUserId in tripScopes
+            .Select(scope => scope.DriverUserId)
+            .Where(driverUserId => driverUserId.HasValue)
+            .Select(driverUserId => driverUserId!.Value)
+            .Distinct())
+        {
+            _cacheService.Invalidate(VaiaCacheKeys.DriverKpis(driverUserId));
+        }
+
+        var customerIds = tripScopes
+            .Select(scope => scope.CustomerId)
+            .Distinct()
+            .ToList();
+        if (customerIds.Count == 0)
+        {
+            return;
+        }
+
+        var customerUserIds = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.CustomerId.HasValue && customerIds.Contains(user.CustomerId.Value))
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var customerUserId in customerUserIds)
+        {
+            _cacheService.Invalidate(VaiaCacheKeys.CustomerKpis(customerUserId));
+        }
+    }
+
+    private async Task QueueDeliveryPushNotificationsAsync(
+        IReadOnlyCollection<PendingTripStatusBroadcast> broadcasts,
+        CancellationToken cancellationToken)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        var deliveredTripIds = broadcasts
+            .Where(broadcast => broadcast.NewStatus == TripStatus.Delivered)
+            .Select(broadcast => broadcast.TripId)
+            .Distinct()
+            .ToList();
+        if (deliveredTripIds.Count == 0)
+        {
+            return;
+        }
+
+        var deliveredTrips = await _dbContext.DispatchTrips
+            .AsNoTracking()
+            .Where(trip => deliveredTripIds.Contains(trip.Id))
+            .Select(trip => new
+            {
+                trip.Id,
+                trip.CustomerId,
+                trip.ContainerNumber
+            })
+            .ToListAsync(cancellationToken);
+
+        var customerIds = deliveredTrips.Select(trip => trip.CustomerId).Distinct().ToList();
+        var customerUsers = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.CustomerId.HasValue && customerIds.Contains(user.CustomerId.Value))
+            .Select(user => new { user.Id, user.CustomerId })
+            .ToListAsync(cancellationToken);
+
+        foreach (var deliveredTrip in deliveredTrips)
+        {
+            foreach (var customerUser in customerUsers.Where(user => user.CustomerId == deliveredTrip.CustomerId))
+            {
+                QueuePushToUser(
+                    customerUser.Id,
+                    "Delivery Complete",
+                    $"Your container {deliveredTrip.ContainerNumber ?? "container"} has been delivered",
+                    new Dictionary<string, string> { ["tripId"] = deliveredTrip.Id.ToString() });
+            }
+        }
+    }
+
+    private void InvalidateTripUpdateCaches(
+        bool assignmentChanged,
+        bool financialChanged,
+        Guid? originalDriverUserId,
+        Guid? currentDriverUserId)
+    {
+        if (_cacheService is null)
+        {
+            return;
+        }
+
+        if (assignmentChanged)
+        {
+            InvalidateAssignmentCaches(originalDriverUserId, currentDriverUserId);
+        }
+
+        if (financialChanged)
+        {
+            _cacheService.Invalidate(VaiaCacheKeys.FinanceKpis);
+        }
+    }
+
+    private void InvalidateAssignmentCaches(params Guid?[] driverUserIds)
+    {
+        if (_cacheService is null)
+        {
+            return;
+        }
+
+        _cacheService.Invalidate(VaiaCacheKeys.DispatchKpis);
+        _cacheService.Invalidate(VaiaCacheKeys.SystemKpis);
+        _cacheService.Invalidate(VaiaCacheKeys.DriverAvailability);
+        _cacheService.Invalidate(VaiaCacheKeys.TruckAvailability);
+        _cacheService.Invalidate(VaiaCacheKeys.PendingUnassignedTrips);
+
+        foreach (var driverUserId in driverUserIds
+            .Where(driverUserId => driverUserId.HasValue)
+            .Select(driverUserId => driverUserId!.Value)
+            .Distinct())
+        {
+            _cacheService.Invalidate(VaiaCacheKeys.DriverKpis(driverUserId));
+        }
+    }
+
+    private void TriggerPostDeliveryRecommendations(Guid tripId, TripStatus newStatus)
+    {
+        if (newStatus != TripStatus.Delivered || _serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<IPostDeliveryRecommendationService>();
+            await svc.GenerateRecommendationsAsync(tripId);
+        });
+    }
+
+    private void QueueTripStatusChangedBroadcast(PendingTripStatusBroadcast pending)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DispatchTripService>>();
+            try
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+                var hubContext = scope.ServiceProvider
+                    .GetRequiredService<IHubContext<VaiaDispatchHub, IVaiaDispatchClient>>();
+                var trip = await dbContext.DispatchTrips
+                    .Include(item => item.Driver)
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.Id == pending.TripId);
+                if (trip is null)
+                {
+                    return;
+                }
+
+                var e = new TripStatusChangedEvent(
+                    trip.Id,
+                    trip.ContainerNumber ?? string.Empty,
+                    DispatchEventFormatting.TripStatus(pending.NewStatus),
+                    DispatchEventFormatting.TripStatus(pending.PreviousStatus),
+                    trip.Driver?.Username ?? "Unassigned driver",
+                    pending.ChangedAt);
+
+                var sends = new List<Task>
+                {
+                    hubContext.Clients.Group(VaiaDispatchHub.DispatchOpsGroup).TripStatusChanged(e)
+                };
+
+                if (trip.DriverUserId.HasValue)
+                {
+                    sends.Add(hubContext.Clients
+                        .Group(VaiaDispatchHub.DriverGroup(trip.DriverUserId.Value))
+                        .TripStatusChanged(e));
+                }
+
+                var customerUserIds = await dbContext.Users
+                    .AsNoTracking()
+                    .Where(user => user.CustomerId == trip.CustomerId)
+                    .Select(user => user.Id)
+                    .ToListAsync();
+                foreach (var customerUserId in customerUserIds)
+                {
+                    sends.Add(hubContext.Clients
+                        .Group(VaiaDispatchHub.CustomerGroup(customerUserId))
+                        .TripStatusChanged(e));
+                }
+
+                await Task.WhenAll(sends);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Failed to broadcast trip status change for trip {TripId}.",
+                    pending.TripId);
+            }
+        });
+    }
+
+    private void QueuePushToUser(
+        Guid userId,
+        string title,
+        string body,
+        Dictionary<string, string>? data = null)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DispatchTripService>>();
+            try
+            {
+                var pushService = scope.ServiceProvider.GetRequiredService<IPushNotificationService>();
+                await pushService.SendToUserAsync(userId, title, body, data);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to queue push notification for user {UserId}.", userId);
+            }
+        });
     }
 
     private void ApplyRowVersion(Trip trip, byte[] rowVersion)
@@ -1755,5 +2239,16 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         _dbContext.Entry(trip).Property(t => t.RowVersion).OriginalValue = rowVersion;
     }
+
+    private sealed record PendingTripStatusBroadcast(
+        Guid TripId,
+        TripStatus PreviousStatus,
+        TripStatus NewStatus,
+        DateTime ChangedAt);
+
+    private sealed record TripCacheScope(
+        Guid TripId,
+        Guid? DriverUserId,
+        Guid CustomerId);
 }
 

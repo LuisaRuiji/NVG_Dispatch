@@ -22,7 +22,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("stock-movements")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<IReadOnlyCollection<StockMovementReportItemResponse>>> GetStockMovements(
         [FromQuery] string? from,
         [FromQuery] string? to,
@@ -60,7 +60,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("low-stock")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<IReadOnlyCollection<LowStockReportItemResponse>>> GetLowStock(
         CancellationToken cancellationToken)
     {
@@ -77,7 +77,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("open-loans")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<IReadOnlyCollection<OpenLoanReportItemResponse>>> GetOpenLoans(
         CancellationToken cancellationToken)
     {
@@ -97,7 +97,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("inventory-valuation")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<IReadOnlyCollection<InventoryValuationReportItemResponse>>> GetInventoryValuation(
         CancellationToken cancellationToken)
     {
@@ -115,7 +115,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("inventory-valuation.csv")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<IActionResult> ExportInventoryValuationCsv(CancellationToken cancellationToken)
     {
         var results = await _reportQueryService.GetInventoryValuationReportAsync(cancellationToken);
@@ -141,7 +141,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("asset-maintenance-cost")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<PagedResult<AssetMaintenanceCostReportItemResponse>>> GetAssetMaintenanceCost(
         [FromQuery] Guid? assetId,
         [FromQuery] string? from,
@@ -204,7 +204,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("asset-maintenance-cost.csv")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<IActionResult> ExportAssetMaintenanceCostCsv(
         [FromQuery] Guid? assetId,
         [FromQuery] string? from,
@@ -265,7 +265,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("asset-consumption")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<IReadOnlyCollection<AssetConsumptionBreakdownItemResponse>>> GetAssetConsumption(
         [FromQuery] Guid? assetId,
         [FromQuery] string? from,
@@ -319,7 +319,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("adjustments")]
-    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager}")]
+    [Authorize(Roles = $"{RoleNames.InventoryOfficer},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<IReadOnlyCollection<AdjustmentReportItemResponse>>> GetAdjustments(
         [FromQuery] string? from,
         [FromQuery] string? to,
@@ -432,7 +432,7 @@ public sealed class ReportsController : ControllerBase
     }
 
     [HttpGet("audit")]
-    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.HeadOfFinance},{RoleNames.Ceo},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Admin},{RoleNames.Manager},{RoleNames.Dispatcher},{RoleNames.HeadOfFinance},{RoleNames.InventoryOfficer},{RoleNames.Driver}")]
     public async Task<ActionResult<PagedResult<AuditLogItemResponse>>> GetAuditLogs(
         [FromQuery] string? action,
         [FromQuery] string? entityType,
@@ -464,6 +464,7 @@ public sealed class ReportsController : ControllerBase
             entityId,
             fromUtc,
             toUtc,
+            User,
             page,
             pageSize,
             cancellationToken);
@@ -476,6 +477,7 @@ public sealed class ReportsController : ControllerBase
                 item.EntityId,
                 item.ActorUserId,
                 item.ActorUsername,
+                item.ActorRole,
                 item.CreatedAt,
                 item.Metadata)).ToList(),
             results.TotalCount,

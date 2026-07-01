@@ -2,8 +2,9 @@ namespace NVGInventory.Modules.ShipmentRequests.Enums;
 
 public enum ShipmentRequestDocumentType
 {
-    Invoice = 0,
-    CargoManifest = 1,
-    DeliveryInstructions = 2,
-    Other = 3
+    Atw = 0,
+    Invoice = 1,
+    CargoManifest = 2,
+    DeliveryInstructions = 3,
+    Other = 4
 }

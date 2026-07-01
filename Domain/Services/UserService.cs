@@ -7,13 +7,17 @@ namespace NVGInventory.Domain.Services;
 
 public sealed record CreateUserCommand(string Username, string Password, string? Email);
 
+public sealed record UpdateUserProfileCommand(string Username, string? Email);
+
 public sealed class UserService
 {
     private readonly InventoryDbContext _dbContext;
+    private readonly IPasswordHashService _passwordHashService;
 
-    public UserService(InventoryDbContext dbContext)
+    public UserService(InventoryDbContext dbContext, IPasswordHashService? passwordHashService = null)
     {
         _dbContext = dbContext;
+        _passwordHashService = passwordHashService ?? new BCryptPasswordHashService();
     }
 
     public async Task<User> CreateUserAsync(CreateUserCommand command, CancellationToken cancellationToken = default)
@@ -49,7 +53,7 @@ public sealed class UserService
             CreatedAt = now
         };
 
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(command.Password);
+        user.PasswordHash = _passwordHashService.HashPassword(command.Password);
 
         _dbContext.Users.Add(user);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -187,6 +191,36 @@ public sealed class UserService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateUserProfileAsync(Guid userId, UpdateUserProfileCommand command, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.Username))
+        {
+            throw new BusinessRuleViolationException("Username is required.");
+        }
+
+        var username = command.Username.Trim();
+        var exists = await _dbContext.Users
+            .AnyAsync(user => user.Id != userId && user.Username == username, cancellationToken);
+
+        if (exists)
+        {
+            throw new BusinessRuleViolationException("Username already exists.");
+        }
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            throw new NotFoundException("User not found.");
+        }
+
+        user.Username = username;
+        user.Email = string.IsNullOrWhiteSpace(command.Email) ? null : command.Email.Trim();
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task UpdateUserStatusAsync(Guid userId, bool isActive, CancellationToken cancellationToken = default)
     {
         var user = await _dbContext.Users
@@ -218,7 +252,7 @@ public sealed class UserService
             throw new NotFoundException("User not found.");
         }
 
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        user.PasswordHash = _passwordHashService.HashPassword(newPassword);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 

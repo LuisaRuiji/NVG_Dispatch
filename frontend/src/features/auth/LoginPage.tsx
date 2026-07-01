@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getDefaultRoute, isMfaRequiredResponse, login, verifyMfaLogin } from "./authStore";
 import { useToast } from "@/lib/useToast";
 import ToastHost from "@/components/ToastHost";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function LoginPage() {
   const nav = useNavigate();
@@ -68,11 +69,10 @@ export default function LoginPage() {
                   </div>
                   <div>
                     <label className="text-xs uppercase text-muted-foreground">Password</label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                      className="mt-1 rounded-lg bg-white"
                     />
                   </div>
                 </>

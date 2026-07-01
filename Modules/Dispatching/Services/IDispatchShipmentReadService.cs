@@ -5,6 +5,7 @@ namespace NVGInventory.Modules.Dispatching.Services;
 
 public sealed record DispatchCustomerShipmentListItem(
     Guid TripId,
+    string? ContainerNumber,
     string PickupLocation,
     string DropoffLocation,
     TripStatus Status,
@@ -20,6 +21,7 @@ public sealed record DispatchCustomerShipmentStop(
 
 public sealed record DispatchCustomerShipmentDetail(
     Guid TripId,
+    string? ContainerNumber,
     TripStatus Status,
     string PickupLocation,
     string DropoffLocation,
@@ -27,6 +29,8 @@ public sealed record DispatchCustomerShipmentDetail(
     DateTime? DropoffTime,
     DateTime? DeliveredTime,
     TripDocumentState PodState,
+    TripDocumentState AtwState,
+    bool WaybillGenerated,
     IReadOnlyCollection<DispatchCustomerShipmentStop> Stops);
 
 public sealed record DispatchCustomerShipmentTimelineEntry(

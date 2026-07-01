@@ -175,6 +175,46 @@ public sealed class UsersController : ControllerBase
         return NoContent();
     }
 
+    [HttpPatch("{userId:guid}/profile")]
+    [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    public async Task<IActionResult> UpdateProfile(Guid userId, UpdateUserProfileRequest request, CancellationToken cancellationToken)
+    {
+        var isSuperAdmin = User.IsInRole(RoleNames.SuperAdmin);
+        var target = await _userService.GetUserWithRolesAsync(userId, cancellationToken);
+
+        if (target is null)
+        {
+            return NotFound();
+        }
+
+        var targetHasAdmin = target.UserRoles.Any(ur => ur.Role?.Name == RoleNames.Admin);
+        var targetHasSuper = target.UserRoles.Any(ur => ur.Role?.Name == RoleNames.SuperAdmin);
+
+        if (!isSuperAdmin && (targetHasAdmin || targetHasSuper))
+        {
+            return Forbid();
+        }
+
+        var before = new { target.Username, target.Email };
+        await _userService.UpdateUserProfileAsync(
+            userId,
+            new UpdateUserProfileCommand(request.Username, request.Email),
+            cancellationToken);
+
+        await AddUserAuditAsync(
+            AuditActions.UserProfileUpdated,
+            userId,
+            before,
+            new
+            {
+                Username = request.Username.Trim(),
+                Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim()
+            },
+            cancellationToken);
+
+        return NoContent();
+    }
+
     [HttpPatch("{userId:guid}/status")]
     [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     [Authorize(Policy = AuthorizationPolicies.RequireRecentMfa)]
@@ -210,7 +250,6 @@ public sealed class UsersController : ControllerBase
 
     [HttpPost("{userId:guid}/reset-password")]
     [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin}")]
-    [Authorize(Policy = AuthorizationPolicies.RequireRecentMfa)]
     public async Task<IActionResult> ResetPassword(Guid userId, ResetUserPasswordRequest request, CancellationToken cancellationToken)
     {
         var isSuperAdmin = User.IsInRole(RoleNames.SuperAdmin);

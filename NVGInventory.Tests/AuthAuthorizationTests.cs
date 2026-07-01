@@ -110,7 +110,7 @@ public sealed class AuthAuthorizationTests : IDisposable
             Content = JsonContent.Create(new RefreshTokenRequest())
         };
         refreshRequest.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-        refreshRequest.Headers.Add("X-NVG-CSRF", "1");
+        refreshRequest.Headers.Add("X-VAIA-CSRF", "1");
 
         var refreshResponse = await _client.SendAsync(refreshRequest);
         Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using NVGInventory.Domain.Enums;
 using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.ShipmentRequests.Enums;
@@ -9,6 +10,8 @@ public sealed record CreateUserRequest(string Username, string Password, string?
 public sealed record CreateUserResponse(Guid Id, string Username);
 
 public sealed record AssignRoleRequest(string RoleName);
+
+public sealed record UpdateUserProfileRequest(string Username, string? Email);
 
 public sealed record UpdateUserRolesRequest(IReadOnlyCollection<string> RoleNames);
 
@@ -68,13 +71,14 @@ public sealed record ModuleStatusResponse(
 
 public sealed record ApiErrorResponse(string ErrorCode, string Message, string TraceId, object? Details = null);
 
-public sealed record LoginRequest(string Username, string Password);
+public sealed record LoginRequest(string Username, string Password, bool RememberMe = false);
 
 public sealed record LoginResponse(
     string AccessToken,
     Guid UserId,
     IReadOnlyCollection<string> Roles,
     DateTime ExpiresAtUtc,
+    bool MustChangePassword = false,
     string? RefreshToken = null);
 
 public sealed record MfaRequiredResponse(
@@ -83,7 +87,7 @@ public sealed record MfaRequiredResponse(
     string Method,
     DateTime ExpiresAtUtc);
 
-public sealed record MfaVerifyRequest(Guid ChallengeId, string Code);
+public sealed record MfaVerifyRequest(Guid ChallengeId, string Code, bool RememberMe = false);
 
 public sealed record MfaSetupResponse(string SecretKey, string OtpAuthUri);
 
@@ -111,15 +115,19 @@ public sealed record RefreshTokenResponse(
     Guid UserId,
     IReadOnlyCollection<string> Roles,
     DateTime ExpiresAtUtc,
+    bool MustChangePassword = false,
     string? RefreshToken = null);
 
 public sealed record LogoutRequest(string? RefreshToken = null);
+
+public sealed record ChangePasswordRequest(string NewPassword);
 
 public sealed record CurrentUserResponse(
     Guid UserId,
     string Username,
     IReadOnlyCollection<string> Roles,
-    bool MfaEnabled);
+    bool MfaEnabled,
+    bool MustChangePassword);
 
 public sealed record CreateSupplierRequest(
     string Name,
@@ -540,6 +548,93 @@ public sealed record SupplierSpendReportItemResponse(
     decimal TotalQty,
     decimal AveragePurchaseOrderValue);
 
+public sealed record DispatchTripStatusCountReportItemResponse(
+    TripStatus Status,
+    int Count);
+
+public sealed record DispatchTripWeeklyCountReportItemResponse(
+    DateTime WeekStart,
+    int Count);
+
+public sealed record DispatchTripSummaryReportResponse(
+    IReadOnlyCollection<DispatchTripStatusCountReportItemResponse> StatusCounts,
+    IReadOnlyCollection<DispatchTripWeeklyCountReportItemResponse> WeeklyCounts,
+    int DeliveredTrips,
+    int TotalNonCancelledTrips,
+    decimal CompletionRatePercent);
+
+public sealed record DispatchDriverPerformanceReportItemResponse(
+    Guid DriverUserId,
+    string DriverName,
+    int TripsCompleted,
+    decimal? AverageDeliveryMinutes,
+    decimal OnTimeRatePercent,
+    decimal DocumentComplianceRatePercent);
+
+public sealed record DispatchDeliveryTimeRouteReportItemResponse(
+    string RouteKey,
+    string FromLocation,
+    string ToLocation,
+    int TripCount,
+    decimal AverageDeliveryMinutes,
+    decimal LongestDeliveryMinutes,
+    DateTime GeneratedAt);
+
+public sealed record DispatchDeliveryTimeReportResponse(
+    PagedResult<DispatchDeliveryTimeRouteReportItemResponse> Routes,
+    IReadOnlyCollection<DispatchDeliveryTimeRouteReportItemResponse> LongestRoutes,
+    DateTime GeneratedAt);
+
+public sealed record DispatchDocumentProcessingReportItemResponse(
+    string DocumentType,
+    int PendingVerification,
+    decimal? AverageVerificationHours,
+    decimal RejectionRatePercent);
+
+public sealed record DispatchFinancialPeriodReportItemResponse(
+    DateTime PeriodStart,
+    string PeriodLabel,
+    decimal TotalTripRevenue,
+    decimal TotalDriverPayroll,
+    decimal TotalFuelCost);
+
+public sealed record DispatchDriverPayrollReportItemResponse(
+    Guid? DriverUserId,
+    string DriverName,
+    int DeliveredTrips,
+    decimal TotalPayroll);
+
+public sealed record DispatchFinancialSummaryReportResponse(
+    IReadOnlyCollection<DispatchFinancialPeriodReportItemResponse> Periods,
+    IReadOnlyCollection<DispatchDriverPayrollReportItemResponse> DriverPayroll);
+
+public sealed record DispatchRecommendationKpiReportResponse(
+    int TotalGenerated,
+    int TotalAccepted,
+    int TotalIgnored,
+    decimal AcceptanceRatePercent,
+    decimal? AverageAcceptedScore);
+
+public sealed record DispatchRecommendationWeeklyReportItemResponse(
+    DateTime WeekStart,
+    int Accepted,
+    int Ignored);
+
+public sealed record DispatchRecommendationHistoryReportItemResponse(
+    DateTime Date,
+    string Driver,
+    Guid CompletedTripId,
+    Guid RecommendedTripId,
+    decimal Score,
+    int Rank,
+    string Action,
+    string? ReviewedBy);
+
+public sealed record DispatchRecommendationReportResponse(
+    DispatchRecommendationKpiReportResponse Kpis,
+    IReadOnlyCollection<DispatchRecommendationWeeklyReportItemResponse> Weekly,
+    PagedResult<DispatchRecommendationHistoryReportItemResponse> RecentHistory);
+
 public sealed record AuditLogItemResponse(
     Guid Id,
     string Action,
@@ -547,6 +642,7 @@ public sealed record AuditLogItemResponse(
     Guid EntityId,
     Guid ActorUserId,
     string? ActorUsername,
+    string? ActorRole,
     DateTime CreatedAt,
     string? Metadata);
 
@@ -702,7 +798,11 @@ public sealed record CreateDispatchTripRequest(
     Guid? TruckAssetId,
     string? Notes,
     IReadOnlyCollection<DispatchTripStopRequest>? Stops,
-    DispatchTripFinancialRequest? Financials = null);
+    DispatchTripFinancialRequest? Financials = null,
+    string? ContainerNumber = null,
+    string? EirNumber = null,
+    string? BookingNumber = null,
+    string? ShippingLine = null);
 
 public sealed record CreateDispatchTripResponse(Guid TripId, TripStatus Status);
 
@@ -714,7 +814,11 @@ public sealed record UpdateDispatchTripRequest(
     IReadOnlyCollection<DispatchTripStopRequest>? Stops,
     string? Remarks = null,
     string RowVersion = "",
-    DispatchTripFinancialRequest? Financials = null);
+    DispatchTripFinancialRequest? Financials = null,
+    string? ContainerNumber = null,
+    string? EirNumber = null,
+    string? BookingNumber = null,
+    string? ShippingLine = null);
 
 public sealed record DispatchTripActionRequest(
     Guid DriverUserId,
@@ -799,6 +903,15 @@ public sealed record DispatchTripDocumentVersionResponse(
 
 public sealed record DispatchTripDocumentLinkResponse(string StorageKey);
 
+public sealed record GeneratedWaybillResponse(
+    Guid Id,
+    Guid TripId,
+    string WaybillNumber,
+    int Version,
+    DateTime GeneratedAt,
+    Guid GeneratedByUserId,
+    string WaybillDataJson);
+
 public sealed record DispatchTripHistoryResponse(
     Guid Id,
     TripHistoryEventType EventType,
@@ -814,6 +927,7 @@ public sealed record DispatchTripListItemResponse(
     Guid Id,
     TripStatus Status,
     DispatchCustomerSummaryResponse Customer,
+    string? ContainerNumber,
     Guid? DriverUserId,
     string? DriverUsername,
     Guid? TruckAssetId,
@@ -883,6 +997,10 @@ public sealed record DispatchTripDetailResponse(
     bool PodPending,
     TripStatus? HoldPreviousStatus,
     string? Notes,
+    string? ContainerNumber,
+    string? EirNumber,
+    string? BookingNumber,
+    string? ShippingLine,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     IReadOnlyCollection<DispatchTripStopResponse> Stops,
@@ -921,6 +1039,11 @@ public sealed record CreateShipmentRequestRequest(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    [Required] ContainerSize ContainerSize,
+    [Required] TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions);
@@ -929,6 +1052,11 @@ public sealed record UpdateShipmentRequestRequest(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    [Required] ContainerSize ContainerSize,
+    [Required] TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions);
@@ -941,6 +1069,11 @@ public sealed record ShipmentRequestListItemResponse(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     int DocumentsCount,
     DateTime CreatedAt,
     DateTime? ApprovedAt,
@@ -952,6 +1085,11 @@ public sealed record ShipmentRequestDetailResponse(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
@@ -981,6 +1119,11 @@ public sealed record DispatchShipmentRequestQueueItemResponse(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     int DocumentsCount,
     DateTime CreatedAt);
 
@@ -991,6 +1134,7 @@ public sealed record ShipmentRequestConversionResponse(
 
 public sealed record CustomerShipmentListItemResponse(
     Guid TripId,
+    string? ContainerNumber,
     string PickupLocation,
     string DropoffLocation,
     TripStatus Status,
@@ -1000,6 +1144,7 @@ public sealed record CustomerShipmentListItemResponse(
 
 public sealed record CustomerShipmentDetailResponse(
     Guid TripId,
+    string? ContainerNumber,
     TripStatus Status,
     string PickupLocation,
     string DropoffLocation,
@@ -1007,6 +1152,8 @@ public sealed record CustomerShipmentDetailResponse(
     DateTime? DropoffTime,
     DateTime? DeliveredTime,
     TripDocumentState PodState,
+    TripDocumentState AtwState,
+    bool WaybillGenerated,
     IReadOnlyCollection<CustomerShipmentStopResponse> Stops);
 
 public sealed record CustomerShipmentStopResponse(

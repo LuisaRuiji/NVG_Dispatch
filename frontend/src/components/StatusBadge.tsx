@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { formatStatusLabel, normalizeStatusKey } from "@/lib/statusFormatters";
 
 type Props = {
   status?: string | null;
@@ -34,18 +35,18 @@ const statusMap: Record<string, string> = {
 
 export default function StatusBadge({ status }: Props) {
   const raw = status ?? "Unknown";
-  const key = raw.toLowerCase().replace(/\s+/g, "_");
+  const key = normalizeStatusKey(raw);
   const klass =
     statusMap[key] ??
-    (key.includes("pending") ? statusMap.pending : undefined) ??
+    (key.includes("pending") ? "bg-amber-100 text-amber-700 border-amber-200" : undefined) ??
     (key.includes("approved") ? statusMap.approved : undefined) ??
     (key.includes("rejected") ? statusMap.rejected : undefined) ??
     (key.includes("closed") ? statusMap.closed : undefined) ??
     "bg-muted text-muted-foreground border-border";
 
   return (
-    <Badge className={cn("border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide", klass)}>
-      {raw}
+    <Badge className={cn("border px-2 py-0.5 text-xs font-semibold normal-case tracking-normal", klass)}>
+      {formatStatusLabel(raw)}
     </Badge>
   );
 }

@@ -17,6 +17,7 @@ internal static class DevSeedData
     {
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var passwordHashService = scope.ServiceProvider.GetRequiredService<IPasswordHashService>();
 
         const string seedUsername = "Superadmin";
         const string seedEmail = "Superadmin@nvg.com";
@@ -32,9 +33,10 @@ internal static class DevSeedData
                 Email = seedEmail,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(seedPassword)
+                PasswordHash = passwordHashService.HashPassword(seedPassword)
             };
 
+            MfaSeedHelper.EnableSeededMfa(user, DateTime.UtcNow);
             dbContext.Users.Add(user);
 
             var role = await dbContext.Roles.FirstOrDefaultAsync(r => r.Name == RoleNames.SuperAdmin, cancellationToken);
@@ -47,6 +49,8 @@ internal static class DevSeedData
                 });
             }
         }
+
+        await MfaSeedHelper.EnsureAdminMfaEnabledAsync(dbContext, cancellationToken);
 
         if (dbContext.ChangeTracker.HasChanges())
         {

@@ -71,6 +71,7 @@ public sealed class DispatchMyTripsController : ControllerBase
                 item.Id,
                 item.Status,
                 new DispatchCustomerSummaryResponse(item.CustomerId, item.CustomerName),
+                item.ContainerNumber,
                 item.DriverUserId,
                 item.DriverUsername,
                 item.TruckAssetId,
@@ -126,6 +127,10 @@ public sealed class DispatchMyTripsController : ControllerBase
             detail.PodPending,
             detail.HoldPreviousStatus,
             detail.Notes,
+            detail.ContainerNumber,
+            detail.EirNumber,
+            detail.BookingNumber,
+            detail.ShippingLine,
             detail.CreatedAt,
             detail.UpdatedAt,
             detail.Stops.Select(stop => new DispatchTripStopResponse(

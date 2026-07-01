@@ -20,6 +20,8 @@ using NVGInventory.Middleware;
 using NVGInventory.Serialization;
 using NVGInventory.Security;
 using NVGInventory.Modules.Dispatching;
+using NVGInventory.Hubs;
+using NVGInventory.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 ConfigureSensitiveFieldProtector(builder.Configuration);
@@ -49,7 +51,11 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new TripDocumentStateJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new ShipmentRequestStatusJsonConverter());
         options.JsonSerializerOptions.Converters.Add(new ShipmentRequestDocumentTypeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new ContainerSizeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new TripTypeJsonConverter());
     });
+builder.Services.AddSignalR();
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
@@ -85,6 +91,7 @@ builder.Services.AddSingleton<IAuthorizationHandler, RecentMfaRequirementHandler
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AuthEventService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IPasswordHashService, BCryptPasswordHashService>();
 builder.Services.AddScoped<RequestService>();
 builder.Services.AddScoped<StockLedgerService>();
 builder.Services.AddScoped<UserService>();
@@ -104,6 +111,8 @@ builder.Services.AddScoped<SupplierService>();
 builder.Services.AddScoped<InventoryAdjustmentWorkflowService>();
 builder.Services.AddScoped<InventoryAdjustmentQueryService>();
 builder.Services.AddScoped<ModuleSettingsService>();
+builder.Services.AddSingleton<IVaiaCacheService, VaiaCacheService>();
+builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ITripLifecycleService>(serviceProvider =>
     serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchTripService>());
@@ -113,6 +122,8 @@ builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDo
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDocumentReadService>(serviceProvider =>
     serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>());
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripQueryService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IGeneratedWaybillService, NVGInventory.Modules.Dispatching.Services.GeneratedWaybillService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService, NVGInventory.Modules.Dispatching.Services.PostDeliveryRecommendationService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripDispatchGateway, NVGInventory.Modules.Dispatching.Services.DispatchShipmentRequestTripDispatchGateway>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchShipmentReadService, NVGInventory.Modules.Dispatching.Services.DispatchShipmentReadService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();
@@ -150,6 +161,13 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
             .AllowCredentials();
     });
+    options.AddPolicy("VaiaCors", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
 });
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 var jwtKeyBytes = Encoding.UTF8.GetBytes(jwtOptions.Key ?? string.Empty);
@@ -163,6 +181,20 @@ builder.Services
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrWhiteSpace(accessToken) &&
+                    context.HttpContext.Request.Path.StartsWithSegments("/hubs/dispatch"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -272,7 +304,8 @@ var app = builder.Build();
 
 var seedDemo = args.Any(arg =>
     string.Equals(arg, "seed-demo", StringComparison.OrdinalIgnoreCase)
-    || string.Equals(arg, "--seed-demo", StringComparison.OrdinalIgnoreCase));
+    || string.Equals(arg, "--seed-demo", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(arg, "--seed", StringComparison.OrdinalIgnoreCase));
 
 var seedPerf = args.Any(arg =>
     string.Equals(arg, "seed-perf", StringComparison.OrdinalIgnoreCase)
@@ -513,7 +546,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-app.UseCors("Frontend");
+app.UseCors("VaiaCors");
 
 app.UseAuthentication();
 app.UseRateLimiter();
@@ -521,6 +554,7 @@ app.UseAuthorization();
 app.UseMiddleware<ModuleMaintenanceMiddleware>();
 
 app.MapControllers();
+app.MapHub<VaiaDispatchHub>("/hubs/dispatch");
 app.MapGet("/health", async (InventoryDbContext dbContext, CancellationToken cancellationToken) =>
 {
     try

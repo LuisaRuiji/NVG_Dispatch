@@ -256,7 +256,10 @@ public sealed class TripDocumentTypeJsonConverter : EnumStringConverter<TripDocu
     {
         [TripDocumentType.Waybill] = "WAYBILL",
         [TripDocumentType.Pod] = "POD",
-        [TripDocumentType.Atw] = "ATW"
+        [TripDocumentType.Atw] = "ATW",
+        [TripDocumentType.Eir] = "EIR",
+        [TripDocumentType.GatePass] = "GATE_PASS",
+        [TripDocumentType.Dr] = "DR"
     };
 
     private static readonly IReadOnlyDictionary<string, TripDocumentType> Reverse =
@@ -307,6 +310,7 @@ public sealed class ShipmentRequestDocumentTypeJsonConverter : EnumStringConvert
     private static readonly IReadOnlyDictionary<ShipmentRequestDocumentType, string> Map =
         new Dictionary<ShipmentRequestDocumentType, string>
         {
+            [ShipmentRequestDocumentType.Atw] = "ATW",
             [ShipmentRequestDocumentType.Invoice] = "INVOICE",
             [ShipmentRequestDocumentType.CargoManifest] = "CARGO_MANIFEST",
             [ShipmentRequestDocumentType.DeliveryInstructions] = "DELIVERY_INSTRUCTIONS",
@@ -318,4 +322,39 @@ public sealed class ShipmentRequestDocumentTypeJsonConverter : EnumStringConvert
 
     protected override IReadOnlyDictionary<ShipmentRequestDocumentType, string> ToStringMap => Map;
     protected override IReadOnlyDictionary<string, ShipmentRequestDocumentType> FromStringMap => Reverse;
+}
+
+public sealed class ContainerSizeJsonConverter : EnumStringConverter<ContainerSize>
+{
+    private static readonly IReadOnlyDictionary<ContainerSize, string> Map =
+        new Dictionary<ContainerSize, string>
+        {
+            [ContainerSize.TwentyFt] = "TWENTY_FT",
+            [ContainerSize.FortyFt] = "FORTY_FT",
+            [ContainerSize.FortyHC] = "FORTY_HC"
+        };
+
+    private static readonly IReadOnlyDictionary<string, ContainerSize> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<ContainerSize, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, ContainerSize> FromStringMap => Reverse;
+}
+
+public sealed class TripTypeJsonConverter : EnumStringConverter<TripType>
+{
+    private static readonly IReadOnlyDictionary<TripType, string> Map =
+        new Dictionary<TripType, string>
+        {
+            [TripType.PortPickup] = "PORT_PICKUP",
+            [TripType.PortDropoff] = "PORT_DROPOFF",
+            [TripType.YardTransfer] = "YARD_TRANSFER",
+            [TripType.LongHaul] = "LONG_HAUL"
+        };
+
+    private static readonly IReadOnlyDictionary<string, TripType> Reverse =
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+    protected override IReadOnlyDictionary<TripType, string> ToStringMap => Map;
+    protected override IReadOnlyDictionary<string, TripType> FromStringMap => Reverse;
 }

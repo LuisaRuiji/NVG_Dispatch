@@ -16,6 +16,13 @@ public sealed class Trip
     public bool PodPending { get; set; }
     public TripStatus? HoldPreviousStatus { get; set; }
     public string? Notes { get; set; }
+    public string? ContainerNumber { get; set; }
+    public string? WaybillNumber { get; set; }
+    public string? EirNumber { get; set; }
+    public string? BookingNumber { get; set; }
+    public string? ShippingLine { get; set; }
+    public string? ContainerSize { get; set; }
+    public string? TripType { get; set; }
     public decimal? Rate { get; set; }
     public decimal? Payroll { get; set; }
     public decimal? Allowance { get; set; }
@@ -29,4 +36,5 @@ public sealed class Trip
     public List<TripStop> Stops { get; set; } = [];
     public List<TripStatusHistory> StatusHistory { get; set; } = [];
     public List<TripDocument> Documents { get; set; } = [];
+    public List<GeneratedWaybill> GeneratedWaybills { get; set; } = [];
 }

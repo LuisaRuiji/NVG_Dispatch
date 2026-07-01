@@ -16,6 +16,7 @@ public sealed record DispatchTripListItem(
     TripStatus Status,
     Guid CustomerId,
     string CustomerName,
+    string? ContainerNumber,
     Guid? DriverUserId,
     string? DriverUsername,
     Guid? TruckAssetId,
@@ -70,6 +71,10 @@ public sealed record DispatchTripDetail(
     bool PodPending,
     TripStatus? HoldPreviousStatus,
     string? Notes,
+    string? ContainerNumber,
+    string? EirNumber,
+    string? BookingNumber,
+    string? ShippingLine,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     IReadOnlyCollection<TripStop> Stops,
@@ -443,6 +448,7 @@ public sealed class DispatchTripQueryService
                 t.Status,
                 t.CustomerId,
                 t.Customer != null ? t.Customer.Name : string.Empty,
+                t.ContainerNumber,
                 t.DriverUserId,
                 t.Driver != null ? t.Driver.Username : null,
                 t.TruckAssetId,
@@ -734,6 +740,10 @@ public sealed class DispatchTripQueryService
             trip.PodPending,
             trip.HoldPreviousStatus,
             trip.Notes,
+            trip.ContainerNumber,
+            trip.EirNumber,
+            trip.BookingNumber,
+            trip.ShippingLine,
             trip.CreatedAt,
             trip.UpdatedAt,
             trip.Stops,
@@ -954,6 +964,7 @@ public sealed class DispatchTripQueryService
                 t.Status,
                 t.CustomerId,
                 t.Customer != null ? t.Customer.Name : string.Empty,
+                t.ContainerNumber,
                 t.DriverUserId,
                 t.Driver != null ? t.Driver.Username : null,
                 t.TruckAssetId,
@@ -1040,6 +1051,27 @@ public sealed class DispatchTripQueryService
                 group => group.Key,
                 group => group.ToDictionary(item => item.Type, item => item.State));
 
+        if (requiredTypes.Contains(TripDocumentType.Waybill))
+        {
+            var generatedWaybillTripIds = await _dbContext.GeneratedWaybills
+                .AsNoTracking()
+                .Where(waybill => tripIds.Contains(waybill.TripId) && waybill.IsActive)
+                .Select(waybill => waybill.TripId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            foreach (var tripId in generatedWaybillTripIds)
+            {
+                if (!lookup.TryGetValue(tripId, out var states))
+                {
+                    states = new Dictionary<TripDocumentType, TripDocumentState>();
+                    lookup[tripId] = states;
+                }
+
+                states[TripDocumentType.Waybill] = TripDocumentState.Verified;
+            }
+        }
+
         return items
             .Select(item =>
             {
@@ -1079,7 +1111,7 @@ public sealed class DispatchTripQueryService
             var missingRequiredCount = item.Documents.Count(doc => doc.State == TripDocumentState.Missing);
             var rejectedRequiredCount = item.Documents.Count(doc => doc.State == TripDocumentState.Rejected);
 
-            var closeDocumentReady = IsCloseDocumentReady(podState, item.PodPending);
+            var closeDocumentReady = IsCloseDocumentReady(item.Documents);
             var closeDocumentBlockReason = closeDocumentReady ? null : GetCloseDocumentBlockReason();
 
             return item with
@@ -1093,25 +1125,13 @@ public sealed class DispatchTripQueryService
         }).ToList();
     }
 
-    private bool IsCloseDocumentReady(TripDocumentState podState, bool podPending)
+    private static bool IsCloseDocumentReady(IReadOnlyCollection<DispatchTripDocumentChecklist> documents)
     {
-        if (_options.DocVerificationEnabled)
-        {
-            return podState == TripDocumentState.Verified;
-        }
-
-        return podState is TripDocumentState.Uploaded or TripDocumentState.Verified || podPending;
+        return documents.Count > 0 && documents.All(doc => doc.State == TripDocumentState.Verified);
     }
 
-    private string GetCloseDocumentBlockReason()
+    private static string GetCloseDocumentBlockReason()
     {
-        if (_options.DocVerificationEnabled)
-        {
-            return "POD must be verified.";
-        }
-
-        return _options.AllowPodPendingOverride
-            ? "POD must be uploaded or POD pending override must be set."
-            : "POD must be uploaded.";
+        return "ATW, EIR, Gate Pass, DR, Waybill, and POD must be complete before closing.";
     }
 }

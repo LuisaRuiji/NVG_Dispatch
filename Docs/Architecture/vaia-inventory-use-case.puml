@@ -1,0 +1,86 @@
+@startuml VAIA_Inventory_Use_Case_Diagram
+title VAIA Supporting Use Case Diagram - Inventory Module
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  ArrowColor #334155
+}
+
+actor "Requester\n(active user)" as Requester
+actor "Driver" as Driver
+actor "Inventory Officer" as InventoryOfficer
+actor "Manager" as Manager
+actor "Admin" as Admin
+actor "SuperAdmin" as SuperAdmin
+
+Requester <|-- Driver
+
+rectangle "VAIA Supporting Inventory Module" as Inventory {
+  package "Inventory Requests" {
+    usecase "Create maintenance\nissue request" as UC_MaintenanceRequest
+    usecase "Create borrow request" as UC_BorrowRequest
+    usecase "Submit inventory request" as UC_SubmitInventoryRequest
+    usecase "Review request quantities" as UC_IOReview
+    usecase "Approve inventory request" as UC_ManagerApprove
+    usecase "Reject inventory request" as UC_ManagerReject
+    usecase "Issue approved items" as UC_IssueItems
+    usecase "Auto-close issued request" as UC_AutoClose
+  }
+
+  package "Stock & Loans" {
+    usecase "Apply stock ledger movement" as UC_StockLedger
+    usecase "Prevent negative stock" as UC_PreventNegativeStock
+    usecase "Create loan for\nborrowed items" as UC_CreateLoan
+    usecase "Return borrowed items" as UC_ReturnLoan
+    usecase "Record return condition\nGood / Damaged / Lost" as UC_ReturnCondition
+  }
+
+  package "Inventory Administration" {
+    usecase "Manage inventory items" as UC_ManageItems
+    usecase "View inventory reports" as UC_InventoryReports
+    usecase "View inventory audit trail" as UC_InventoryAudit
+  }
+}
+
+Requester --> UC_MaintenanceRequest
+Requester --> UC_BorrowRequest
+Requester --> UC_SubmitInventoryRequest
+
+InventoryOfficer --> UC_IOReview
+InventoryOfficer --> UC_IssueItems
+InventoryOfficer --> UC_ReturnLoan
+InventoryOfficer --> UC_ManageItems
+InventoryOfficer --> UC_InventoryReports
+InventoryOfficer --> UC_InventoryAudit
+
+Manager --> UC_ManagerApprove
+Manager --> UC_ManagerReject
+Manager --> UC_InventoryReports
+Manager --> UC_InventoryAudit
+
+Admin --> UC_ManageItems
+Admin --> UC_InventoryReports
+Admin --> UC_InventoryAudit
+SuperAdmin --> UC_InventoryReports
+SuperAdmin --> UC_InventoryAudit
+
+UC_MaintenanceRequest ..> UC_SubmitInventoryRequest : <<include>>
+UC_BorrowRequest ..> UC_SubmitInventoryRequest : <<include>>
+UC_ManagerApprove ..> UC_IOReview : <<include>>
+UC_ManagerReject ..> UC_IOReview : <<include>>
+UC_IssueItems ..> UC_StockLedger : <<include>>
+UC_IssueItems ..> UC_AutoClose : <<include>>
+UC_IssueItems ..> UC_CreateLoan : <<extend>>
+UC_StockLedger ..> UC_PreventNegativeStock : <<include>>
+UC_ReturnLoan ..> UC_ReturnCondition : <<include>>
+UC_ReturnLoan ..> UC_StockLedger : <<extend>>
+
+note right of Inventory
+Inventory supports operations, but remains isolated
+from dispatch lifecycle logic.
+end note
+@enduml

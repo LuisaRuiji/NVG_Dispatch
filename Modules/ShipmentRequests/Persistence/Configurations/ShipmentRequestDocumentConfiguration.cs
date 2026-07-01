@@ -12,11 +12,13 @@ public sealed class ShipmentRequestDocumentConfiguration : IEntityTypeConfigurat
     {
         var docTypeConverter = new ValueConverter<ShipmentRequestDocumentType, string>(
             value =>
+                value == ShipmentRequestDocumentType.Atw ? "ATW" :
                 value == ShipmentRequestDocumentType.Invoice ? "INVOICE" :
                 value == ShipmentRequestDocumentType.CargoManifest ? "CARGO_MANIFEST" :
                 value == ShipmentRequestDocumentType.DeliveryInstructions ? "DELIVERY_INSTRUCTIONS" :
                 "OTHER",
             value =>
+                value == "ATW" ? ShipmentRequestDocumentType.Atw :
                 value == "INVOICE" ? ShipmentRequestDocumentType.Invoice :
                 value == "CARGO_MANIFEST" ? ShipmentRequestDocumentType.CargoManifest :
                 value == "DELIVERY_INSTRUCTIONS" ? ShipmentRequestDocumentType.DeliveryInstructions :

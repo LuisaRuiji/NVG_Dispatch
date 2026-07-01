@@ -36,7 +36,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Core",
     items: [
-      { label: "Inventory Dashboard", to: "/dashboard", roles: ["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Driver"], icon: LayoutDashboard },
+      { label: "Dashboard", to: "/dashboard", roles: ["SuperAdmin", "Admin", "Dispatcher", "Manager", "HeadOfFinance", "Driver", "Customer", "InventoryOfficer", "CEO"], icon: LayoutDashboard },
       { label: "Inventory", to: "/inventory", roles: ["InventoryOfficer", "Manager"], icon: Package, moduleKey: "inventory" }
     ]
   },
@@ -77,7 +77,8 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Reports",
     items: [
-      { label: "Reports", to: "/reports", roles: ["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" }
+      { label: "Inventory Reports", to: "/reports", roles: ["Manager", "InventoryOfficer", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },
+      { label: "Dispatch Reports", to: "/reports/dispatch", roles: ["Dispatcher", "Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" }
     ]
   },
   {
@@ -85,7 +86,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
     items: [
       { label: "Customers", to: "/admin/customers", roles: ["Manager", "Dispatcher"], icon: User, moduleKey: "users" },
       { label: "Modules", to: "/admin/modules", roles: ["SuperAdmin"], icon: Settings },
-      { label: "Audit Logs", to: "/admin/audit-logs", roles: ["Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },
+      { label: "Audit Logs", to: "/admin/audit-logs", roles: ["SuperAdmin", "Admin", "Manager", "Dispatcher", "HeadOfFinance", "InventoryOfficer", "Driver"], icon: FileText, moduleKey: "reports" },
       { label: "Auth Logs", to: "/admin/auth-events", roles: ["Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },
       { label: "Users", to: "/admin/users", roles: ["Admin", "SuperAdmin"], icon: User, moduleKey: "users" },
       { label: "Integrity", to: "/admin/integrity", roles: ["Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: ShieldCheck, moduleKey: "reports" }
@@ -103,6 +104,7 @@ export default function AppLayout() {
   const accountRef = useRef<HTMLDivElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationSummaryOpen, setNotificationSummaryOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement | null>(null);
   const [moduleStatus, setModuleStatus] = useState<
     { moduleKey: string; displayName: string; isEnabled: boolean; notes?: string | null }[]
@@ -143,7 +145,8 @@ export default function AppLayout() {
     "HeadOfFinance",
     "CEO",
     "InventoryOfficer",
-    "Driver"
+    "Driver",
+    "Customer"
   ];
   const primaryRole =
     rolePriority.find((role) => roles.includes(role)) ?? roles[0] ?? "User";
@@ -171,6 +174,7 @@ export default function AppLayout() {
     [roleNotifications, acknowledgedNotifications]
   );
   const hasUnread = unacknowledgedDisabled.length > 0 || unacknowledgedRoleNotifications.length > 0;
+  const unreadCount = unacknowledgedDisabled.length + unacknowledgedRoleNotifications.length;
   const notificationsLoading = statusLoading || roleLoading;
   const unreadKeys = useMemo(() => {
     const keys = [
@@ -259,11 +263,19 @@ export default function AppLayout() {
     if (typeof window !== "undefined") {
       const seen = window.sessionStorage.getItem(key);
       if (seen !== unreadKeys) {
-        setNotificationsOpen(true);
+        setNotificationSummaryOpen(true);
         window.sessionStorage.setItem(key, unreadKeys);
       }
     }
   }, [me, statusLoaded, unacknowledgedDisabled.length, unacknowledgedRoleNotifications.length, unreadKeys]);
+
+  useEffect(() => {
+    if (!notificationSummaryOpen) return;
+    const timeout = window.setTimeout(() => {
+      setNotificationSummaryOpen(false);
+    }, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notificationSummaryOpen, unreadKeys]);
 
   useEffect(() => {
     if (!accountOpen && !notificationsOpen) return;
@@ -305,7 +317,7 @@ export default function AppLayout() {
           </div>
         </div>
 
-        <nav className="flex-1 min-h-0 space-y-6 overflow-y-auto">
+        <nav className="sidebar-nav flex-1 min-h-0 space-y-6 overflow-y-auto overflow-x-hidden">
           {filteredSections.map((section) => (
             <div key={section.title}>
               <p className="mb-2 px-6 text-[11px] uppercase tracking-[0.2em] text-slate-400 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -382,7 +394,10 @@ export default function AppLayout() {
                 <button
                   type="button"
                   className="grid h-9 w-9 place-items-center rounded-full border border-border bg-muted/30 text-muted-foreground hover:text-foreground"
-                  onClick={() => setNotificationsOpen((value) => !value)}
+                  onClick={() => {
+                    setNotificationSummaryOpen(false);
+                    setNotificationsOpen((value) => !value);
+                  }}
                   aria-label="Notifications"
                 >
                   <Bell className="h-4 w-4" />
@@ -390,6 +405,11 @@ export default function AppLayout() {
                     <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500" />
                   ) : null}
                 </button>
+                {notificationSummaryOpen && !notificationsOpen && unreadCount > 0 ? (
+                  <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-card z-50 fade-in">
+                    You have {unreadCount} notification{unreadCount === 1 ? "" : "s"}.
+                  </div>
+                ) : null}
                 {notificationsOpen ? (
                   <div className="absolute right-0 mt-2 w-72 rounded-xl border border-border bg-card p-3 shadow-card z-50 fade-in glass">
                     <div className="flex items-center justify-between">

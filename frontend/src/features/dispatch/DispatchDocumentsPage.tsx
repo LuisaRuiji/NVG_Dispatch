@@ -47,7 +47,11 @@ export default function DispatchDocumentsPage() {
   const { toasts, show } = useToast();
   const me = getMe();
   const roles = me?.roles ?? [];
-  const canVerify = roles.includes("Manager") || roles.includes("HeadOfFinance");
+  const canVerify =
+    roles.includes("Dispatcher") ||
+    roles.includes("Manager") ||
+    roles.includes("Admin") ||
+    roles.includes("SuperAdmin");
 
   const [loading, setLoading] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
@@ -230,9 +234,11 @@ export default function DispatchDocumentsPage() {
               className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
             >
               <option value="ALL">All types</option>
-              <option value="POD">POD</option>
-              <option value="WAYBILL">WAYBILL</option>
               <option value="ATW">ATW</option>
+              <option value="EIR">EIR</option>
+              <option value="GATE_PASS">Gate Pass</option>
+              <option value="DR">DR</option>
+              <option value="POD">POD</option>
             </select>
           </div>
           <div>
@@ -384,7 +390,6 @@ export default function DispatchDocumentsPage() {
       {rejectModal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setRejectModal(null)}
           role="presentation"
         >
           <div

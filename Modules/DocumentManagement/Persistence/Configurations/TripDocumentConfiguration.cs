@@ -15,11 +15,17 @@ public sealed class TripDocumentConfiguration : IEntityTypeConfiguration<TripDoc
                 value == TripDocumentType.Waybill ? "WAYBILL" :
                 value == TripDocumentType.Pod ? "POD" :
                 value == TripDocumentType.Atw ? "ATW" :
+                value == TripDocumentType.Eir ? "EIR" :
+                value == TripDocumentType.GatePass ? "GATE_PASS" :
+                value == TripDocumentType.Dr ? "DR" :
                 "WAYBILL",
             value =>
                 value == "WAYBILL" ? TripDocumentType.Waybill :
                 value == "POD" ? TripDocumentType.Pod :
                 value == "ATW" ? TripDocumentType.Atw :
+                value == "EIR" ? TripDocumentType.Eir :
+                value == "GATE_PASS" ? TripDocumentType.GatePass :
+                value == "DR" ? TripDocumentType.Dr :
                 TripDocumentType.Waybill);
 
         var docStateConverter = new ValueConverter<TripDocumentState, string>(

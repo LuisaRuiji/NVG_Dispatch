@@ -2,10 +2,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using NVGInventory.Contracts;
 using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
+using NVGInventory.Domain.Services;
 using NVGInventory.Security;
 using System.IdentityModel.Tokens.Jwt;
 
@@ -16,27 +16,27 @@ namespace NVGInventory.Controllers;
 public sealed class AuthController : ControllerBase
 {
     private const string RefreshTokenCookieName = "nvg_refresh_token";
-    private const string CsrfHeaderName = "X-NVG-CSRF";
+    private const string CsrfHeaderName = "X-VAIA-CSRF";
     private const string CsrfHeaderValue = "1";
 
     private readonly AuthService _authService;
     private readonly AuthEventService _authEventService;
+    private readonly IAuditService _auditService;
     private readonly InventoryDbContext _dbContext;
     private readonly IWebHostEnvironment _environment;
-    private readonly JwtOptions _jwtOptions;
 
     public AuthController(
         AuthService authService,
         AuthEventService authEventService,
+        IAuditService auditService,
         InventoryDbContext dbContext,
-        IWebHostEnvironment environment,
-        IOptions<JwtOptions> jwtOptions)
+        IWebHostEnvironment environment)
     {
         _authService = authService;
         _authEventService = authEventService;
+        _auditService = auditService;
         _dbContext = dbContext;
         _environment = environment;
-        _jwtOptions = jwtOptions.Value;
     }
 
     [HttpPost("login")]
@@ -65,6 +65,7 @@ public sealed class AuthController : ControllerBase
             new LoginCommand(request.Username, request.Password),
             HttpContext.Connection.RemoteIpAddress?.ToString(),
             Request.Headers.UserAgent.ToString(),
+            request.RememberMe,
             cancellationToken);
 
         await _authEventService.LogLoginAttemptAsync(
@@ -88,13 +89,14 @@ public sealed class AuthController : ControllerBase
         }
 
         var result = attemptResult.Result;
-        SetRefreshTokenCookie(result.RefreshToken);
+        SetRefreshTokenCookie(result);
 
         return Ok(new LoginResponse(
             result.AccessToken,
             result.UserId,
             result.Roles,
-            result.ExpiresAtUtc));
+            result.ExpiresAtUtc,
+            result.MustChangePassword));
     }
 
     [HttpPost("mfa/verify")]
@@ -109,6 +111,7 @@ public sealed class AuthController : ControllerBase
             request.Code,
             HttpContext.Connection.RemoteIpAddress?.ToString(),
             Request.Headers.UserAgent.ToString(),
+            request.RememberMe,
             cancellationToken);
 
         await _authEventService.LogMfaVerifyAttemptAsync(attempt, HttpContext, cancellationToken);
@@ -124,13 +127,14 @@ public sealed class AuthController : ControllerBase
         }
 
         var result = attempt.Result;
-        SetRefreshTokenCookie(result.RefreshToken);
+        SetRefreshTokenCookie(result);
 
         return Ok(new LoginResponse(
             result.AccessToken,
             result.UserId,
             result.Roles,
-            result.ExpiresAtUtc));
+            result.ExpiresAtUtc,
+            result.MustChangePassword));
     }
 
     [HttpPost("step-up")]
@@ -277,13 +281,14 @@ public sealed class AuthController : ControllerBase
         }
 
         var result = attempt.Result;
-        SetRefreshTokenCookie(result.RefreshToken);
+        SetRefreshTokenCookie(result);
 
         return Ok(new RefreshTokenResponse(
             result.AccessToken,
             result.UserId,
             result.Roles,
-            result.ExpiresAtUtc));
+            result.ExpiresAtUtc,
+            result.MustChangePassword));
     }
 
     [HttpPost("logout")]
@@ -320,13 +325,42 @@ public sealed class AuthController : ControllerBase
             .Distinct()
             .ToList();
 
-        var mfaEnabled = await _dbContext.Users
+        var userFlags = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Id == userId)
-            .Select(user => user.MfaEnabled)
+            .Select(user => new { user.MfaEnabled, user.MustChangePassword })
             .FirstOrDefaultAsync(cancellationToken);
 
-        return Ok(new CurrentUserResponse(userId, username, roles, mfaEnabled));
+        return Ok(new CurrentUserResponse(
+            userId,
+            username,
+            roles,
+            userFlags?.MfaEnabled ?? false,
+            userFlags?.MustChangePassword ?? false));
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        await _authService.ChangePasswordAsync(
+            userId,
+            request.NewPassword,
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            cancellationToken);
+
+        _auditService.AddEntry(
+            userId,
+            AuditActions.UserPasswordChanged,
+            EntityTypes.User,
+            userId,
+            null,
+            new { MustChangePassword = false });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        ClearRefreshTokenCookie();
+        return NoContent();
     }
 
     private string? GetRefreshToken(RefreshTokenRequest? request)
@@ -361,9 +395,12 @@ public sealed class AuthController : ControllerBase
                && values.Any(value => string.Equals(value, CsrfHeaderValue, StringComparison.Ordinal));
     }
 
-    private void SetRefreshTokenCookie(string refreshToken)
+    private void SetRefreshTokenCookie(AuthResult result)
     {
-        Response.Cookies.Append(RefreshTokenCookieName, refreshToken, BuildRefreshCookieOptions());
+        Response.Cookies.Append(
+            RefreshTokenCookieName,
+            result.RefreshToken,
+            BuildRefreshCookieOptions(result.RefreshTokenExpiresAtUtc, result.RefreshTokenIsPersistent));
     }
 
     private void ClearRefreshTokenCookie()
@@ -371,18 +408,24 @@ public sealed class AuthController : ControllerBase
         Response.Cookies.Delete(RefreshTokenCookieName, BuildRefreshCookieDeleteOptions());
     }
 
-    private CookieOptions BuildRefreshCookieOptions()
+    private CookieOptions BuildRefreshCookieOptions(DateTime expiresAtUtc, bool isPersistent)
     {
-        var days = _jwtOptions.RefreshTokenDays <= 0 ? 7 : _jwtOptions.RefreshTokenDays;
-        return new CookieOptions
+        var options = new CookieOptions
         {
             HttpOnly = true,
             Secure = !_environment.IsDevelopment(),
             SameSite = SameSiteMode.Strict,
-            Path = "/api/auth",
-            MaxAge = TimeSpan.FromDays(days),
-            Expires = DateTimeOffset.UtcNow.AddDays(days)
+            Path = "/api/auth"
         };
+
+        if (isPersistent)
+        {
+            var expires = new DateTimeOffset(DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc));
+            options.Expires = expires;
+            options.MaxAge = expires - DateTimeOffset.UtcNow;
+        }
+
+        return options;
     }
 
     private CookieOptions BuildRefreshCookieDeleteOptions()

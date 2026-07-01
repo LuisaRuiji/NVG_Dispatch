@@ -12,6 +12,8 @@ public static class EntityTypes
     public const string LoanReturn = "loan_return";
     public const string DispatchTrip = "dispatch_trip";
     public const string DispatchTripDocument = "dispatch_trip_document";
+    public const string DispatchRecommendation = "dispatch_recommendation";
+    public const string GeneratedWaybill = "generated_waybill";
     public const string DispatchCustomer = "dispatch_customer";
     public const string DispatchTripStatus = "dispatch_trip_status";
     public const string ModuleSetting = "module_setting";

@@ -12,6 +12,8 @@ import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 
 type RequestStatus = "SUBMITTED" | "APPROVED" | "REJECTED" | "CONVERTED_TO_TRIP";
+type ContainerSize = "TWENTY_FT" | "FORTY_FT" | "FORTY_HC";
+type TripType = "PORT_PICKUP" | "PORT_DROPOFF" | "YARD_TRANSFER" | "LONG_HAUL";
 
 type DispatchRequestItem = {
   id: string;
@@ -20,6 +22,11 @@ type DispatchRequestItem = {
   pickupLocation: string;
   dropoffLocation: string;
   requestedPickupTime?: string | null;
+  containerSize: ContainerSize;
+  tripType: TripType;
+  containerNumber?: string | null;
+  shippingLine?: string | null;
+  bookingNumber?: string | null;
   documentsCount: number;
   createdAt: string;
   status: RequestStatus;
@@ -27,6 +34,19 @@ type DispatchRequestItem = {
 };
 
 type RejectModal = { id: string; remarks: string } | null;
+
+const containerSizeLabels: Record<ContainerSize, string> = {
+  TWENTY_FT: "20 ft",
+  FORTY_FT: "40 ft",
+  FORTY_HC: "40 HC"
+};
+
+const tripTypeLabels: Record<TripType, string> = {
+  PORT_PICKUP: "Port Pickup",
+  PORT_DROPOFF: "Port Dropoff",
+  YARD_TRANSFER: "Yard Transfer",
+  LONG_HAUL: "Long Haul"
+};
 
 export default function DispatchRequestsPage() {
   const nav = useNavigate();
@@ -160,7 +180,22 @@ export default function DispatchRequestsPage() {
             <tbody>
               {requests.map((item) => (
                 <tr key={item.id} className="border-t border-border/60">
-                  <td className="px-4 py-3 text-sm font-semibold text-foreground">{item.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-foreground">
+                    <div>{item.id.slice(0, 8)}</div>
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">
+                      {containerSizeLabels[item.containerSize]} / {tripTypeLabels[item.tripType]}
+                    </div>
+                    {item.containerNumber ? (
+                      <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                        {item.containerNumber}
+                      </div>
+                    ) : null}
+                    {item.bookingNumber ? (
+                      <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                        Booking {item.bookingNumber}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{item.customerName}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{item.pickupLocation}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">{item.dropoffLocation}</td>
@@ -224,7 +259,6 @@ export default function DispatchRequestsPage() {
       {rejectModal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setRejectModal(null)}
           role="presentation"
         >
           <div

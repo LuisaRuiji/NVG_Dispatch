@@ -18,7 +18,7 @@ enough to build, test, and review independently.
 | 2026-06-11 | User administration audit logging | User create, role changes, status changes, password resets, and deactivation write redacted `AuditLog` entries |
 | 2026-06-11 | Refresh-token rotation | `RefreshToken` records store token hashes only; refresh rotates tokens and reuse revokes the token family |
 | 2026-06-11 | Encryption key rotation support | Encrypted fields use key-ring-aware `v2` payloads and `dotnet run -- rotate-encryption-key` re-encrypts dispatch financial fields |
-| 2026-06-11 | Browser token storage hardening | SPA access tokens are memory-only; refresh tokens are `HttpOnly` `SameSite=Strict` cookies under `/api/auth`; cookie refresh/logout require `X-NVG-CSRF` |
+| 2026-06-11 | Browser token storage hardening | SPA access tokens are memory-only; refresh tokens are `HttpOnly` `SameSite=Strict` cookies under `/api/auth`; cookie refresh/logout require `X-VAIA-CSRF` |
 | 2026-06-11 | API rate limiting | Global API traffic is fixed-window limited per user/IP; login and refresh share a stricter per-IP auth limiter |
 
 ## In Progress
@@ -90,7 +90,7 @@ The React SPA must not persist bearer tokens in `localStorage` or `sessionStorag
 live only in frontend module memory and are reacquired through `/api/auth/refresh` after a page
 reload. Refresh tokens are stored in an `HttpOnly`, `SameSite=Strict` cookie scoped to
 `/api/auth`; JavaScript cannot read the refresh token value. Cookie-backed refresh and logout
-requests must include `X-NVG-CSRF: 1`.
+requests must include `X-VAIA-CSRF: 1`.
 
 ## Rate Limiting Policy
 

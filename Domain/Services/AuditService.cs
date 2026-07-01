@@ -89,7 +89,8 @@ public sealed class AuditService : IAuditService
         }
 
         var roles = _httpContextAccessor.HttpContext?.User?
-            .FindAll(ClaimTypes.Role)
+            .Claims
+            .Where(claim => claim.Type == "role" || claim.Type == ClaimTypes.Role)
             .Select(role => role.Value)
             .Where(role => !string.IsNullOrWhiteSpace(role))
             .Distinct()

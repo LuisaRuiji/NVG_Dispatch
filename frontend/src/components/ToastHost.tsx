@@ -8,7 +8,7 @@ export default function ToastHost({ toasts }: Props) {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed right-6 top-6 z-50 grid gap-2">
+    <div className="fixed right-6 top-6 z-[80] grid gap-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}

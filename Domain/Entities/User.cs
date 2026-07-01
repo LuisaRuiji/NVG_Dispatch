@@ -9,6 +9,7 @@ public sealed class User
     public string? Email { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    public bool MustChangePassword { get; set; }
     public bool MfaEnabled { get; set; }
     public string? MfaSecretKey { get; set; }
     public string? PendingMfaSecretKey { get; set; }

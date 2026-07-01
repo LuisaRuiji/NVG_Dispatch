@@ -47,12 +47,18 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<AuthEvent> AuthEvents => Set<AuthEvent>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<MfaChallenge> MfaChallenges => Set<MfaChallenge>();
+    public DbSet<PushNotificationToken> PushNotificationTokens => Set<PushNotificationToken>();
     public DbSet<ModuleSetting> ModuleSettings => Set<ModuleSetting>();
     public DbSet<Customer> DispatchCustomers => Set<Customer>();
+    public DbSet<Driver> DispatchDrivers => Set<Driver>();
+    public DbSet<Truck> DispatchTrucks => Set<Truck>();
+    public DbSet<Trailer> DispatchTrailers => Set<Trailer>();
     public DbSet<Trip> DispatchTrips => Set<Trip>();
     public DbSet<TripStop> DispatchTripStops => Set<TripStop>();
     public DbSet<TripStatusHistory> DispatchTripStatusHistories => Set<TripStatusHistory>();
     public DbSet<TripDocument> DispatchTripDocuments => Set<TripDocument>();
+    public DbSet<GeneratedWaybill> GeneratedWaybills => Set<GeneratedWaybill>();
+    public DbSet<DispatchRecommendation> DispatchRecommendations => Set<DispatchRecommendation>();
     public DbSet<ShipmentRequest> ShipmentRequests => Set<ShipmentRequest>();
     public DbSet<ShipmentRequestDocument> ShipmentRequestDocuments => Set<ShipmentRequestDocument>();
 
@@ -85,10 +91,14 @@ public sealed class InventoryDbContext : DbContext
         ConfigureAuthEvents(modelBuilder);
         ConfigureRefreshTokens(modelBuilder);
         ConfigureMfaChallenges(modelBuilder);
+        ConfigurePushNotificationTokens(modelBuilder);
         ConfigureModuleSettings(modelBuilder);
         ConfigureDispatching(modelBuilder);
+        ConfigureFleet(modelBuilder);
         modelBuilder.ApplyConfiguration(new TripDocumentConfiguration());
         modelBuilder.ApplyConfiguration(new TripConfiguration());
+        modelBuilder.ApplyConfiguration(new DispatchRecommendationConfiguration());
+        modelBuilder.ApplyConfiguration(new GeneratedWaybillConfiguration());
         modelBuilder.ApplyConfiguration(new TripStopConfiguration());
         modelBuilder.ApplyConfiguration(new TripStatusHistoryConfiguration());
         modelBuilder.ApplyConfiguration(new ShipmentRequestConfiguration());
@@ -111,6 +121,7 @@ public sealed class InventoryDbContext : DbContext
             entity.Property(user => user.Email).HasColumnName("email").HasMaxLength(255);
             entity.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(255).IsRequired();
             entity.Property(user => user.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            entity.Property(user => user.MustChangePassword).HasColumnName("must_change_password").HasDefaultValue(false).IsRequired();
             entity.Property(user => user.MfaEnabled).HasColumnName("mfa_enabled").HasDefaultValue(false).IsRequired();
             entity.Property(user => user.MfaSecretKey).HasColumnName("mfa_secret_key").HasMaxLength(512);
             entity.Property(user => user.PendingMfaSecretKey).HasColumnName("pending_mfa_secret_key").HasMaxLength(512);
@@ -1066,6 +1077,29 @@ public sealed class InventoryDbContext : DbContext
         });
     }
 
+    private static void ConfigurePushNotificationTokens(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PushNotificationToken>(entity =>
+        {
+            entity.ToTable("push_notification_tokens");
+            entity.HasKey(token => token.Id);
+            entity.Property(token => token.Id).HasColumnName("id");
+            entity.Property(token => token.UserId).HasColumnName("user_id");
+            entity.Property(token => token.Token).HasColumnName("token").HasMaxLength(512).IsRequired();
+            entity.Property(token => token.Platform).HasColumnName("platform").HasMaxLength(20).IsRequired();
+            entity.Property(token => token.RegisteredAt).HasColumnName("registered_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(token => token.LastSeenAt).HasColumnName("last_seen_at").IsRequired();
+
+            entity.HasOne(token => token.User)
+                .WithMany()
+                .HasForeignKey(token => token.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(token => new { token.UserId, token.Platform }).IsUnique();
+            entity.HasIndex(token => token.Token);
+        });
+    }
+
     private static void ConfigureModuleSettings(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<ModuleSetting>(entity =>
@@ -1126,6 +1160,98 @@ public sealed class InventoryDbContext : DbContext
             entity.HasIndex(customer => customer.Name);
         });
 
+    }
+
+    private static void ConfigureFleet(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Driver>(entity =>
+        {
+            entity.ToTable("dispatch_drivers");
+            entity.HasKey(driver => driver.Id);
+            entity.Property(driver => driver.Id).HasColumnName("id");
+            entity.Property(driver => driver.UserId).HasColumnName("user_id");
+            entity.Property(driver => driver.LicenseNumber)
+                .HasColumnName("license_number")
+                .HasMaxLength(40)
+                .IsRequired();
+            entity.Property(driver => driver.Status)
+                .HasColumnName("status")
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(driver => driver.CreatedAt)
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(driver => driver.User)
+                .WithMany()
+                .HasForeignKey(driver => driver.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(driver => driver.UserId).IsUnique();
+            entity.HasIndex(driver => driver.LicenseNumber).IsUnique();
+        });
+
+        modelBuilder.Entity<Truck>(entity =>
+        {
+            entity.ToTable("dispatch_trucks");
+            entity.HasKey(truck => truck.Id);
+            entity.Property(truck => truck.Id).HasColumnName("id");
+            entity.Property(truck => truck.AssetId).HasColumnName("asset_id");
+            entity.Property(truck => truck.PlateNumber)
+                .HasColumnName("plate_number")
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(truck => truck.ContainerCapability)
+                .HasColumnName("container_capability")
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(truck => truck.Status)
+                .HasColumnName("status")
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(truck => truck.CreatedAt)
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(truck => truck.Asset)
+                .WithMany()
+                .HasForeignKey(truck => truck.AssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(truck => truck.AssetId).IsUnique();
+            entity.HasIndex(truck => truck.PlateNumber).IsUnique();
+        });
+
+        modelBuilder.Entity<Trailer>(entity =>
+        {
+            entity.ToTable("dispatch_trailers");
+            entity.HasKey(trailer => trailer.Id);
+            entity.Property(trailer => trailer.Id).HasColumnName("id");
+            entity.Property(trailer => trailer.AssetId).HasColumnName("asset_id");
+            entity.Property(trailer => trailer.TrailerCode)
+                .HasColumnName("trailer_code")
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(trailer => trailer.ContainerType)
+                .HasColumnName("container_type")
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(trailer => trailer.Status)
+                .HasColumnName("status")
+                .HasMaxLength(20)
+                .IsRequired();
+            entity.Property(trailer => trailer.CreatedAt)
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            entity.HasOne(trailer => trailer.Asset)
+                .WithMany()
+                .HasForeignKey(trailer => trailer.AssetId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(trailer => trailer.AssetId).IsUnique();
+            entity.HasIndex(trailer => trailer.TrailerCode).IsUnique();
+        });
     }
 
 }

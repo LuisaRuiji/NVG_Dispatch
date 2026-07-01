@@ -4,6 +4,7 @@ import ToastHost from "@/components/ToastHost";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 
@@ -190,7 +191,6 @@ export default function AdminCustomersPage() {
       {createOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
-          onClick={() => setCreateOpen(false)}
           role="presentation"
         >
           <div
@@ -260,7 +260,6 @@ export default function AdminCustomersPage() {
       {userOpen && selectedCustomer ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
-          onClick={() => setUserOpen(false)}
           role="presentation"
         >
           <div
@@ -293,11 +292,10 @@ export default function AdminCustomersPage() {
               </div>
               <div>
                 <label className="text-xs uppercase text-muted-foreground">Temporary Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={userPassword}
                   onChange={(e) => setUserPassword(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3"
+                  className="mt-1"
                 />
               </div>
             </div>
@@ -317,7 +315,6 @@ export default function AdminCustomersPage() {
       {viewOpen && selectedCustomer ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
-          onClick={() => setViewOpen(false)}
           role="presentation"
         >
           <div

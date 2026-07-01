@@ -8,16 +8,30 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
-import type { ShipmentRequestStatusResponse } from "./types";
+import {
+  containerSizeLabels,
+  tripTypeLabels,
+  type ContainerSize,
+  type ShipmentRequestStatusResponse,
+  type TripType
+} from "./types";
 
 type FormState = {
   pickupLocation: string;
   dropoffLocation: string;
   requestedPickupTime: string;
+  containerSize: ContainerSize;
+  tripType: TripType;
+  containerNumber: string;
+  shippingLine: string;
+  bookingNumber: string;
   cargoDescription: string;
   cargoWeight: string;
   specialInstructions: string;
 };
+
+const containerSizeOptions = Object.entries(containerSizeLabels) as [ContainerSize, string][];
+const tripTypeOptions = Object.entries(tripTypeLabels) as [TripType, string][];
 
 const fromLocalInput = (value: string) => {
   if (!value) return null;
@@ -29,10 +43,16 @@ export default function PortalRequestNewPage() {
   const nav = useNavigate();
   const { toasts, show } = useToast();
   const [saving, setSaving] = useState(false);
+  const [atwFile, setAtwFile] = useState<File | null>(null);
   const [form, setForm] = useState<FormState>({
     pickupLocation: "",
     dropoffLocation: "",
     requestedPickupTime: "",
+    containerSize: "TWENTY_FT",
+    tripType: "PORT_PICKUP",
+    containerNumber: "",
+    shippingLine: "",
+    bookingNumber: "",
     cargoDescription: "",
     cargoWeight: "",
     specialInstructions: ""
@@ -51,6 +71,11 @@ export default function PortalRequestNewPage() {
         pickupLocation: form.pickupLocation.trim(),
         dropoffLocation: form.dropoffLocation.trim(),
         requestedPickupTime: fromLocalInput(form.requestedPickupTime),
+        containerSize: form.containerSize,
+        tripType: form.tripType,
+        containerNumber: form.containerNumber.trim() || null,
+        shippingLine: form.shippingLine.trim() || null,
+        bookingNumber: form.bookingNumber.trim() || null,
         cargoDescription: form.cargoDescription.trim() || null,
         cargoWeight: form.cargoWeight ? Number(form.cargoWeight) : null,
         specialInstructions: form.specialInstructions.trim() || null
@@ -59,6 +84,15 @@ export default function PortalRequestNewPage() {
         method: "POST",
         body: JSON.stringify(payload)
       });
+      if (atwFile) {
+        await api(`/api/portal/requests/${result.id}/documents`, {
+          method: "POST",
+          body: JSON.stringify({
+            documentType: "ATW",
+            storageKey: atwFile.name
+          })
+        });
+      }
       show("Request created.", "success");
       nav(`/portal/requests/${result.id}`);
     } catch (e: any) {
@@ -117,6 +151,34 @@ export default function PortalRequestNewPage() {
             />
           </div>
           <div className="space-y-2">
+            <Label>Container Size</Label>
+            <select
+              value={form.containerSize}
+              onChange={(e) => update({ containerSize: e.target.value as ContainerSize })}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {containerSizeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Trip Type</Label>
+            <select
+              value={form.tripType}
+              onChange={(e) => update({ tripType: e.target.value as TripType })}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {tripTypeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
             <Label>Cargo Weight (kg)</Label>
             <Input
               type="number"
@@ -125,6 +187,30 @@ export default function PortalRequestNewPage() {
               value={form.cargoWeight}
               onChange={(e) => update({ cargoWeight: e.target.value })}
               placeholder="1200"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Container Number</Label>
+            <Input
+              value={form.containerNumber}
+              onChange={(e) => update({ containerNumber: e.target.value })}
+              placeholder="MSCU1234567"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Shipping Line</Label>
+            <Input
+              value={form.shippingLine}
+              onChange={(e) => update({ shippingLine: e.target.value })}
+              placeholder="Shipping line"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Booking Number</Label>
+            <Input
+              value={form.bookingNumber}
+              onChange={(e) => update({ bookingNumber: e.target.value })}
+              placeholder="Booking reference"
             />
           </div>
         </div>
@@ -137,6 +223,18 @@ export default function PortalRequestNewPage() {
             placeholder="Palletized electronics"
             className="min-h-[110px]"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label>ATW (Authority to Withdraw)</Label>
+          <Input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            onChange={(e) => setAtwFile(e.target.files?.[0] ?? null)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Upload your ATW if available. The dispatcher will also accept it via email or messenger.
+          </p>
         </div>
 
         <div className="space-y-2">

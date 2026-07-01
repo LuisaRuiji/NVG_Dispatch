@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import "./index.css";
 import LandingPage from "@/features/landing/LandingPage";
 import AppLayout from "@/components/layout/AppLayout";
@@ -20,6 +20,7 @@ import {
 } from "@/features/requests/RequestQueuePage";
 import InventoryPage from "@/features/inventory/InventoryPage";
 import ReportsPage from "@/features/reports/ReportsPage";
+import DispatchReportsPage from "@/features/reports/DispatchReportsPage";
 import IntegrityPage from "@/features/admin/IntegrityPage";
 import UsersPage from "@/features/admin/UsersPage";
 import AdminCustomersPage from "@/features/admin/AdminCustomersPage";
@@ -42,7 +43,14 @@ import PortalRequestDetailPage from "@/features/portal/PortalRequestDetailPage";
 import PortalShipmentsPage from "@/features/portal/PortalShipmentsPage";
 import PortalShipmentDetailPage from "@/features/portal/PortalShipmentDetailPage";
 import { setUnauthorizedHandler } from "@/lib/api";
-import { loadMeIfTokenExists, logout, refreshSession } from "@/features/auth/authStore";
+import {
+  clearInvalidSession,
+  getDefaultRoute,
+  getMe,
+  loadMeIfTokenExists,
+  refreshSession
+} from "@/features/auth/authStore";
+import ChangePasswordPage from "@/features/auth/ChangePasswordPage";
 import RoleGate from "@/components/RoleGate";
 import { initTheme } from "@/lib/theme";
 
@@ -51,12 +59,29 @@ setUnauthorizedHandler(async () => {
     return true;
   }
 
-  logout();
-  window.location.assign("/login");
+  clearInvalidSession();
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
   return false;
 });
 
 initTheme();
+
+function MustChangePasswordGuard({ children }: { children: React.ReactNode }) {
+  const me = getMe();
+  const location = useLocation();
+
+  if (me?.mustChangePassword && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
+
+  if (!me?.mustChangePassword && location.pathname === "/change-password") {
+    return <Navigate to={getDefaultRoute(me)} replace />;
+  }
+
+  return <>{children}</>;
+}
 
 function App() {
   const [ready, setReady] = useState(false);
@@ -71,9 +96,11 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
+      <MustChangePasswordGuard>
+        <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LandingPage initialLoginOpen />} />
+        <Route path="/login" element={<LandingPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route element={<AppLayout />}>
           <Route
             path="/dispatch"
@@ -86,7 +113,7 @@ function App() {
             <Route
               path="/dashboard"
               element={
-                <RoleGate roles={["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Driver"]}>
+                <RoleGate roles={["SuperAdmin", "Admin", "Dispatcher", "Manager", "HeadOfFinance", "Driver", "Customer", "InventoryOfficer", "CEO"]}>
                   <DashboardPage />
                 </RoleGate>
               }
@@ -175,7 +202,7 @@ function App() {
           <Route
             path="/dispatch/documents"
             element={
-              <RoleGate roles={["Manager", "HeadOfFinance"]}>
+              <RoleGate roles={["Manager", "Dispatcher", "Admin", "SuperAdmin", "HeadOfFinance"]}>
                 <DispatchDocumentsPage />
               </RoleGate>
             }
@@ -255,8 +282,16 @@ function App() {
           <Route
             path="/reports"
             element={
-              <RoleGate roles={["InventoryOfficer", "Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"]}>
+              <RoleGate roles={["Manager", "InventoryOfficer", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"]}>
                 <ReportsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/reports/dispatch"
+            element={
+              <RoleGate roles={["Dispatcher", "Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"]}>
+                <DispatchReportsPage />
               </RoleGate>
             }
           />
@@ -279,7 +314,7 @@ function App() {
           <Route
             path="/admin/customers"
             element={
-              <RoleGate roles={["Manager", "Dispatcher"]}>
+              <RoleGate roles={["Manager", "Dispatcher", "Admin", "SuperAdmin"]}>
                 <AdminCustomersPage />
               </RoleGate>
             }
@@ -295,7 +330,7 @@ function App() {
           <Route
             path="/admin/audit-logs"
             element={
-              <RoleGate roles={["Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"]}>
+              <RoleGate roles={["SuperAdmin", "Admin", "Manager", "Dispatcher", "HeadOfFinance", "InventoryOfficer", "Driver"]}>
                 <AuditLogsPage />
               </RoleGate>
             }
@@ -351,7 +386,8 @@ function App() {
           />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+        </Routes>
+      </MustChangePasswordGuard>
     </BrowserRouter>
   );
 }

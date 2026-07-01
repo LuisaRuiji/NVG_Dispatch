@@ -15,6 +15,11 @@ public sealed record ShipmentRequestListItem(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     int DocumentsCount,
     DateTime CreatedAt,
     DateTime? ApprovedAt,
@@ -26,6 +31,11 @@ public sealed record ShipmentRequestDetail(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
@@ -41,11 +51,17 @@ public sealed record DispatchShipmentRequestQueueItem(
     string PickupLocation,
     string DropoffLocation,
     DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
     int DocumentsCount,
     DateTime CreatedAt);
 
 public sealed record CustomerShipmentListItem(
     Guid TripId,
+    string? ContainerNumber,
     string PickupLocation,
     string DropoffLocation,
     TripStatus Status,
@@ -55,6 +71,7 @@ public sealed record CustomerShipmentListItem(
 
 public sealed record CustomerShipmentDetail(
     Guid TripId,
+    string? ContainerNumber,
     TripStatus Status,
     string PickupLocation,
     string DropoffLocation,
@@ -62,6 +79,8 @@ public sealed record CustomerShipmentDetail(
     DateTime? DropoffTime,
     DateTime? DeliveredTime,
     TripDocumentState PodState,
+    TripDocumentState AtwState,
+    bool WaybillGenerated,
     IReadOnlyCollection<CustomerShipmentStop> Stops);
 
 public sealed record CustomerShipmentStop(
@@ -116,6 +135,11 @@ public sealed class ShipmentRequestQueryService
                 request.PickupLocation,
                 request.DropoffLocation,
                 request.RequestedPickupTime,
+                ToContainerSize(request.ContainerSize),
+                ToTripType(request.TripType),
+                request.ContainerNumber,
+                request.ShippingLine,
+                request.BookingNumber,
                 _dbContext.ShipmentRequestDocuments.Count(doc => doc.RequestId == request.Id),
                 request.CreatedAt,
                 request.ApprovedAt,
@@ -147,6 +171,11 @@ public sealed class ShipmentRequestQueryService
             request.PickupLocation,
             request.DropoffLocation,
             request.RequestedPickupTime,
+            ToContainerSize(request.ContainerSize),
+            ToTripType(request.TripType),
+            request.ContainerNumber,
+            request.ShippingLine,
+            request.BookingNumber,
             request.CargoDescription,
             request.CargoWeight,
             request.SpecialInstructions,
@@ -179,6 +208,11 @@ public sealed class ShipmentRequestQueryService
                 request.PickupLocation,
                 request.DropoffLocation,
                 request.RequestedPickupTime,
+                ToContainerSize(request.ContainerSize),
+                ToTripType(request.TripType),
+                request.ContainerNumber,
+                request.ShippingLine,
+                request.BookingNumber,
                 _dbContext.ShipmentRequestDocuments.Count(doc => doc.RequestId == request.Id),
                 request.CreatedAt))
             .ToListAsync(cancellationToken);
@@ -244,6 +278,7 @@ public sealed class ShipmentRequestQueryService
     {
         return new CustomerShipmentListItem(
             item.TripId,
+            item.ContainerNumber,
             item.PickupLocation,
             item.DropoffLocation,
             item.Status,
@@ -256,6 +291,7 @@ public sealed class ShipmentRequestQueryService
     {
         return new CustomerShipmentDetail(
             detail.TripId,
+            detail.ContainerNumber,
             detail.Status,
             detail.PickupLocation,
             detail.DropoffLocation,
@@ -263,6 +299,8 @@ public sealed class ShipmentRequestQueryService
             detail.DropoffTime,
             detail.DeliveredTime,
             detail.PodState,
+            detail.AtwState,
+            detail.WaybillGenerated,
             detail.Stops.Select(stop => new CustomerShipmentStop(
                 stop.StopType,
                 stop.LocationText,
@@ -285,5 +323,35 @@ public sealed class ShipmentRequestQueryService
             document.State,
             document.StorageKey,
             document.UploadedAt);
+    }
+
+    private static ContainerSize ToContainerSize(string? value)
+    {
+        return NormalizeStorageValue(value) switch
+        {
+            "FORTYFT" or "FORTY_FT" => ContainerSize.FortyFt,
+            "FORTYHC" or "FORTY_HC" => ContainerSize.FortyHC,
+            "TWENTYFT" or "TWENTY_FT" => ContainerSize.TwentyFt,
+            _ => ContainerSize.TwentyFt
+        };
+    }
+
+    private static TripType ToTripType(string? value)
+    {
+        return NormalizeStorageValue(value) switch
+        {
+            "PORT_DROPOFF" => TripType.PortDropoff,
+            "YARD_TRANSFER" => TripType.YardTransfer,
+            "LONG_HAUL" => TripType.LongHaul,
+            "PORTPICKUP" or "PORT_PICKUP" => TripType.PortPickup,
+            _ => TripType.PortPickup
+        };
+    }
+
+    private static string NormalizeStorageValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Replace("-", "_", StringComparison.Ordinal).ToUpperInvariant();
     }
 }

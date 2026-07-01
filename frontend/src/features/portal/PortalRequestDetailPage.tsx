@@ -12,15 +12,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 import type {
+  ContainerSize,
   ShipmentRequestDetail,
   ShipmentRequestDocumentType,
-  ShipmentRequestStatusResponse
+  ShipmentRequestStatusResponse,
+  TripType
 } from "./types";
+import { containerSizeLabels, tripTypeLabels } from "./types";
 
 type FormState = {
   pickupLocation: string;
   dropoffLocation: string;
   requestedPickupTime: string;
+  containerSize: ContainerSize;
+  tripType: TripType;
+  containerNumber: string;
+  shippingLine: string;
+  bookingNumber: string;
   cargoDescription: string;
   cargoWeight: string;
   specialInstructions: string;
@@ -32,11 +40,14 @@ type UploadModal = {
 } | null;
 
 const docTypes: ShipmentRequestDocumentType[] = [
+  "ATW",
   "INVOICE",
   "CARGO_MANIFEST",
   "DELIVERY_INSTRUCTIONS",
   "OTHER"
 ];
+const containerSizeOptions = Object.entries(containerSizeLabels) as [ContainerSize, string][];
+const tripTypeOptions = Object.entries(tripTypeLabels) as [TripType, string][];
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
@@ -63,6 +74,11 @@ export default function PortalRequestDetailPage() {
     pickupLocation: "",
     dropoffLocation: "",
     requestedPickupTime: "",
+    containerSize: "TWENTY_FT",
+    tripType: "PORT_PICKUP",
+    containerNumber: "",
+    shippingLine: "",
+    bookingNumber: "",
     cargoDescription: "",
     cargoWeight: "",
     specialInstructions: ""
@@ -70,7 +86,7 @@ export default function PortalRequestDetailPage() {
   const [uploadModal, setUploadModal] = useState<UploadModal>(null);
 
   const isDraft = request?.status === "DRAFT";
-  const canUpload = request?.status === "DRAFT" || request?.status === "SUBMITTED";
+  const canUpload = request?.status === "DRAFT";
 
   const updateForm = (patch: Partial<FormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -84,6 +100,11 @@ export default function PortalRequestDetailPage() {
         pickupLocation: detail.pickupLocation ?? "",
         dropoffLocation: detail.dropoffLocation ?? "",
         requestedPickupTime: toLocalInput(detail.requestedPickupTime),
+        containerSize: detail.containerSize ?? "TWENTY_FT",
+        tripType: detail.tripType ?? "PORT_PICKUP",
+        containerNumber: detail.containerNumber ?? "",
+        shippingLine: detail.shippingLine ?? "",
+        bookingNumber: detail.bookingNumber ?? "",
         cargoDescription: detail.cargoDescription ?? "",
         cargoWeight: detail.cargoWeight?.toString() ?? "",
         specialInstructions: detail.specialInstructions ?? ""
@@ -114,6 +135,11 @@ export default function PortalRequestDetailPage() {
           pickupLocation: form.pickupLocation.trim(),
           dropoffLocation: form.dropoffLocation.trim(),
           requestedPickupTime: fromLocalInput(form.requestedPickupTime),
+          containerSize: form.containerSize,
+          tripType: form.tripType,
+          containerNumber: form.containerNumber.trim() || null,
+          shippingLine: form.shippingLine.trim() || null,
+          bookingNumber: form.bookingNumber.trim() || null,
           cargoDescription: form.cargoDescription.trim() || null,
           cargoWeight: form.cargoWeight ? Number(form.cargoWeight) : null,
           specialInstructions: form.specialInstructions.trim() || null
@@ -248,6 +274,36 @@ export default function PortalRequestDetailPage() {
             />
           </div>
           <div className="space-y-2">
+            <Label>Container Size</Label>
+            <select
+              value={form.containerSize}
+              onChange={(e) => updateForm({ containerSize: e.target.value as ContainerSize })}
+              disabled={!isDraft}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-70"
+            >
+              {containerSizeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Trip Type</Label>
+            <select
+              value={form.tripType}
+              onChange={(e) => updateForm({ tripType: e.target.value as TripType })}
+              disabled={!isDraft}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-70"
+            >
+              {tripTypeOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
             <Label>Cargo Weight (kg)</Label>
             <Input
               type="number"
@@ -255,6 +311,30 @@ export default function PortalRequestDetailPage() {
               step="0.01"
               value={form.cargoWeight}
               onChange={(e) => updateForm({ cargoWeight: e.target.value })}
+              disabled={!isDraft}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Container Number</Label>
+            <Input
+              value={form.containerNumber}
+              onChange={(e) => updateForm({ containerNumber: e.target.value })}
+              disabled={!isDraft}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Shipping Line</Label>
+            <Input
+              value={form.shippingLine}
+              onChange={(e) => updateForm({ shippingLine: e.target.value })}
+              disabled={!isDraft}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Booking Number</Label>
+            <Input
+              value={form.bookingNumber}
+              onChange={(e) => updateForm({ bookingNumber: e.target.value })}
               disabled={!isDraft}
             />
           </div>
@@ -342,7 +422,6 @@ export default function PortalRequestDetailPage() {
       {uploadModal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setUploadModal(null)}
           role="presentation"
         >
           <div

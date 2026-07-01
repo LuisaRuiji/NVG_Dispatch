@@ -966,6 +966,49 @@ namespace NVGInventory.Data.Migrations
                     b.ToTable("purchase_order_receipts", "dbo");
                 });
 
+            modelBuilder.Entity("NVGInventory.Domain.Entities.PushNotificationToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("platform");
+
+                    b.Property<DateTime>("RegisteredAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("registered_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("token");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token");
+
+                    b.HasIndex("UserId", "Platform")
+                        .IsUnique();
+
+                    b.ToTable("push_notification_tokens", "dbo");
+                });
+
             modelBuilder.Entity("NVGInventory.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1393,6 +1436,12 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("nvarchar(512)")
                         .HasColumnName("mfa_secret_key");
 
+                    b.Property<bool>("MustChangePassword")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("must_change_password");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -1649,6 +1698,242 @@ namespace NVGInventory.Data.Migrations
                     b.ToTable("dispatch_customers", "dbo");
                 });
 
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.DispatchRecommendation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("AgingScore")
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("aging_score");
+
+                    b.Property<decimal>("AvailabilityScore")
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("availability_score");
+
+                    b.Property<Guid>("CompletedTripId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("completed_trip_id");
+
+                    b.Property<Guid>("DriverId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("driver_id");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("generated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<decimal>("ProximityScore")
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("proximity_score");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("int")
+                        .HasColumnName("rank");
+
+                    b.Property<Guid>("RecommendedTripId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("recommended_trip_id");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<Guid?>("ReviewedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("reviewed_by_user_id");
+
+                    b.Property<decimal>("TotalScore")
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("total_score");
+
+                    b.Property<Guid>("TruckId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("truck_id");
+
+                    b.Property<decimal>("TruckMatchScore")
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("truck_match_score");
+
+                    b.Property<bool>("WasAccepted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("was_accepted");
+
+                    b.Property<bool>("WasIgnored")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("was_ignored");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompletedTripId");
+
+                    b.HasIndex("DriverId");
+
+                    b.HasIndex("GeneratedAt");
+
+                    b.HasIndex("RecommendedTripId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("ExpiresAt", "WasAccepted", "WasIgnored");
+
+                    b.ToTable("dispatch_recommendations", "dbo");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Driver", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("LicenseNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("license_number");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LicenseNumber")
+                        .IsUnique();
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("dispatch_drivers", "dbo");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.GeneratedWaybill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("generated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid>("GeneratedByUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("generated_by_user_id");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid>("TripId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("trip_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.Property<string>("WaybillDataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("waybill_data_json");
+
+                    b.Property<string>("WaybillNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("waybill_number");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GeneratedByUserId");
+
+                    b.HasIndex("TripId");
+
+                    b.HasIndex("WaybillNumber")
+                        .IsUnique();
+
+                    b.HasIndex("TripId", "IsActive");
+
+                    b.ToTable("generated_waybills", "dbo");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Trailer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("asset_id");
+
+                    b.Property<string>("ContainerType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("container_type");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TrailerCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("trailer_code");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId")
+                        .IsUnique();
+
+                    b.HasIndex("TrailerCode")
+                        .IsUnique();
+
+                    b.ToTable("dispatch_trailers", "dbo");
+                });
+
             modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Trip", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1660,6 +1945,21 @@ namespace NVGInventory.Data.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)")
                         .HasColumnName("allowance_encrypted");
+
+                    b.Property<string>("BookingNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("booking_number");
+
+                    b.Property<string>("ContainerNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("container_number");
+
+                    b.Property<string>("ContainerSize")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("container_size");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -1674,6 +1974,11 @@ namespace NVGInventory.Data.Migrations
                     b.Property<Guid?>("DriverUserId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("driver_user_id");
+
+                    b.Property<string>("EirNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("eir_number");
 
                     b.Property<string>("FuelAmount")
                         .HasMaxLength(512)
@@ -1723,11 +2028,21 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
 
+                    b.Property<string>("ShippingLine")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("shipping_line");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)")
                         .HasColumnName("status");
+
+                    b.Property<string>("TripType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("trip_type");
 
                     b.Property<Guid?>("TruckAssetId")
                         .HasColumnType("uniqueidentifier")
@@ -1736,6 +2051,11 @@ namespace NVGInventory.Data.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("updated_at");
+
+                    b.Property<string>("WaybillNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("waybill_number");
 
                     b.HasKey("Id");
 
@@ -1963,6 +2283,52 @@ namespace NVGInventory.Data.Migrations
                     b.ToTable("dispatch_trip_stops", "dbo");
                 });
 
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Truck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("asset_id");
+
+                    b.Property<string>("ContainerCapability")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("container_capability");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("PlateNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("plate_number");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId")
+                        .IsUnique();
+
+                    b.HasIndex("PlateNumber")
+                        .IsUnique();
+
+                    b.ToTable("dispatch_trucks", "dbo");
+                });
+
             modelBuilder.Entity("NVGInventory.Modules.ShipmentRequests.Entities.ShipmentRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1978,6 +2344,11 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("approved_by_user_id");
 
+                    b.Property<string>("BookingNumber")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)")
+                        .HasColumnName("booking_number");
+
                     b.Property<string>("CargoDescription")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
@@ -1986,6 +2357,16 @@ namespace NVGInventory.Data.Migrations
                     b.Property<decimal?>("CargoWeight")
                         .HasColumnType("decimal(18,3)")
                         .HasColumnName("cargo_weight");
+
+                    b.Property<string>("ContainerNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("container_number");
+
+                    b.Property<string>("ContainerSize")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("container_size");
 
                     b.Property<Guid?>("ConvertedTripId")
                         .HasColumnType("uniqueidentifier")
@@ -2017,9 +2398,19 @@ namespace NVGInventory.Data.Migrations
                         .HasColumnType("nvarchar(300)")
                         .HasColumnName("pickup_location");
 
+                    b.Property<string>("RejectionRemarks")
+                        .HasMaxLength(600)
+                        .HasColumnType("nvarchar(600)")
+                        .HasColumnName("rejection_remarks");
+
                     b.Property<DateTime?>("RequestedPickupTime")
                         .HasColumnType("datetime2")
                         .HasColumnName("requested_pickup_time");
+
+                    b.Property<string>("ShippingLine")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("shipping_line");
 
                     b.Property<string>("SpecialInstructions")
                         .HasMaxLength(600)
@@ -2031,6 +2422,11 @@ namespace NVGInventory.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)")
                         .HasColumnName("status");
+
+                    b.Property<string>("TripType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("trip_type");
 
                     b.HasKey("Id");
 
@@ -2335,6 +2731,17 @@ namespace NVGInventory.Data.Migrations
                     b.Navigation("ReceivedBy");
                 });
 
+            modelBuilder.Entity("NVGInventory.Domain.Entities.PushNotificationToken", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("NVGInventory.Domain.Entities.RefreshToken", b =>
                 {
                     b.HasOne("NVGInventory.Domain.Entities.User", "User")
@@ -2442,6 +2849,73 @@ namespace NVGInventory.Data.Migrations
                     b.Navigation("Workflow");
                 });
 
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.DispatchRecommendation", b =>
+                {
+                    b.HasOne("NVGInventory.Modules.Dispatching.Entities.Trip", "CompletedTrip")
+                        .WithMany()
+                        .HasForeignKey("CompletedTripId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NVGInventory.Modules.Dispatching.Entities.Trip", "RecommendedTrip")
+                        .WithMany()
+                        .HasForeignKey("RecommendedTripId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NVGInventory.Domain.Entities.User", "ReviewedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CompletedTrip");
+
+                    b.Navigation("RecommendedTrip");
+
+                    b.Navigation("ReviewedByUser");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Driver", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.GeneratedWaybill", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.User", "GeneratedByUser")
+                        .WithMany()
+                        .HasForeignKey("GeneratedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NVGInventory.Modules.Dispatching.Entities.Trip", "Trip")
+                        .WithMany("GeneratedWaybills")
+                        .HasForeignKey("TripId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("GeneratedByUser");
+
+                    b.Navigation("Trip");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Trailer", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
             modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Trip", b =>
                 {
                     b.HasOne("NVGInventory.Modules.Dispatching.Entities.Customer", "Customer")
@@ -2535,6 +3009,17 @@ namespace NVGInventory.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Trip");
+                });
+
+            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Truck", b =>
+                {
+                    b.HasOne("NVGInventory.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
                 });
 
             modelBuilder.Entity("NVGInventory.Modules.ShipmentRequests.Entities.ShipmentRequest", b =>
@@ -2670,6 +3155,8 @@ namespace NVGInventory.Data.Migrations
             modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.Trip", b =>
                 {
                     b.Navigation("Documents");
+
+                    b.Navigation("GeneratedWaybills");
 
                     b.Navigation("StatusHistory");
 

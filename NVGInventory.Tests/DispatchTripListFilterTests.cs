@@ -159,12 +159,14 @@ public class DispatchTripListFilterTests : SqlServerIntegrationTestBase
             var pendingItem = Assert.Single(pendingResult.Items.Where(item => item.Id == pendingTrip));
             Assert.Equal(TripDocumentState.Uploaded, pendingItem.PodState);
             Assert.False(pendingItem.CloseDocumentReady);
-            Assert.Equal("POD must be verified.", pendingItem.CloseDocumentBlockReason);
+            Assert.Equal(
+                "ATW, EIR, Gate Pass, DR, Waybill, and POD must be complete before closing.",
+                pendingItem.CloseDocumentBlockReason);
         }
     }
 
     [SqlServerFact]
-    public async Task GetTrips_CloseReadiness_RelaxedMode_UsesPodPendingOverride()
+    public async Task GetTrips_CloseReadiness_RequiresFullDocumentSet()
     {
         Guid pendingOverrideTripId;
         Guid blockedTripId;
@@ -201,13 +203,17 @@ public class DispatchTripListFilterTests : SqlServerIntegrationTestBase
 
             var pendingOverrideItem = Assert.Single(result.Items.Where(item => item.Id == pendingOverrideTripId));
             Assert.Equal(TripDocumentState.Missing, pendingOverrideItem.PodState);
-            Assert.True(pendingOverrideItem.CloseDocumentReady);
-            Assert.Null(pendingOverrideItem.CloseDocumentBlockReason);
+            Assert.False(pendingOverrideItem.CloseDocumentReady);
+            Assert.Equal(
+                "ATW, EIR, Gate Pass, DR, Waybill, and POD must be complete before closing.",
+                pendingOverrideItem.CloseDocumentBlockReason);
 
             var blockedItem = Assert.Single(result.Items.Where(item => item.Id == blockedTripId));
             Assert.Equal(TripDocumentState.Missing, blockedItem.PodState);
             Assert.False(blockedItem.CloseDocumentReady);
-            Assert.Equal("POD must be uploaded or POD pending override must be set.", blockedItem.CloseDocumentBlockReason);
+            Assert.Equal(
+                "ATW, EIR, Gate Pass, DR, Waybill, and POD must be complete before closing.",
+                blockedItem.CloseDocumentBlockReason);
         }
     }
 
@@ -423,19 +429,19 @@ public class DispatchTripListFilterTests : SqlServerIntegrationTestBase
         context.DispatchTrips.AddRange(verifiedTrip, pendingTrip);
         context.DispatchTripStops.AddRange(CreateStops(verifiedTrip.Id, now).Concat(CreateStops(pendingTrip.Id, now)));
 
-        context.DispatchTripDocuments.Add(new TripDocument
-        {
-            Id = Guid.NewGuid(),
-            TripId = verifiedTrip.Id,
-            Type = TripDocumentType.Pod,
-            State = TripDocumentState.Verified,
-            StorageKey = "pod/verified.pdf",
-            UploadedByUserId = driver.Id,
-            UploadedAt = now,
-            VerifiedByUserId = driver.Id,
-            VerifiedAt = now,
-            IsActive = true
-        });
+        AddVerifiedCloseDocuments(context, verifiedTrip.Id, driver.Id, now);
+        AddGeneratedWaybill(context, verifiedTrip.Id, driver.Id, now);
+
+        AddVerifiedCloseDocuments(
+            context,
+            pendingTrip.Id,
+            driver.Id,
+            now,
+            TripDocumentType.Atw,
+            TripDocumentType.Eir,
+            TripDocumentType.GatePass,
+            TripDocumentType.Dr);
+        AddGeneratedWaybill(context, pendingTrip.Id, driver.Id, now);
 
         context.DispatchTripDocuments.Add(new TripDocument
         {
@@ -451,6 +457,61 @@ public class DispatchTripListFilterTests : SqlServerIntegrationTestBase
 
         await context.SaveChangesAsync();
         return (verifiedTrip.Id, pendingTrip.Id);
+    }
+
+    private static void AddVerifiedCloseDocuments(
+        InventoryDbContext context,
+        Guid tripId,
+        Guid actorUserId,
+        DateTime now,
+        params TripDocumentType[] types)
+    {
+        var resolvedTypes = types.Length == 0
+            ? new[]
+            {
+                TripDocumentType.Atw,
+                TripDocumentType.Eir,
+                TripDocumentType.GatePass,
+                TripDocumentType.Dr,
+                TripDocumentType.Pod
+            }
+            : types;
+
+        foreach (var type in resolvedTypes)
+        {
+            context.DispatchTripDocuments.Add(new TripDocument
+            {
+                Id = Guid.NewGuid(),
+                TripId = tripId,
+                Type = type,
+                State = TripDocumentState.Verified,
+                StorageKey = $"{type.ToString().ToLowerInvariant()}/verified.pdf",
+                UploadedByUserId = actorUserId,
+                UploadedAt = now,
+                VerifiedByUserId = actorUserId,
+                VerifiedAt = now,
+                IsActive = true
+            });
+        }
+    }
+
+    private static void AddGeneratedWaybill(
+        InventoryDbContext context,
+        Guid tripId,
+        Guid actorUserId,
+        DateTime now)
+    {
+        context.GeneratedWaybills.Add(new GeneratedWaybill
+        {
+            Id = Guid.NewGuid(),
+            TripId = tripId,
+            WaybillNumber = $"WB-{Guid.NewGuid():N}"[..30],
+            Version = 1,
+            GeneratedAt = now,
+            GeneratedByUserId = actorUserId,
+            WaybillDataJson = "{}",
+            IsActive = true
+        });
     }
 
     private static IEnumerable<TripStop> CreateStops(Guid tripId, DateTime now)

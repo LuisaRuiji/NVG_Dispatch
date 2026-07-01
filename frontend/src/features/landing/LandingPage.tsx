@@ -1,9 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
     ArrowRight,
-    Menu,
-    X,
     CheckCircle2,
     Map,
     Truck,
@@ -12,324 +10,581 @@ import {
     Clock,
     ShieldCheck,
     Activity,
-    Layers
+    Layers,
+    type LucideIcon
 } from "lucide-react";
-import { getDefaultRoute, isMfaRequiredResponse, login, verifyMfaLogin } from "@/features/auth/authStore";
-import { useToast } from "@/lib/useToast";
-import ToastHost from "@/components/ToastHost";
+import DemoRequestModal from "@/features/landing/components/DemoRequestModal";
+import FadeInSection from "@/features/landing/components/FadeInSection";
+import LoginModal from "@/features/landing/components/LoginModal";
+import NavBar from "@/features/landing/components/NavBar";
+import { useCountUp } from "@/features/landing/hooks/useCountUp";
 
-type LandingPageProps = {
-    initialLoginOpen?: boolean;
+type DashboardStat = {
+    label: string;
+    val: number;
+    icon: LucideIcon;
 };
 
-export default function LandingPage({ initialLoginOpen = false }: LandingPageProps) {
-    const nav = useNavigate();
-    const location = useLocation();
-    const [isScrolled, setIsScrolled] = useState(false);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [loginOpen, setLoginOpen] = useState(initialLoginOpen);
-    const [username, setUsername] = useState("");
-    const [password, setPassword] = useState("");
-    const [mfaCode, setMfaCode] = useState("");
-    const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
-    const [submitting, setSubmitting] = useState(false);
-    const { toasts, show } = useToast();
+type DispatchStatus = "Loaded" | "AtPickup" | "EnrouteDropoff" | "Delivered";
+type DispatchDoc = "ATW Pending" | "POD Uploaded" | null;
+
+type DispatchActivityRow = {
+    id: string;
+    status: DispatchStatus;
+    destination: string;
+    time: string;
+    doc: DispatchDoc;
+};
+
+type FeatureItem = {
+    title: string;
+    desc: string;
+    icon: LucideIcon;
+    reverse?: boolean;
+    mobile?: boolean;
+    anchorId?: string;
+    mock: "dispatch" | "driver" | "documents" | "portal";
+};
+
+const dashboardStats: DashboardStat[] = [
+    { label: "Active Trips", val: 24, icon: Truck },
+    { label: "Document Alerts", val: 3, icon: FileText },
+    { label: "Drivers On Road", val: 18, icon: Users }
+];
+
+const dispatchActivityRows: DispatchActivityRow[] = [
+    { id: "TCKU3421870", status: "Loaded", destination: "DICT Compound, Tagum", time: "09:14 AM", doc: null },
+    { id: "MSCU7823410", status: "AtPickup", destination: "Manila South Harbor", time: "09:32 AM", doc: "ATW Pending" },
+    { id: "EISU4521983", status: "EnrouteDropoff", destination: "TADECO Dole, Panabo", time: "08:55 AM", doc: null },
+    { id: "TGBU9034521", status: "Delivered", destination: "KTC Compound, Davao", time: "07:30 AM", doc: "POD Uploaded" }
+];
+
+const productFeatures: FeatureItem[] = [
+    {
+        title: "Dispatcher Dashboard",
+        desc: "Monitor active trips, driver status, and document alerts from a centralized dispatch dashboard.",
+        icon: Map,
+        mock: "dispatch"
+    },
+    {
+        title: "Driver Mobile Workflow",
+        desc: "Drivers execute trips step-by-step using a mobile interface that only shows the next valid action.",
+        icon: Truck,
+        reverse: true,
+        mobile: true,
+        mock: "driver"
+    },
+    {
+        title: "Paperless Document Verification",
+        desc: "Upload and verify WAYBILL, ATW, and POD documents digitally.",
+        icon: ShieldCheck,
+        mock: "documents"
+    },
+    {
+        title: "Customer Portal",
+        desc: "Clients can submit shipment requests, track deliveries, and download proof of delivery.",
+        icon: Users,
+        reverse: true,
+        anchorId: "customer-portal",
+        mock: "portal"
+    }
+];
+
+const workflowSteps = [
+    { title: "Client Request", desc: "Customer submits shipment request", icon: Users },
+    { title: "Dispatch", desc: "Dispatcher plans and dispatches trip", icon: Map },
+    { title: "Execution", desc: "Driver executes pickup and delivery", icon: Truck },
+    { title: "Verification", desc: "Documents uploaded and verified", icon: ShieldCheck },
+    { title: "Completion", desc: "Customer downloads proof of delivery", icon: FileText }
+];
+
+const platformFeatures = [
+    { title: "Smart Dispatch Scheduling", desc: "Prevent driver and truck double-booking.", icon: Clock },
+    { title: "Real-Time Fleet Visibility", desc: "Track trip status from dispatch to delivery.", icon: Activity },
+    { title: "Paperless Logistics", desc: "Digitize WAYBILL, ATW, and POD documents.", icon: FileText },
+    { title: "Customer Shipment Portal", desc: "Provide customers real-time shipment visibility.", icon: Users }
+];
+
+const socialProofStats = [
+    { value: 3000, suffix: "+", label: "Trips Logged", detail: "From the partner company's 2025 operational data." },
+    { value: 38, suffix: "", label: "Weeks of Operations Data", detail: "Real dispatch history across active trucking weeks." },
+    { value: 30, suffix: "+", label: "Trucks Managed", detail: "Fleet operations modeled around container trucking work." }
+];
+
+const statusBadgeClasses: Record<DispatchStatus, string> = {
+    Delivered: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+    AtPickup: "bg-blue-100 text-blue-700 border border-blue-200",
+    Loaded: "bg-blue-100 text-blue-700 border border-blue-200",
+    EnrouteDropoff: "bg-amber-100 text-amber-700 border border-amber-200"
+};
+
+const statusDotClasses: Record<DispatchStatus, string> = {
+    Delivered: "bg-emerald-400",
+    AtPickup: "bg-blue-400",
+    Loaded: "bg-blue-400",
+    EnrouteDropoff: "bg-amber-400"
+};
+
+const docBadgeClasses: Record<Exclude<DispatchDoc, null>, string> = {
+    "ATW Pending": "bg-orange-100 text-orange-700 border border-orange-200",
+    "POD Uploaded": "bg-emerald-100 text-emerald-700 border border-emerald-200"
+};
+
+function usePrefersReducedMotion() {
+    const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
     useEffect(() => {
-        const handleScroll = () => {
-            setIsScrolled(window.scrollY > 20);
-        };
-        window.addEventListener("scroll", handleScroll);
-        return () => window.removeEventListener("scroll", handleScroll);
+        if (!("matchMedia" in window)) return;
+
+        const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+        const updatePreference = () => setPrefersReducedMotion(reducedMotionQuery.matches);
+        updatePreference();
+        reducedMotionQuery.addEventListener("change", updatePreference);
+        return () => reducedMotionQuery.removeEventListener("change", updatePreference);
     }, []);
 
+    return prefersReducedMotion;
+}
+
+function CountUpValue({ value, suffix = "" }: { value: number; suffix?: string }) {
+    const count = useCountUp(value);
+    return (
+        <>
+            {count.toLocaleString()}
+            {suffix}
+        </>
+    );
+}
+
+function CountUpOnView({ value, suffix = "" }: { value: number; suffix?: string }) {
+    const ref = useRef<HTMLSpanElement | null>(null);
+    const [isVisible, setIsVisible] = useState(false);
+    const count = useCountUp(value, 1200, isVisible);
+
     useEffect(() => {
-        setLoginOpen(location.pathname === "/login");
-    }, [location.pathname]);
+        const node = ref.current;
+        if (!node) return;
 
-    const closeLogin = () => {
-        setLoginOpen(false);
-        setMfaChallengeId(null);
-        setMfaCode("");
-        if (location.pathname === "/login") {
-            nav("/", { replace: true });
+        if (!("IntersectionObserver" in window)) {
+            setIsVisible(true);
+            return;
         }
-    };
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        try {
-            setSubmitting(true);
-            if (mfaChallengeId) {
-                const me = await verifyMfaLogin({ challengeId: mfaChallengeId, code: mfaCode });
-                nav(getDefaultRoute(me), { replace: true });
-                return;
-            }
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setIsVisible(true);
+                    observer.disconnect();
+                }
+            },
+            { threshold: 0.15 }
+        );
 
-            const me = await login({ username, password });
-            if (isMfaRequiredResponse(me)) {
-                setMfaChallengeId(me.challengeId);
-                setMfaCode("");
-                return;
-            }
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, []);
 
-            nav(getDefaultRoute(me), { replace: true });
-        } catch (e: any) {
-            console.error(e);
-            show(e?.message ?? "Login failed", "error");
-        } finally {
-            setSubmitting(false);
+    return (
+        <span ref={ref}>
+            {count.toLocaleString()}
+            {suffix}
+        </span>
+    );
+}
+
+function FeatureMock({ feature }: { feature: FeatureItem }) {
+    const dispatchRows = [
+        { container: "TCKU3421870", driver: "Mario Dela Cruz", status: "Loaded" as DispatchStatus },
+        { container: "MSCU7823410", driver: "Ana Reyes", status: "AtPickup" as DispatchStatus },
+        { container: "EISU4521983", driver: "Jun Santos", status: "EnrouteDropoff" as DispatchStatus }
+    ];
+
+    if (feature.mock === "driver") {
+        return (
+            <div className="flex h-full w-full flex-col rounded-2xl bg-white p-4 text-left shadow-sm">
+                <div className="rounded-2xl bg-primary p-4 text-white">
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs text-white/70">Assigned Trip</p>
+                        <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold text-accent">Loaded</span>
+                    </div>
+                    <h4 className="mt-3 font-mono text-xl font-bold">MSCU7823410</h4>
+                    <div className="mt-4 space-y-3 text-sm">
+                        <div>
+                            <p className="text-xs uppercase text-white/50">Pickup</p>
+                            <p className="font-medium text-white">Manila South Harbor</p>
+                        </div>
+                        <div>
+                            <p className="text-xs uppercase text-white/50">Dropoff</p>
+                            <p className="font-medium text-white">Calamba Logistics Hub</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-4 flex-1 space-y-3">
+                    {[
+                        { label: "Gate pass checked", done: true },
+                        { label: "Container sealed", done: true },
+                        { label: "Mark cargo loaded", done: false }
+                    ].map((item) => (
+                        <div key={item.label} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                            <div className={`flex h-7 w-7 items-center justify-center rounded-full ${item.done ? "bg-accent text-white" : "bg-white text-gray-400"} text-xs font-bold`}>
+                                {item.done ? <CheckCircle2 size={14} /> : "3"}
+                            </div>
+                            <span className="text-sm font-medium text-gray-700">{item.label}</span>
+                        </div>
+                    ))}
+                </div>
+                <button type="button" className="mt-5 w-full rounded-xl bg-accent py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20">
+                    Mark as Loaded
+                </button>
+            </div>
+        );
+    }
+
+    if (feature.mock === "documents") {
+        return (
+            <div className="w-full space-y-4 text-left">
+                <div className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-xs uppercase tracking-wider text-gray-400">ATW</p>
+                            <h4 className="mt-1 font-mono text-lg font-bold text-primary">ATW-2026-0418</h4>
+                            <p className="mt-1 text-xs text-gray-500">Matched to MSCU7823410</p>
+                        </div>
+                        <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                            <CheckCircle2 size={14} />
+                            Verified
+                        </span>
+                    </div>
+                    <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
+                        <div className="rounded-xl bg-gray-50 p-3">
+                            <p className="text-gray-400">Seal No.</p>
+                            <p className="mt-1 font-mono font-bold text-primary">NVG-88421</p>
+                        </div>
+                        <div className="rounded-xl bg-gray-50 p-3">
+                            <p className="text-gray-400">Uploaded By</p>
+                            <p className="mt-1 font-semibold text-primary">Driver App</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                    <div>
+                        <p className="text-xs uppercase tracking-wider text-gray-400">POD</p>
+                        <h4 className="mt-1 font-mono text-base font-bold text-primary">Proof of Delivery</h4>
+                    </div>
+                    <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
+                        Awaiting Upload
+                    </span>
+                </div>
+            </div>
+        );
+    }
+
+    if (feature.mock === "portal") {
+        return (
+            <div className="w-full rounded-2xl bg-white p-6 text-left shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 pb-5">
+                    <div>
+                        <p className="text-xs uppercase tracking-wider text-gray-400">Shipment Tracking</p>
+                        <h4 className="mt-1 font-mono text-xl font-bold text-primary">TGBU9034521</h4>
+                    </div>
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">EnrouteDropoff</span>
+                </div>
+                <div className="mt-6">
+                    <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-full w-3/5 rounded-full bg-accent" />
+                    </div>
+                    <div className="mt-3 grid grid-cols-5 gap-2 text-[10px] font-semibold text-gray-400">
+                        {["Submitted", "Dispatched", "Loaded", "Enroute", "Delivered"].map((step, idx) => (
+                            <span key={step} className={idx < 4 ? "text-primary" : ""}>
+                                {step}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+                <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-xl bg-gray-50 p-4">
+                        <p className="text-xs uppercase text-gray-400">Destination</p>
+                        <p className="mt-1 font-semibold text-primary">KTC Compound, Davao</p>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 p-4">
+                        <p className="text-xs uppercase text-gray-400">ETA</p>
+                        <p className="mt-1 font-mono font-bold text-primary">11:45 AM</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full overflow-hidden rounded-2xl border border-gray-100 bg-white text-left shadow-sm">
+            <div className="grid grid-cols-[1.2fr_1fr_1fr_auto] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                <span>Container</span>
+                <span>Driver</span>
+                <span>Status</span>
+                <span />
+            </div>
+            <div className="divide-y divide-gray-100">
+                {dispatchRows.map((row) => (
+                    <div key={row.container} className="grid grid-cols-[1.2fr_1fr_1fr_auto] items-center gap-3 px-4 py-4">
+                        <div>
+                            <p className="font-mono text-sm font-bold text-primary">{row.container}</p>
+                            <p className="mt-1 text-xs text-gray-500">Container movement</p>
+                        </div>
+                        <p className="text-sm font-medium text-gray-700">{row.driver}</p>
+                        <span className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-bold ${statusBadgeClasses[row.status]}`}>
+                            {row.status}
+                        </span>
+                        <button type="button" className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-accent/20">
+                            Dispatch
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+export default function LandingPage() {
+    const [demoOpen, setDemoOpen] = useState(false);
+    const workflowRef = useRef<HTMLElement | null>(null);
+    const [workflowLineVisible, setWorkflowLineVisible] = useState(false);
+    const prefersReducedMotion = usePrefersReducedMotion();
+    const openDemo = () => setDemoOpen(true);
+    const closeDemo = () => setDemoOpen(false);
+
+    useEffect(() => {
+        const node = workflowRef.current;
+        if (!node) return;
+
+        if (prefersReducedMotion) {
+            setWorkflowLineVisible(true);
+            return;
         }
-    };
+
+        if (!("IntersectionObserver" in window)) {
+            setWorkflowLineVisible(true);
+            return;
+        }
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setWorkflowLineVisible(true);
+                    observer.disconnect();
+                }
+            },
+            { threshold: 0.15 }
+        );
+
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [prefersReducedMotion]);
 
     return (
         <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary selection:text-white">
-            <ToastHost toasts={toasts} />
-            {/* 1. Navbar */}
-            <nav
-                className={`fixed top-4 left-1/2 -translate-x-1/2 w-[95%] max-w-7xl z-50 transition-all duration-300 rounded-full px-6 py-3 flex items-center justify-between ${isScrolled
-                        ? "bg-white/80 backdrop-blur-md shadow-lg border border-gray-200/50"
-                        : "bg-transparent"
-                    }`}
-            >
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded bg-primary flex items-center justify-center text-white font-bold">
-                        N
-                    </div>
-                    <span className="font-bold text-xl tracking-tight text-primary">NVG Dispatch</span>
-                </div>
-
-                {/* Desktop Nav */}
-                <div className="hidden md:flex items-center gap-8 font-medium text-sm">
-                    <a href="#platform" className="hover:text-accent transition-colors">Platform</a>
-                    <a href="#workflow" className="hover:text-accent transition-colors">Workflow</a>
-                    <a href="#customer-portal" className="hover:text-accent transition-colors">Customer Portal</a>
-                </div>
-
-                <div className="hidden md:flex items-center gap-4">
-                    <Link to="/login" className="text-sm font-medium hover:text-accent transition-colors">Login</Link>
-                    <Link
-                        to="/login"
-                        className="bg-accent text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-accent/90 transition-all hover:scale-105 active:scale-95 shadow-md shadow-accent/20"
-                    >
-                        Request Demo
-                    </Link>
-                </div>
-
-                {/* Mobile Menu Toggle */}
-                <button
-                    className="md:hidden text-primary"
-                    onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                >
-                    {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                </button>
-            </nav>
-
-            {/* Mobile Menu Content */}
-            {mobileMenuOpen && (
-                <div className="fixed inset-0 bg-white z-40 pt-24 px-6 md:hidden flex flex-col gap-6">
-                    <a href="#platform" className="text-xl font-medium" onClick={() => setMobileMenuOpen(false)}>Platform</a>
-                    <a href="#workflow" className="text-xl font-medium" onClick={() => setMobileMenuOpen(false)}>Workflow</a>
-                    <a href="#customer-portal" className="text-xl font-medium" onClick={() => setMobileMenuOpen(false)}>Customer Portal</a>
-                    <hr className="border-gray-100" />
-                    <Link to="/login" className="text-left text-xl font-medium">Login</Link>
-                    <Link
-                        to="/login"
-                        className="bg-accent text-white px-6 py-3 rounded-xl text-center font-medium mt-4"
-                    >
-                        Request Demo
-                    </Link>
-                </div>
-            )}
+            <NavBar onDemoClick={openDemo} />
 
             {/* 2. Hero Section */}
-            <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 px-6 overflow-hidden">
-                {/* Background decorative elements */}
-                <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
+            <section className="relative overflow-hidden px-6 pb-20 pt-32 md:pb-32 md:pt-48">
+                <div className="absolute right-0 top-0 h-[50vw] w-[50vw] -translate-y-1/2 translate-x-1/3 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
-                <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                    <div className="max-w-2xl relative z-10">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold mb-6 uppercase tracking-wider">
-                            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-12 lg:grid-cols-2">
+                    <FadeInSection className="relative z-10 max-w-2xl">
+                        <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
+                            <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
                             NVG Logistics Platform
                         </div>
-                        <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-primary leading-[1.1] mb-6 tracking-tight">
+                        <h1 className="mb-6 text-5xl font-extrabold leading-[1.1] text-primary md:text-6xl lg:text-7xl">
                             Run Your Container Dispatch Without Paper
                         </h1>
-                        <p className="text-lg md:text-xl text-gray-600 mb-10 leading-relaxed max-w-xl">
+                        <p className="mb-3 max-w-xl text-lg leading-relaxed text-gray-600 md:text-xl">
                             Plan trips, track drivers in real time, and manage WAYBILL, ATW, and POD documents in one platform.
                         </p>
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            <Link
-                                to="/login"
-                                className="bg-accent text-white px-8 py-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-accent/90 hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl shadow-accent/20"
+                        <p className="mb-10 max-w-xl text-base font-medium text-primary">
+                            Built for drayage and port container operators in Mindanao.
+                        </p>
+                        <div className="flex flex-col gap-4 sm:flex-row">
+                            <button
+                                type="button"
+                                onClick={openDemo}
+                                className="flex items-center justify-center gap-2 rounded-xl bg-accent px-8 py-4 font-medium text-white shadow-lg shadow-accent/20 transition-all hover:-translate-y-0.5 hover:bg-accent/90 hover:shadow-xl"
                             >
                                 Request Demo
                                 <ArrowRight size={18} />
-                            </Link>
+                            </button>
                             <Link
                                 to="/login"
-                                className="bg-white text-primary border border-gray-200 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 transition-all hover:border-gray-300 hover:-translate-y-0.5 shadow-sm text-center"
+                                className="rounded-xl border border-gray-200 bg-white px-8 py-4 text-center font-medium text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:bg-gray-50"
                             >
                                 Login
                             </Link>
                         </div>
-                    </div>
+                    </FadeInSection>
 
-                    {/* Hero Image/Mockup */}
-                    <div className="relative z-10 w-full rounded-2xl bg-white border border-gray-200 shadow-2xl shadow-primary/10 overflow-hidden transform lg:translate-x-8 lg:scale-105">
+                    <FadeInSection delay={150} className="relative z-10 w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-primary/10 transform lg:translate-x-8 lg:scale-105">
                         <div className="absolute inset-0 bg-gradient-to-t from-primary/5 to-transparent pointer-events-none" />
-                        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
-                            <div className="w-3 h-3 rounded-full bg-red-400" />
-                            <div className="w-3 h-3 rounded-full bg-amber-400" />
-                            <div className="w-3 h-3 rounded-full bg-green-400" />
-                            <div className="ml-4 bg-white px-3 py-1 rounded text-xs text-gray-400 font-mono shadow-sm flex-1 text-center truncate">
+                        <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3">
+                            <div className="h-3 w-3 rounded-full bg-red-400" />
+                            <div className="h-3 w-3 rounded-full bg-amber-400" />
+                            <div className="h-3 w-3 rounded-full bg-green-400" />
+                            <div className="ml-4 flex-1 truncate rounded bg-white px-3 py-1 text-center font-mono text-xs text-gray-400 shadow-sm">
                                 app.nvgdispatch.com/dashboard
                             </div>
                         </div>
-                        {/* Mock Dashboard UI */}
-                        <div className="p-6 bg-gray-50 h-[400px] md:h-[500px] flex flex-col gap-4">
-                            <div className="grid grid-cols-3 gap-4">
-                                {[
-                                    { label: "Active Trips", val: "24", icon: Truck },
-                                    { label: "Document Alerts", val: "12", icon: FileText },
-                                    { label: "Drivers Ready", val: "18", icon: Users }
-                                ].map((stat, i) => (
-                                    <div key={i} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-gray-500 text-xs font-medium">{stat.label}</span>
+                        <div className="flex h-[430px] flex-col gap-4 bg-gray-50 p-4 md:h-[500px] md:p-6">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:gap-4">
+                                {dashboardStats.map((stat) => (
+                                    <div key={stat.label} className="flex flex-col rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                                        <div className="mb-2 flex items-center justify-between">
+                                            <span className="text-xs font-medium text-gray-500">{stat.label}</span>
                                             <stat.icon size={14} className="text-primary" />
                                         </div>
-                                        <span className="text-2xl font-bold font-mono text-primary">{stat.val}</span>
+                                        <span className="font-mono text-2xl font-bold text-primary">
+                                            <CountUpValue value={stat.val} />
+                                        </span>
                                     </div>
                                 ))}
                             </div>
-                            <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-                                <div className="px-4 py-3 border-b border-gray-50 font-medium text-sm flex justify-between items-center bg-primary text-white">
+                            <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+                                <div className="flex items-center justify-between border-b border-gray-50 bg-primary px-4 py-3 text-sm font-medium text-white">
                                     Live Dispatch Activity
-                                    <span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                                    <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-xs text-green-300">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                                         Live
                                     </span>
                                 </div>
-                                <div className="p-4 flex-1 space-y-3 font-mono text-xs overflow-y-auto">
-                                    {[1, 2, 3, 4].map(i => (
-                                        <div key={i} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg border border-gray-100 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-2 h-2 rounded-full ${i === 2 ? 'bg-amber-400' : 'bg-green-400'}`} />
-                                                <div>
-                                                    <p className="text-primary font-semibold text-sm">TRK-00{i}</p>
-                                                    <p className="text-gray-500 mt-0.5">En route to Port Terminal {i}</p>
+                                <div className="flex-1 space-y-3 overflow-y-auto p-4 font-mono text-xs">
+                                    {dispatchActivityRows.map((row) => (
+                                        <div key={row.id} className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 p-3 transition-colors hover:bg-gray-50">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div className={`h-2 w-2 flex-shrink-0 rounded-full ${statusDotClasses[row.status]}`} />
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="font-semibold text-primary text-sm">{row.id}</p>
+                                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusBadgeClasses[row.status]}`}>
+                                                            {row.status}
+                                                        </span>
+                                                    </div>
+                                                    <p className="mt-0.5 truncate text-gray-500">{row.destination}</p>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="text-gray-400 block">10:{i}4 AM</span>
-                                                {i === 2 && <span className="text-amber-500 text-[10px] uppercase font-bold tracking-wider mt-1 block">ATW Pending</span>}
+                                            <div className="flex flex-shrink-0 flex-col items-end gap-1 text-right">
+                                                <span className="block text-gray-400">{row.time}</span>
+                                                {row.doc ? (
+                                                    <span className={`block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${docBadgeClasses[row.doc]}`}>
+                                                        {row.doc}
+                                                    </span>
+                                                ) : null}
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         </div>
+                    </FadeInSection>
+                </div>
+            </section>
+
+            {/* Social Proof */}
+            <section className="border-y border-gray-100 bg-white py-20">
+                <div className="mx-auto max-w-7xl px-6">
+                    <FadeInSection className="mx-auto max-w-3xl text-center">
+                        <h2 className="text-3xl font-bold text-primary md:text-5xl">Trusted for Real Trucking Operations</h2>
+                        <p className="mt-4 text-sm text-gray-500">
+                            These numbers come from the partner company's 2025 operational data.
+                        </p>
+                    </FadeInSection>
+
+                    <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+                        {socialProofStats.map((stat, idx) => (
+                            <FadeInSection key={stat.label} delay={idx * 80} className="rounded-xl border border-gray-100 bg-background p-6 text-center">
+                                <p className="font-mono text-3xl font-bold text-primary">
+                                    <CountUpOnView value={stat.value} suffix={stat.suffix} />
+                                </p>
+                                <h3 className="mt-2 font-semibold text-gray-900">{stat.label}</h3>
+                                <p className="mt-2 text-sm leading-relaxed text-gray-600">{stat.detail}</p>
+                            </FadeInSection>
+                        ))}
                     </div>
+
+                    <FadeInSection delay={240} className="mx-auto mt-10 max-w-4xl rounded-2xl border border-gray-100 bg-background p-8 shadow-sm">
+                        <blockquote className="text-xl font-medium leading-relaxed text-primary">
+                            "Before NVG Dispatch, we were coordinating everything through WhatsApp and spreadsheets. Now the whole dispatch lifecycle is in one place."
+                        </blockquote>
+                        <p className="mt-5 text-sm font-semibold text-gray-700">
+                            Operations Manager, Container Trucking Company &mdash; Panabo, Davao
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">Anonymized until company approval.</p>
+                    </FadeInSection>
                 </div>
             </section>
 
             {/* 3. Product Screens Section */}
-            <section id="platform" className="py-24 bg-white relative">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="text-center mb-16 max-w-2xl mx-auto">
-                        <h2 className="text-3xl md:text-5xl font-bold text-primary mb-6">Platform Overview</h2>
-                        <p className="text-gray-600 text-lg">Centralize operations, verify documents, and dispatch smartly from one ecosystem.</p>
-                    </div>
+            <section id="platform" className="relative bg-white py-24">
+                <div className="mx-auto max-w-7xl px-6">
+                    <FadeInSection className="mx-auto mb-16 max-w-2xl text-center">
+                        <h2 className="mb-6 text-3xl font-bold text-primary md:text-5xl">Platform Overview</h2>
+                        <p className="text-lg text-gray-600">Centralize operations, verify documents, and dispatch smartly from one ecosystem.</p>
+                    </FadeInSection>
 
                     <div className="space-y-32">
-                        {[
-                            {
-                                title: "Dispatcher Dashboard",
-                                desc: "Monitor active trips, driver status, and document alerts from a centralized dispatch dashboard.",
-                                icon: Map,
-                                imgMock: "Dispatch trips table with status indicators."
-                            },
-                            {
-                                title: "Driver Mobile Workflow",
-                                desc: "Drivers execute trips step-by-step using a mobile interface that only shows the next valid action.",
-                                icon: Truck,
-                                reverse: true,
-                                mobile: true,
-                                imgMock: "Driver trip detail screen with the Next Action button."
-                            },
-                            {
-                                title: "Paperless Document Verification",
-                                desc: "Upload and verify WAYBILL, ATW, and POD documents digitally.",
-                                icon: ShieldCheck,
-                                imgMock: "Document verification page."
-                            },
-                            {
-                                title: "Customer Portal",
-                                desc: "Clients can submit shipment requests, track deliveries, and download proof of delivery.",
-                                icon: Users,
-                                reverse: true,
-                                anchorId: "customer-portal",
-                                imgMock: "Customer portal shipment tracking page."
-                            }
-                        ].map((feature, idx) => (
-                            <div
-                                key={idx}
-                                id={feature.anchorId}
-                                className={`flex flex-col ${feature.reverse ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-12 md:gap-24`}
+                        {productFeatures.map((feature, idx) => (
+                            <FadeInSection
+                                key={feature.title}
+                                delay={idx * 80}
+                                direction={feature.reverse ? "right" : "left"}
+                                className={`flex flex-col ${feature.reverse ? "md:flex-row-reverse" : "md:flex-row"} items-center gap-12 md:gap-24`}
                             >
-                                <div className="flex-1 space-y-6">
-                                    <div className="w-16 h-16 bg-background rounded-2xl flex items-center justify-center text-accent">
+                                <div id={feature.anchorId} className="flex-1 space-y-6">
+                                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-background text-accent">
                                         <feature.icon size={32} />
                                     </div>
                                     <h3 className="text-3xl font-bold text-primary">{feature.title}</h3>
-                                    <p className="text-lg text-gray-600 leading-relaxed">{feature.desc}</p>
+                                    <p className="text-lg leading-relaxed text-gray-600">{feature.desc}</p>
                                 </div>
-                                <div className={`flex-1 w-full ${feature.mobile ? 'md:w-1/2 flex justify-center' : ''}`}>
-                                    <div className={`bg-white border border-gray-200 shadow-xl shadow-primary/5 overflow-hidden flex items-center justify-center relative group
-                    ${feature.mobile ? 'rounded-[2rem] md:rounded-[2.5rem] w-full max-w-[320px] aspect-[9/19] p-4 border-8 border-gray-900 bg-gray-50' : 'rounded-2xl aspect-[16/10] p-2'}
-                  `}>
-                                        <div className="w-full h-full bg-gray-50 rounded-xl border border-gray-100 flex flex-col items-center justify-center p-8 text-center">
-                                            <div className="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center mb-4 text-gray-400 shadow-sm">
-                                                <feature.icon size={32} />
-                                            </div>
-                                            <p className="font-mono text-sm text-gray-500">{feature.imgMock}</p>
+                                <div className={`w-full flex-1 ${feature.mobile ? "flex justify-center md:w-1/2" : ""}`}>
+                                    <div
+                                        className={`relative flex items-center justify-center overflow-hidden border border-gray-200 bg-white shadow-xl shadow-primary/5 group ${
+                                            feature.mobile ? "aspect-[9/19] w-full max-w-[320px] rounded-[2rem] border-8 border-gray-900 bg-gray-50 p-4 md:rounded-[2.5rem]" : "aspect-[16/10] rounded-2xl p-4"
+                                        }`}
+                                    >
+                                        <div className="flex h-full w-full flex-col items-center justify-center rounded-xl border border-gray-100 bg-gray-50 p-6 text-center">
+                                            <FeatureMock feature={feature} />
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            </FadeInSection>
                         ))}
                     </div>
                 </div>
             </section>
 
             {/* 4. Workflow Section */}
-            <section id="workflow" className="py-24 bg-primary text-white">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-5xl font-bold mb-4">How NVG Dispatch Works</h2>
-                        <p className="text-muted-foreground text-lg">5-step operational workflow for end-to- natural logistics.</p>
-                    </div>
+            <section id="workflow" ref={workflowRef} className="bg-primary py-24 text-white">
+                <div className="mx-auto max-w-7xl px-6">
+                    <FadeInSection className="mb-16 text-center">
+                        <h2 className="mb-4 text-3xl font-bold md:text-5xl">How NVG Dispatch Works</h2>
+                        <p className="text-lg text-muted-foreground">End-to-end logistics operations for container trucking companies.</p>
+                    </FadeInSection>
 
                     <div className="relative">
-                        <div className="hidden md:block absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-primary via-accent/50 to-primary -translate-y-1/2" />
+                        <div
+                            className={`absolute left-0 top-1/2 hidden h-0.5 w-full origin-left -translate-y-1/2 bg-gradient-to-r from-primary via-accent/50 to-primary md:block ${
+                                prefersReducedMotion ? "" : "transition-transform duration-[800ms] ease-out"
+                            } ${
+                                workflowLineVisible ? "scale-x-100" : "scale-x-0"
+                            }`}
+                        />
 
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-                            {[
-                                { title: "Client Request", desc: "Customer submits shipment request", icon: Users },
-                                { title: "Dispatch", desc: "Dispatcher plans and dispatches trip", icon: Map },
-                                { title: "Execution", desc: "Driver executes pickup and delivery", icon: Truck },
-                                { title: "Verification", desc: "Documents uploaded and verified", icon: ShieldCheck },
-                                { title: "Completion", desc: "Customer downloads proof of delivery", icon: FileText }
-                            ].map((step, idx) => (
-                                <div key={idx} className="relative z-10 flex flex-col items-center text-center group">
-                                    <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-white/10 shadow-lg flex items-center justify-center text-accent mb-6 group-hover:scale-110 group-hover:bg-accent group-hover:text-white group-hover:border-accent transition-all duration-300">
+                        <div className="grid grid-cols-1 gap-8 md:grid-cols-5">
+                            {workflowSteps.map((step, idx) => (
+                                <FadeInSection key={step.title} delay={idx * 100} className="relative z-10 flex flex-col items-center text-center group">
+                                    <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-accent shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:border-accent group-hover:bg-accent group-hover:text-white">
                                         <step.icon size={28} />
                                     </div>
-                                    <h4 className="font-bold text-white mb-2">{step.title}</h4>
-                                    <p className="text-sm text-muted-foreground max-w-[180px] leading-snug">{step.desc}</p>
-                                </div>
+                                    <h4 className="mb-2 font-bold text-white">{step.title}</h4>
+                                    <p className="max-w-[180px] text-sm leading-snug text-muted-foreground">{step.desc}</p>
+                                </FadeInSection>
                             ))}
                         </div>
                     </div>
@@ -337,112 +592,116 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
             </section>
 
             {/* 5. Platform Features */}
-            <section className="py-24 bg-background">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {[
-                            { title: "Smart Dispatch Scheduling", desc: "Prevent driver and truck double-booking.", icon: Clock },
-                            { title: "Real-Time Fleet Visibility", desc: "Track trip status from dispatch to delivery.", icon: Activity },
-                            { title: "Paperless Logistics", desc: "Digitize WAYBILL, ATW, and POD documents.", icon: FileText },
-                            { title: "Customer Shipment Portal", desc: "Provide customers real-time shipment visibility.", icon: Users },
-                        ].map((feature, idx) => (
-                            <div key={idx} className="bg-white p-8 rounded-2xl border border-gray-200 hover:border-primary/20 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                                <div className="w-12 h-12 bg-background rounded-xl flex items-center justify-center text-primary mb-6">
+            <section className="bg-background py-24">
+                <div className="mx-auto max-w-7xl px-6">
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                        {platformFeatures.map((feature, idx) => (
+                            <FadeInSection
+                                key={feature.title}
+                                delay={idx * 80}
+                                className="rounded-2xl border border-gray-200 bg-white p-8 transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl"
+                            >
+                                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-background text-primary">
                                     <feature.icon size={24} />
                                 </div>
-                                <h3 className="text-xl font-bold text-primary mb-3 leading-tight">{feature.title}</h3>
-                                <p className="text-gray-600 text-sm leading-relaxed">{feature.desc}</p>
-                            </div>
+                                <h3 className="mb-3 text-xl font-bold leading-tight text-primary">{feature.title}</h3>
+                                <p className="text-sm leading-relaxed text-gray-600">{feature.desc}</p>
+                            </FadeInSection>
                         ))}
                     </div>
                 </div>
             </section>
 
             {/* 6. Operations Credibility Section */}
-            <section className="py-24 bg-white border-y border-gray-100">
-                <div className="max-w-4xl mx-auto px-6 text-center">
-                    <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center text-primary mx-auto mb-8">
+            <section className="border-y border-gray-100 bg-white py-24">
+                <FadeInSection className="mx-auto max-w-4xl px-6 text-center">
+                    <div className="mx-auto mb-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/5 text-primary">
                         <Layers size={32} />
                     </div>
-                    <h2 className="text-3xl md:text-5xl font-bold text-primary mb-12">Built for Real Dispatch Operations</h2>
+                    <h2 className="mb-12 text-3xl font-bold text-primary md:text-5xl">Built for Real Dispatch Operations</h2>
 
-                    <div className="bg-background rounded-2xl p-8 md:p-12 text-left border border-gray-100 shadow-sm">
-                        <ul className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="rounded-2xl border border-gray-100 bg-background p-8 text-left shadow-sm md:p-12">
+                        <ul className="grid grid-cols-1 gap-6 md:grid-cols-2">
                             {[
                                 "Prevent driver and truck scheduling conflicts",
                                 "Enforce dispatch lifecycle rules",
                                 "Paperless WAYBILL / ATW / POD workflows",
                                 "Customer shipment request portal",
-                                "Full trip history and audit logging"
+                                "Full trip history and audit logging",
+                                "Post-delivery heuristic recommendations",
+                                "Versioned document upload and verification"
                             ].map((point, idx) => (
-                                <li key={idx} className="flex items-start gap-4">
-                                    <div className="mt-1 w-6 h-6 rounded-full bg-accent/10 flex flex-shrink-0 items-center justify-center text-accent">
-                                        <CheckCircle2 size={16} />
-                                    </div>
-                                    <span className="text-gray-800 font-medium leading-relaxed">{point}</span>
+                                <li key={point}>
+                                    <FadeInSection delay={idx * 60} className="flex items-start gap-4">
+                                        <div className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+                                            <CheckCircle2 size={16} />
+                                        </div>
+                                        <span className="font-medium leading-relaxed text-gray-800">{point}</span>
+                                    </FadeInSection>
                                 </li>
                             ))}
                         </ul>
                     </div>
-                </div>
+                </FadeInSection>
             </section>
 
             {/* 7. Call To Action */}
-            <section className="py-32 bg-[#eef1f6] relative overflow-hidden">
+            <section className="relative overflow-hidden bg-[#eef1f6] py-32">
                 <div className="absolute inset-0 bg-accent/[0.02]" />
-                <div className="max-w-4xl mx-auto px-6 relative z-10 text-center">
-                    <h2 className="text-4xl md:text-6xl font-extrabold text-primary mb-8 tracking-tight">
-                        Start Modernizing Your Dispatch Operations
+                <FadeInSection direction="up" className="relative z-10 mx-auto max-w-4xl px-6 text-center">
+                    <h2 className="mb-8 text-4xl font-extrabold text-primary md:text-6xl">
+                        Ready to Replace Your WhatsApp Dispatch Board?
                     </h2>
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <Link
-                            to="/login"
-                            className="bg-accent text-white px-8 py-4 rounded-xl font-medium hover:bg-accent/90 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-accent/20 text-lg"
+                    <div className="flex flex-col justify-center gap-4 sm:flex-row">
+                        <button
+                            type="button"
+                            onClick={openDemo}
+                            className="rounded-xl bg-accent px-8 py-4 text-lg font-medium text-white shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/90 active:scale-95"
                         >
                             Request Demo
-                        </Link>
+                        </button>
                         <Link
                             to="/login"
-                            className="bg-white text-primary border border-gray-200 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 hover:scale-105 active:scale-95 transition-all shadow-sm text-lg text-center"
+                            className="rounded-xl border border-gray-200 bg-white px-8 py-4 text-center text-lg font-medium text-primary shadow-sm transition-all hover:scale-105 hover:bg-gray-50 active:scale-95"
                         >
                             Login
                         </Link>
                     </div>
-                </div>
+                </FadeInSection>
             </section>
 
             {/* 8. Footer */}
-            <footer className="bg-slate-900 text-white pt-20 pb-10 px-6 mt-auto">
-                <div className="max-w-7xl mx-auto">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-12 mb-16">
+            <footer className="mt-auto bg-slate-900 px-6 pb-10 pt-20 text-white">
+                <div className="mx-auto max-w-7xl">
+                    <div className="mb-16 grid grid-cols-1 gap-12 md:grid-cols-5">
                         <div className="col-span-1 md:col-span-2">
-                            <div className="flex items-center gap-2 mb-6">
-                                <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center font-bold text-white">
+                            <div className="mb-6 flex items-center gap-2">
+                                <div className="flex h-8 w-8 items-center justify-center rounded bg-white/10 font-bold text-white">
                                     N
                                 </div>
-                                <span className="font-bold text-xl tracking-tight">NVG Dispatch</span>
+                                <span className="text-xl font-bold">NVG Dispatch</span>
                             </div>
-                            <p className="text-muted-foreground text-sm mb-8 max-w-sm">
-                                Paperless Drayage Dispatch for Modern Logistics.
+                            <p className="mb-8 max-w-sm text-sm text-muted-foreground">
+                                Paperless container dispatch for Mindanao trucking companies.
                             </p>
-                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-green-400">
-                                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                                System Operational ●
+                            <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs text-green-400">
+                                <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                                System Operational
                             </div>
                         </div>
 
                         <div>
-                            <h4 className="font-bold mb-6 text-white uppercase text-xs tracking-wider">Platform</h4>
-                            <ul className="space-y-4 text-muted-foreground text-sm font-medium">
-                                <li><a href="#" className="hover:text-white transition-colors">Features</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">Workflow</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">Integrations</a></li>
+                            <h4 className="mb-6 text-xs font-bold uppercase tracking-wider text-white">Platform</h4>
+                            <ul className="space-y-4 text-sm font-medium text-muted-foreground">
+                                <li><a href="#platform" className="hover:text-white transition-colors">Features</a></li>
+                                <li><a href="#workflow" className="hover:text-white transition-colors">Workflow</a></li>
+                                <li><a href="#platform" className="hover:text-white transition-colors">Integrations</a></li>
                             </ul>
                         </div>
 
                         <div>
-                            <h4 className="font-bold mb-6 text-white uppercase text-xs tracking-wider">Customer Portal</h4>
-                            <ul className="space-y-4 text-muted-foreground text-sm font-medium">
+                            <h4 className="mb-6 text-xs font-bold uppercase tracking-wider text-white">Customer Portal</h4>
+                            <ul className="space-y-4 text-sm font-medium text-muted-foreground">
                                 <li><Link to="/login" className="hover:text-white transition-colors">Submit Request</Link></li>
                                 <li><Link to="/login" className="hover:text-white transition-colors">Track Shipment</Link></li>
                                 <li><Link to="/login" className="hover:text-white transition-colors">Download Documents</Link></li>
@@ -450,94 +709,27 @@ export default function LandingPage({ initialLoginOpen = false }: LandingPagePro
                         </div>
 
                         <div>
-                            <h4 className="font-bold mb-6 text-white uppercase text-xs tracking-wider">Support</h4>
-                            <ul className="space-y-4 text-muted-foreground text-sm font-medium">
-                                <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-                                <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
+                            <h4 className="mb-6 text-xs font-bold uppercase tracking-wider text-white">Support</h4>
+                            <ul className="space-y-4 text-sm font-medium text-muted-foreground">
+                                <li><a href="#platform" className="hover:text-white transition-colors">Help Center</a></li>
+                                <li><a href="#workflow" className="hover:text-white transition-colors">Documentation</a></li>
                                 <li><Link to="/login" className="text-accent hover:text-white transition-colors">Login</Link></li>
                             </ul>
                         </div>
                     </div>
 
-                    <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-muted-foreground text-xs">
-                        <p>© {new Date().getFullYear()} NVG Dispatch. All rights reserved.</p>
+                    <div className="flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 text-xs text-muted-foreground md:flex-row">
+                        <p>&copy; {new Date().getFullYear()} NVG Dispatch. All rights reserved.</p>
                         <div className="flex gap-6">
-                            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-                            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+                            <a href="#platform" className="hover:text-white transition-colors">Privacy Policy</a>
+                            <a href="#workflow" className="hover:text-white transition-colors">Terms of Service</a>
                         </div>
                     </div>
                 </div>
             </footer>
 
-            {loginOpen ? (
-                <div
-                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
-                    role="presentation"
-                    onClick={closeLogin}
-                >
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        className="w-[min(92vw,520px)] rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <p className="text-xs uppercase tracking-[0.25em] text-gray-400">Sign In</p>
-                                <h2 className="mt-2 text-2xl font-semibold text-primary">Welcome back</h2>
-                            </div>
-                            <button
-                                onClick={closeLogin}
-                                className="rounded-lg border border-gray-200 px-3 py-1 text-xs text-gray-500 hover:text-gray-900"
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleLogin} className="mt-6 space-y-4">
-                            {!mfaChallengeId ? (
-                                <>
-                                    <div>
-                                        <label className="text-xs uppercase text-gray-500">Username</label>
-                                        <input
-                                            value={username}
-                                            onChange={(e) => setUsername(e.target.value)}
-                                            className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs uppercase text-gray-500">Password</label>
-                                        <input
-                                            type="password"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
-                                        />
-                                    </div>
-                                </>
-                            ) : (
-                                <div>
-                                    <label className="text-xs uppercase text-gray-500">Authenticator code</label>
-                                    <input
-                                        value={mfaCode}
-                                        onChange={(e) => setMfaCode(e.target.value)}
-                                        inputMode="numeric"
-                                        autoComplete="one-time-code"
-                                        className="mt-1 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm"
-                                    />
-                                </div>
-                            )}
-                            <button
-                                type="submit"
-                                disabled={submitting}
-                                className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
-                            >
-                                {submitting ? "Signing in..." : mfaChallengeId ? "Verify" : "Sign in"}
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            ) : null}
+            <DemoRequestModal open={demoOpen} onClose={closeDemo} />
+            <LoginModal />
         </div>
     );
 }

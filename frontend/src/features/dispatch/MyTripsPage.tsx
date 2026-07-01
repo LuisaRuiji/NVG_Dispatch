@@ -10,7 +10,7 @@ import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import type { DispatchTripListItem } from "./types";
-import { statusLabels } from "./types";
+import { getDriverTripNextAction } from "./driverTripUi";
 
 type StatusScope = "ACTIVE" | "ALL";
 
@@ -105,19 +105,25 @@ export default function MyTripsPage() {
         <div className="grid gap-4">
           {trips.map((trip) => (
             <div key={trip.id} className="surface-card p-5">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-2">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <h3 className="text-base font-semibold text-foreground">
                       Trip {trip.id.slice(0, 8)}
                     </h3>
-                    <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
+                    <StatusBadge status={trip.status} />
                   </div>
+                  <p className="text-sm font-medium text-foreground">{getDriverTripNextAction(trip)}</p>
                   <p className="text-sm text-muted-foreground">
                     Customer: {trip.customer?.name ?? "-"}
                   </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => nav(`/dispatch/my-trips/${trip.id}`)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-12 w-full sm:h-9 sm:w-auto"
+                  onClick={() => nav(`/dispatch/my-trips/${trip.id}`)}
+                >
                   Open
                 </Button>
               </div>

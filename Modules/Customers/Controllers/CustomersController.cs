@@ -12,7 +12,7 @@ namespace NVGInventory.Modules.Customers.Controllers;
 
 [ApiController]
 [Route("api/admin/customers")]
-[Authorize(Roles = RoleNames.Manager + "," + RoleNames.Dispatcher)]
+[Authorize(Roles = RoleNames.Dispatcher + "," + RoleNames.Manager + "," + RoleNames.Admin + "," + RoleNames.SuperAdmin)]
 public sealed class CustomersController : ControllerBase
 {
     private readonly InventoryDbContext _dbContext;
@@ -106,6 +106,7 @@ public sealed class CustomersController : ControllerBase
             cancellationToken);
 
         user.CustomerId = customerId;
+        user.MustChangePassword = true;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _userService.AssignRoleAsync(user.Id, RoleNames.Customer, cancellationToken);

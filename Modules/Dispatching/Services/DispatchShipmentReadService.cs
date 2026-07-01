@@ -34,6 +34,7 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
             .Take(pageSize)
             .Select(trip => new DispatchCustomerShipmentListItem(
                 trip.Id,
+                trip.ContainerNumber,
                 _dbContext.DispatchTripStops
                     .Where(stop => stop.TripId == trip.Id && stop.StopType == TripStopType.Pickup)
                     .Select(stop => stop.LocationText)
@@ -93,9 +94,18 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
             .Where(doc => doc.TripId == trip.Id && doc.IsActive && doc.Type == TripDocumentType.Pod)
             .Select(doc => (TripDocumentState?)doc.State)
             .FirstOrDefaultAsync(cancellationToken) ?? TripDocumentState.Missing;
+        var atwState = await _dbContext.DispatchTripDocuments
+            .AsNoTracking()
+            .Where(doc => doc.TripId == trip.Id && doc.IsActive && doc.Type == TripDocumentType.Atw)
+            .Select(doc => (TripDocumentState?)doc.State)
+            .FirstOrDefaultAsync(cancellationToken) ?? TripDocumentState.Missing;
+        var waybillGenerated = await _dbContext.GeneratedWaybills
+            .AsNoTracking()
+            .AnyAsync(waybill => waybill.TripId == trip.Id && waybill.IsActive, cancellationToken);
 
         return new DispatchCustomerShipmentDetail(
             trip.Id,
+            trip.ContainerNumber,
             trip.Status,
             pickupLocation,
             dropoffLocation,
@@ -103,6 +113,8 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
             dropoffTime,
             deliveredTime,
             podState,
+            atwState,
+            waybillGenerated,
             trip.Stops
                 .OrderBy(stop => stop.StopType)
                 .Select(stop => new DispatchCustomerShipmentStop(
@@ -154,9 +166,10 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
             throw new NotFoundException("Shipment not found.");
         }
 
+        var visibleTypes = new[] { TripDocumentType.Atw, TripDocumentType.Pod };
         var docs = await _dbContext.DispatchTripDocuments
             .AsNoTracking()
-            .Where(doc => doc.TripId == tripId && doc.IsActive && doc.Type == TripDocumentType.Pod)
+            .Where(doc => doc.TripId == tripId && doc.IsActive && visibleTypes.Contains(doc.Type))
             .OrderByDescending(doc => doc.UploadedAt)
             .Select(doc => new DispatchCustomerShipmentDocument(
                 doc.Type,

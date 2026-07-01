@@ -13,7 +13,18 @@ import type {
   CustomerShipmentDocument,
   CustomerShipmentTimelineEntry
 } from "./types";
-import { statusLabels } from "@/features/dispatch/types";
+import { statusLabels, type TripStatus } from "@/features/dispatch/types";
+import { CheckCircle2, Circle, FileText } from "lucide-react";
+
+const trackingSteps: TripStatus[] = [
+  "DISPATCHED",
+  "ENROUTE_PICKUP",
+  "AT_PICKUP",
+  "LOADED",
+  "ENROUTE_DROPOFF",
+  "AT_DROPOFF",
+  "DELIVERED"
+];
 
 export default function PortalShipmentDetailPage() {
   const { id } = useParams();
@@ -63,6 +74,7 @@ export default function PortalShipmentDetailPage() {
   }
 
   const podDoc = documents.find((doc) => doc.type === "POD");
+  const atwDoc = documents.find((doc) => doc.type === "ATW");
 
   return (
     <div className="space-y-6">
@@ -90,30 +102,30 @@ export default function PortalShipmentDetailPage() {
         }
       />
 
-      <div className="surface-card p-6 space-y-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge status={statusLabels[detail.status] ?? detail.status} />
-          <span className="text-xs rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
-            POD: {detail.podState}
-          </span>
+      <div className="surface-card space-y-5 p-4 md:p-6">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Container</p>
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <h2 className="font-mono text-2xl font-semibold text-foreground">
+              {detail.containerNumber ?? "Container pending"}
+            </h2>
+            <StatusBadge status={statusLabels[detail.status] ?? detail.status} />
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">Trip {detail.tripId.slice(0, 8)}</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 text-sm">
-          <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-            <p className="text-xs uppercase text-muted-foreground">Pickup</p>
-            <p className="mt-1 text-foreground">{detail.pickupLocation}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {detail.pickupTime ? new Date(detail.pickupTime).toLocaleString() : "Unscheduled"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-            <p className="text-xs uppercase text-muted-foreground">Dropoff</p>
-            <p className="mt-1 text-foreground">{detail.dropoffLocation}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {detail.dropoffTime ? new Date(detail.dropoffTime).toLocaleString() : "Unscheduled"}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip label="ATW" value={detail.atwState === "MISSING" ? "Missing" : "Received"} />
+          <StatusChip label="Waybill" value={detail.waybillGenerated ? "Generated" : "Pending"} />
+          <StatusChip label="POD" value={detail.podState === "VERIFIED" ? "Verified" : "Pending"} />
         </div>
+
+        <div className="grid gap-4 text-sm md:grid-cols-2">
+          <ShipmentLocation label="Pickup" location={detail.pickupLocation} time={detail.pickupTime} />
+          <ShipmentLocation label="Dropoff" location={detail.dropoffLocation} time={detail.dropoffTime} />
+        </div>
+
+        <ShipmentProgressStepper status={detail.status} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
@@ -147,12 +159,13 @@ export default function PortalShipmentDetailPage() {
                 <EmptyState title="No events yet" description="Tracking updates will appear here." />
               </div>
             ) : (
-              <div className="mt-4 space-y-3 text-sm">
+              <div className="mt-4 space-y-0 border-l border-border/70 pl-4 text-sm md:space-y-3 md:border-l-0 md:pl-0">
                 {timeline.map((entry, index) => (
-                  <div key={`${entry.eventAt}-${index}`} className="rounded-lg border border-border/50 bg-muted/10 px-4 py-3">
+                  <div key={`${entry.eventAt}-${index}`} className="relative mb-4 rounded-lg border border-border/50 bg-muted/10 px-4 py-3 md:mb-0">
+                    <span className="absolute -left-[23px] top-4 h-3 w-3 rounded-full border-2 border-primary bg-background md:hidden" />
                     <p className="text-xs text-muted-foreground">{new Date(entry.eventAt).toLocaleString()}</p>
                     <p className="mt-2 text-foreground">
-                      {statusLabels[entry.fromStatus]} → {statusLabels[entry.toStatus]}
+                      {statusLabels[entry.fromStatus]} to {statusLabels[entry.toStatus]}
                     </p>
                   </div>
                 ))}
@@ -161,33 +174,125 @@ export default function PortalShipmentDetailPage() {
           </div>
 
           <div className="surface-card p-6">
-            <h3 className="text-sm font-semibold">POD Document</h3>
-            <p className="text-xs text-muted-foreground">Download proof of delivery once available.</p>
-            {podDoc ? (
-              <div className="mt-4 rounded-lg border border-border/50 bg-muted/10 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">POD</p>
-                    <p className="text-xs text-muted-foreground">
-                      Status: {podDoc.state} • Uploaded {new Date(podDoc.uploadedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(podDoc.storageKey, "_blank", "noopener,noreferrer")}
-                  >
-                    Download
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4">
-                <EmptyState title="POD not available" description="The POD will appear after delivery." />
-              </div>
-            )}
+            <h3 className="text-sm font-semibold">Documents</h3>
+            <p className="text-xs text-muted-foreground">Document status is view only after submission.</p>
+            <div className="mt-4 space-y-3">
+              <CustomerDocumentRow
+                label="ATW"
+                status={detail.atwState === "MISSING" ? "Missing" : "Received"}
+                doc={atwDoc}
+              />
+              <CustomerDocumentRow
+                label="Waybill"
+                status={detail.waybillGenerated ? "Generated" : "Pending"}
+              />
+              <CustomerDocumentRow
+                label="POD"
+                status={detail.podState === "VERIFIED" ? "Verified" : "Pending"}
+                doc={podDoc}
+              />
+            </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="rounded-full border border-border bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+      {label}: {value}
+    </span>
+  );
+}
+
+function ShipmentProgressStepper({ status }: { status: TripStatus }) {
+  const currentIndex = status === "CLOSED" ? trackingSteps.length - 1 : trackingSteps.indexOf(status);
+
+  return (
+    <div className="rounded-2xl border border-border bg-muted/20 p-4">
+      <h3 className="text-sm font-semibold text-foreground">Shipment Progress</h3>
+      <div className="mt-4">
+        {trackingSteps.map((step, index) => {
+          const isComplete = currentIndex >= 0 && index < currentIndex;
+          const isCurrent = index === currentIndex;
+          const isPastOrCurrent = isComplete || isCurrent || status === "CLOSED";
+
+          return (
+            <div key={step} className="grid grid-cols-[2rem_1fr] gap-3 pb-4 last:pb-0">
+              <div className="flex flex-col items-center">
+                <span
+                  className={`grid h-7 w-7 place-items-center rounded-full border ${
+                    isPastOrCurrent
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground"
+                  }`}
+                >
+                  {isPastOrCurrent ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-3 w-3" />}
+                </span>
+                {index < trackingSteps.length - 1 ? (
+                  <span className={`mt-1 h-full min-h-5 w-px ${isComplete ? "bg-primary" : "bg-border"}`} />
+                ) : null}
+              </div>
+              <div>
+                <p className={`text-sm font-semibold ${isCurrent ? "text-foreground" : "text-muted-foreground"}`}>
+                  {statusLabels[step]}
+                </p>
+                {isCurrent ? <p className="mt-0.5 text-xs text-muted-foreground">Current shipment status</p> : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ShipmentLocation({ label, location, time }: { label: string; location: string; time?: string | null }) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+      <p className="text-xs uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 text-foreground">{location}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {time ? new Date(time).toLocaleString() : "Unscheduled"}
+      </p>
+    </div>
+  );
+}
+
+function CustomerDocumentRow({
+  label,
+  status,
+  doc
+}: {
+  label: string;
+  status: string;
+  doc?: CustomerShipmentDocument;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-muted/10 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <FileText className="h-4 w-4 shrink-0 text-primary" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">{label}</p>
+            <p className="text-xs text-muted-foreground">
+              Status: {status}
+              {doc?.uploadedAt ? ` - Uploaded ${new Date(doc.uploadedAt).toLocaleString()}` : ""}
+            </p>
+          </div>
+        </div>
+        {doc?.storageKey ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-11 w-full sm:h-9 sm:w-auto"
+            onClick={() => window.open(doc.storageKey, "_blank", "noopener,noreferrer")}
+          >
+            View
+          </Button>
+        ) : null}
       </div>
     </div>
   );

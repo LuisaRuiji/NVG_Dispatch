@@ -52,6 +52,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             item.PickupLocation,
             item.DropoffLocation,
             item.RequestedPickupTime,
+            item.ContainerSize,
+            item.TripType,
+            item.ContainerNumber,
+            item.ShippingLine,
+            item.BookingNumber,
             item.DocumentsCount,
             item.CreatedAt,
             item.ApprovedAt,
@@ -75,6 +80,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             request.PickupLocation,
             request.DropoffLocation,
             request.RequestedPickupTime,
+            request.ContainerSize,
+            request.TripType,
+            request.ContainerNumber,
+            request.ShippingLine,
+            request.BookingNumber,
             request.CargoDescription,
             request.CargoWeight,
             request.SpecialInstructions,
@@ -96,6 +106,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             request.PickupLocation,
             request.DropoffLocation,
             request.RequestedPickupTime,
+            request.ContainerSize,
+            request.TripType,
+            request.ContainerNumber,
+            request.ShippingLine,
+            request.BookingNumber,
             request.CargoDescription,
             request.CargoWeight,
             request.SpecialInstructions,
@@ -137,6 +152,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             detail.PickupLocation,
             detail.DropoffLocation,
             detail.RequestedPickupTime,
+            detail.ContainerSize,
+            detail.TripType,
+            detail.ContainerNumber,
+            detail.ShippingLine,
+            detail.BookingNumber,
             detail.CargoDescription,
             detail.CargoWeight,
             detail.SpecialInstructions,
@@ -238,6 +258,11 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             item.PickupLocation,
             item.DropoffLocation,
             item.RequestedPickupTime,
+            item.ContainerSize,
+            item.TripType,
+            item.ContainerNumber,
+            item.ShippingLine,
+            item.BookingNumber,
             item.DocumentsCount,
             item.CreatedAt)).ToList();
 
@@ -351,6 +376,7 @@ public sealed class PortalShipmentsController : ControllerBase
 
         var items = result.Items.Select(item => new CustomerShipmentListItemResponse(
             item.TripId,
+            item.ContainerNumber,
             item.PickupLocation,
             item.DropoffLocation,
             item.Status,
@@ -380,6 +406,7 @@ public sealed class PortalShipmentsController : ControllerBase
 
         return Ok(new CustomerShipmentDetailResponse(
             detail.TripId,
+            detail.ContainerNumber,
             detail.Status,
             detail.PickupLocation,
             detail.DropoffLocation,
@@ -387,6 +414,8 @@ public sealed class PortalShipmentsController : ControllerBase
             detail.DropoffTime,
             detail.DeliveredTime,
             detail.PodState,
+            detail.AtwState,
+            detail.WaybillGenerated,
             stops));
     }
 

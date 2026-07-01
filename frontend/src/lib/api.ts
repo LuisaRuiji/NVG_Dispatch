@@ -10,6 +10,10 @@ export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
+export function getAccessToken() {
+  return accessToken;
+}
+
 export function setUnauthorizedHandler(handler: (() => boolean | Promise<boolean>) | null) {
   onUnauthorized = handler;
 }
@@ -42,6 +46,10 @@ export class ApiRequestError extends Error {
     this.validationErrors = payload?.errors;
     this.raw = raw;
   }
+}
+
+export function isApiNotFound(error: unknown) {
+  return error instanceof ApiRequestError && error.status === 404;
 }
 
 function normalizePayload(raw: string): ApiErrorPayload | null {
@@ -108,6 +116,18 @@ export async function api<T>(path: string, init: RequestInitEx = {}): Promise<T>
 
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+export async function apiOptional<T>(path: string, init: RequestInitEx = {}): Promise<T | null> {
+  try {
+    return await api<T>(path, init);
+  } catch (error) {
+    if (isApiNotFound(error)) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function downloadFile(path: string, filename: string) {

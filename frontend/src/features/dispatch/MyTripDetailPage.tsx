@@ -7,11 +7,24 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
-import { api } from "@/lib/api";
-import type { DispatchTripDetail, TripDocumentType, TripStatus } from "./types";
+import { api, apiOptional } from "@/lib/api";
+import { captureDocumentPhoto } from "@/lib/camera";
+import type { DispatchTripDetail, GeneratedWaybill, TripDocumentType, TripStatus } from "./types";
 import { operationalFlow, statusLabels } from "./types";
+import {
+  canDriverUploadDocument,
+  formatDocumentLabel,
+  formatDocumentStateLabel,
+  getDocumentState,
+  getDriverTripNextAction,
+  getPrimaryDriverUploadType,
+  isDocumentAttentionState
+} from "./driverTripUi";
+import { Capacitor } from "@capacitor/core";
+import { AlertTriangle, Camera, FileUp } from "lucide-react";
 
-const docTypes: TripDocumentType[] = ["WAYBILL", "POD", "ATW"];
+const uploadableDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD"];
+const visibleDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD", "WAYBILL"];
 const driverHoldEligible: TripStatus[] = [
   "ENROUTE_PICKUP",
   "AT_PICKUP",
@@ -27,12 +40,12 @@ const failedAttemptEligible: TripStatus[] = [
 ];
 const driverActionMap: Record<TripStatus, { endpoint: string; label: string } | null> = {
   DRAFT: null,
-  DISPATCHED: { endpoint: "start", label: "Start Trip" },
-  ENROUTE_PICKUP: { endpoint: "arrive-pickup", label: "Arrive Pickup" },
-  AT_PICKUP: { endpoint: "confirm-loaded", label: "Confirm Loaded" },
-  LOADED: { endpoint: "depart-pickup", label: "Depart Pickup" },
-  ENROUTE_DROPOFF: { endpoint: "arrive-dropoff", label: "Arrive Dropoff" },
-  AT_DROPOFF: { endpoint: "confirm-delivery", label: "Confirm Delivery" },
+  DISPATCHED: { endpoint: "start", label: "Start pickup" },
+  ENROUTE_PICKUP: { endpoint: "arrive-pickup", label: "Arrive pickup" },
+  AT_PICKUP: { endpoint: "confirm-loaded", label: "Confirm loaded" },
+  LOADED: { endpoint: "depart-pickup", label: "Depart pickup" },
+  ENROUTE_DROPOFF: { endpoint: "arrive-dropoff", label: "Arrive dropoff" },
+  AT_DROPOFF: { endpoint: "confirm-delivery", label: "Confirm delivery" },
   DELIVERED: null,
   CLOSED: null,
   CANCELLED: null,
@@ -65,13 +78,11 @@ export default function MyTripDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [trip, setTrip] = useState<DispatchTripDetail | null>(null);
+  const [generatedWaybill, setGeneratedWaybill] = useState<GeneratedWaybill | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [modal, setModal] = useState<ActionModal>(null);
-  const fileInputs = useRef<Record<TripDocumentType, HTMLInputElement | null>>({
-    WAYBILL: null,
-    POD: null,
-    ATW: null
-  });
+  const fileInputs = useRef<Partial<Record<TripDocumentType, HTMLInputElement | null>>>({});
+  const isNative = Capacitor.isNativePlatform();
 
   const fetchTrip = async () => {
     if (!id) return;
@@ -79,6 +90,8 @@ export default function MyTripDetailPage() {
       setLoading(true);
       const detail = await api<DispatchTripDetail>(`/api/dispatch/my-trips/${id}`, { method: "GET" });
       setTrip(detail);
+      const waybill = await apiOptional<GeneratedWaybill>(`/api/dispatch/trips/${id}/waybill`, { method: "GET" });
+      setGeneratedWaybill(waybill);
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to load trip detail.", "error");
@@ -151,7 +164,51 @@ export default function MyTripDetailPage() {
   const handleFileUpload = (docType: TripDocumentType, files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
-    void handleUploadDoc(docType, file.name);
+    void handleUploadFile(docType, file);
+  };
+
+  const handleUploadFile = async (docType: TripDocumentType, file: File) => {
+    await handleUploadDoc(docType, file.name);
+  };
+
+  const handleUploadClick = async (docType: TripDocumentType) => {
+    if (isNative) {
+      const file = await captureDocumentPhoto();
+      if (file) {
+        await handleUploadFile(docType, file);
+        return;
+      }
+    }
+
+    fileInputs.current[docType]?.click();
+  };
+
+  const canUploadDocument = (docType: TripDocumentType) => {
+    return trip ? canDriverUploadDocument(docType, trip.status) : false;
+  };
+
+  const documentHint = (docType: TripDocumentType) => {
+    if (!trip) return null;
+    if (docType === "ATW") {
+      const atwState = getDocumentState(trip.documents, "ATW");
+      if (atwState === "MISSING") return "Upload a clear ATW document for this trip.";
+      if (atwState === "REJECTED") return "ATW was rejected. Upload a clearer copy.";
+      if (atwState === "UPLOADED") return "Waiting for dispatcher verification.";
+      return null;
+    }
+    if (docType === "WAYBILL") {
+      return generatedWaybill ? "Waybill ready" : "Waybill not yet generated";
+    }
+    if ((docType === "EIR" || docType === "GATE_PASS") && !isStatusAtLeast(trip.status, "AT_PICKUP")) {
+      return "Awaiting pickup";
+    }
+    if (docType === "DR" && !isStatusAtLeast(trip.status, "AT_DROPOFF")) {
+      return "Awaiting dropoff";
+    }
+    if (docType === "POD" && !isStatusAtLeast(trip.status, "DELIVERED")) {
+      return "Available after delivery";
+    }
+    return null;
   };
 
   if (loading) {
@@ -167,8 +224,21 @@ export default function MyTripDetailPage() {
     return <EmptyState title="Trip not found" description="The trip detail could not be loaded." />;
   }
 
+  const isFailedAttempt = trip.status === "FAILED_ATTEMPT";
+  const atwState = getDocumentState(trip.documents, "ATW");
+  const showAtwWarning = isDocumentAttentionState(atwState);
+  const canUploadAtw = canUploadDocument("ATW");
+  const primaryUploadType = getPrimaryDriverUploadType(trip);
+  const showDocumentCaptureCard = !isFailedAttempt && !(showAtwWarning && canUploadAtw);
+  const primaryUploadDoc = primaryUploadType
+    ? trip.documents.find((doc) => doc.type === primaryUploadType)
+    : null;
+  const primaryUploadHint = primaryUploadType
+    ? documentHint(primaryUploadType) ?? "Capture a clear photo or upload the document file for this trip."
+    : "Document capture unlocks as the trip reaches pickup, dropoff, or delivered status.";
+
   return (
-    <div className="space-y-6 pb-24 md:pb-6">
+    <div className="space-y-6 pb-6">
       <ToastHost toasts={toasts} />
       <PageHeader
         title={`Trip ${trip.id.slice(0, 8)}`}
@@ -193,6 +263,101 @@ export default function MyTripDetailPage() {
         }
       />
 
+      {showAtwWarning ? (
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              ATW is {formatDocumentStateLabel(atwState).toLowerCase()}.{" "}
+              {canUploadAtw
+                ? "Upload a clear ATW document before continuing."
+                : "A dispatcher or manager must resolve this before the trip can continue."}
+            </span>
+          </div>
+          {canUploadAtw ? (
+            <Button
+              className="h-12 w-full gap-2 text-base font-semibold"
+              disabled={actionLoading}
+              onClick={() => void handleUploadClick("ATW")}
+            >
+              {isNative ? <Camera className="h-5 w-5" /> : <FileUp className="h-5 w-5" />}
+              {isNative ? "Capture ATW" : "Upload ATW"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="surface-card border-primary/20 p-4 md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Current Status</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
+              {trip.podPending ? (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                  POD pending
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {nextAction ? `Next required action: ${nextAction.label}.` : getDriverTripNextAction(trip)}
+            </p>
+          </div>
+          {isFailedAttempt ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900 md:max-w-md">
+              This trip is blocked. A dispatcher or manager must resolve the failed attempt before you can continue.
+            </div>
+          ) : nextAction && operationalFlow.includes(trip.status) ? (
+            <Button
+              className="h-12 w-full text-base font-semibold md:w-auto"
+              onClick={() => handleDriverAction(nextAction.endpoint)}
+              disabled={actionLoading}
+            >
+              {nextAction.label}
+            </Button>
+          ) : null}
+        </div>
+        {!isFailedAttempt &&
+        (driverHoldEligible.includes(trip.status) || failedAttemptEligible.includes(trip.status)) ? (
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {driverHoldEligible.includes(trip.status) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11"
+                onClick={() =>
+                  setModal({
+                    type: "HOLD",
+                    remarks: "",
+                    eventAt: toLocalInput(new Date().toISOString())
+                  })
+                }
+                disabled={actionLoading}
+              >
+                Request Hold
+              </Button>
+            ) : null}
+            {failedAttemptEligible.includes(trip.status) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11"
+                onClick={() =>
+                  setModal({
+                    type: "FAILED",
+                    remarks: "",
+                    eventAt: toLocalInput(new Date().toISOString())
+                  })
+                }
+                disabled={actionLoading}
+              >
+                Report Failed Attempt
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
       <div className="surface-card p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -208,13 +373,41 @@ export default function MyTripDetailPage() {
           <div className="flex items-center gap-3">
             <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
             {trip.podPending ? (
-              <span className="text-xs rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">
-                POD Pending
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                POD pending
               </span>
             ) : null}
           </div>
         </div>
       </div>
+
+      {showDocumentCaptureCard ? (
+        <div className="surface-card border-primary/20 p-4 md:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                Driver Document Capture
+              </p>
+              <h3 className="mt-2 text-base font-semibold text-foreground">
+                {primaryUploadType ? formatDocumentLabel(primaryUploadType) : "No document ready to upload"}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">{primaryUploadHint}</p>
+            </div>
+            {primaryUploadType ? (
+              <Button
+                className="h-12 w-full gap-2 sm:w-auto"
+                disabled={actionLoading}
+                onClick={() => void handleUploadClick(primaryUploadType)}
+              >
+                {isNative ? <Camera className="h-5 w-5" /> : <FileUp className="h-5 w-5" />}
+                {`${isNative ? "Capture" : primaryUploadDoc ? "Replace" : "Upload"} ${formatDocumentLabel(
+                  primaryUploadType
+                )}`}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="surface-card p-6">
         <h3 className="text-sm font-semibold">Stops</h3>
@@ -268,49 +461,67 @@ export default function MyTripDetailPage() {
           </div>
         </div>
         <div className="mt-4 space-y-3 text-sm">
-          {docTypes.map((type) => {
+          {visibleDocTypes.map((type) => {
             const doc = trip.documents.find((d) => d.type === type);
-            const state = doc?.state ?? "MISSING";
-            const podLocked = type === "POD" && trip.status !== "DELIVERED";
+            const state = type === "WAYBILL" ? (generatedWaybill ? "READY" : "PENDING") : doc?.state ?? "MISSING";
+            const hint = documentHint(type);
+            const canUpload = canUploadDocument(type);
             return (
-              <div key={type} className="rounded-lg border border-border/60 bg-muted/10 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+              <div key={type} className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">{type}</p>
-                    <p className="text-xs text-muted-foreground">Status: {state}</p>
-                    {podLocked ? (
-                      <p className="mt-1 text-xs text-amber-600">POD upload is available after delivery.</p>
+                    <p className="text-sm font-semibold text-foreground">{formatDocumentLabel(type)}</p>
+                    <p className="text-xs text-muted-foreground">Status: {formatDocumentStateLabel(state)}</p>
+                    {hint ? (
+                      <p className="mt-1 text-xs text-amber-600">{hint}</p>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {doc?.storageKey ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                    {type === "WAYBILL" && generatedWaybill ? (
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-11 w-full sm:h-9 sm:w-auto"
+                        onClick={() => window.print()}
+                      >
+                        View
+                      </Button>
+                    ) : doc?.storageKey ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 w-full sm:h-9 sm:w-auto"
                         onClick={() => window.open(doc.storageKey, "_blank", "noopener,noreferrer")}
                       >
                         View
                       </Button>
                     ) : null}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={actionLoading || podLocked}
-                      onClick={() => fileInputs.current[type]?.click()}
-                    >
-                      {doc ? "Replace" : "Upload"}
-                    </Button>
-                    <input
-                      ref={(el) => {
-                        fileInputs.current[type] = el;
-                      }}
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        handleFileUpload(type, e.target.files);
-                        e.currentTarget.value = "";
-                      }}
-                    />
+                    {uploadableDocTypes.includes(type) && canUpload ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-12 w-full gap-2 sm:h-9 sm:w-auto"
+                          disabled={actionLoading}
+                          onClick={() => void handleUploadClick(type)}
+                        >
+                          {isNative ? <Camera className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
+                          {isNative ? "Photo" : doc ? "Replace" : "Upload"}
+                        </Button>
+                        <input
+                          ref={(el) => {
+                            fileInputs.current[type] = el;
+                          }}
+                          type="file"
+                          accept="image/*,.pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            handleFileUpload(type, e.target.files);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -319,58 +530,9 @@ export default function MyTripDetailPage() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-white/95 p-4 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">
-        <div className="space-y-3">
-          {nextAction && operationalFlow.includes(trip.status) ? (
-            <Button
-              className="h-12 w-full text-base font-semibold"
-              onClick={() => handleDriverAction(nextAction.endpoint)}
-              disabled={actionLoading}
-            >
-              {nextAction.label?.toUpperCase()}
-            </Button>
-          ) : (
-            <Button className="h-12 w-full text-base font-semibold" variant="outline" disabled>
-              No pending actions
-            </Button>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setModal({
-                  type: "HOLD",
-                  remarks: "",
-                  eventAt: toLocalInput(new Date().toISOString())
-                })
-              }
-              disabled={actionLoading || !driverHoldEligible.includes(trip.status)}
-            >
-              Request Hold
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setModal({
-                  type: "FAILED",
-                  remarks: "",
-                  eventAt: toLocalInput(new Date().toISOString())
-                })
-              }
-              disabled={actionLoading || !failedAttemptEligible.includes(trip.status)}
-            >
-              Report Failed Attempt
-            </Button>
-          </div>
-        </div>
-      </div>
-
       {modal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setModal(null)}
           role="presentation"
         >
           <div
@@ -439,4 +601,19 @@ export default function MyTripDetailPage() {
       ) : null}
     </div>
   );
+}
+
+function isStatusAtLeast(current: TripStatus, required: TripStatus) {
+  const order: TripStatus[] = [
+    "DRAFT",
+    "DISPATCHED",
+    "ENROUTE_PICKUP",
+    "AT_PICKUP",
+    "LOADED",
+    "ENROUTE_DROPOFF",
+    "AT_DROPOFF",
+    "DELIVERED",
+    "CLOSED"
+  ];
+  return order.indexOf(current) >= order.indexOf(required);
 }

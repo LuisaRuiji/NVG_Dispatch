@@ -1,0 +1,201 @@
+@startuml VAIA_Core_Use_Case_Diagram
+title VAIA Core Use Case Diagram - Dispatch Operations
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  ArrowColor #334155
+}
+
+actor "Customer" as Customer
+actor "Driver" as Driver
+actor "Dispatcher" as Dispatcher
+actor "Manager" as Manager
+actor "Head of Finance" as Finance
+actor "Admin" as Admin
+actor "CEO" as CEO
+actor "SuperAdmin" as SuperAdmin
+
+rectangle "VAIA Trucking Operations Management System" as VAIA {
+  package "Identity & Access" {
+    usecase "Sign in / refresh session" as UC_Auth
+    usecase "Manage users, roles,\nand customer accounts" as UC_ManageUsers
+    usecase "Force password change\nfor new customers" as UC_ForcePasswordChange
+    usecase "View role-scoped\naudit logs" as UC_AuditLogs
+  }
+
+  package "Shipment Requests" {
+    usecase "Create or update\nshipment request draft" as UC_RequestDraft
+    usecase "Upload optional ATW\nat request stage" as UC_RequestAtw
+    usecase "Submit shipment request" as UC_SubmitRequest
+    usecase "Review shipment\nrequest queue" as UC_ReviewRequest
+    usecase "Approve shipment request" as UC_ApproveRequest
+    usecase "Reject shipment request" as UC_RejectRequest
+    usecase "Convert approved request\nto draft trip" as UC_ConvertRequest
+    usecase "Track shipment status\nand documents" as UC_TrackShipment
+  }
+
+  package "Dispatch Operations" {
+    usecase "Create or update trip" as UC_CreateTrip
+    usecase "Assign driver, truck,\nand trailer" as UC_AssignResources
+    usecase "Validate pre-dispatch\nreadiness" as UC_PreDispatch
+    usecase "Check driver/truck/trailer\nconflicts" as UC_ConflictCheck
+    usecase "Confirm verified ATW,\ncontainer number, and schedule" as UC_ReadinessGuards
+    usecase "Dispatch trip" as UC_DispatchTrip
+    usecase "Monitor active trips" as UC_MonitorTrips
+    usecase "Update trip status" as UC_UpdateStatus
+    usecase "Record trip status history" as UC_StatusHistory
+    usecase "Override blocked dispatch\nwith remarks" as UC_ManagerOverride
+    usecase "Put trip on hold,\nresume, cancel, or fail" as UC_ExceptionStatus
+    usecase "Close trip" as UC_CloseTrip
+    usecase "Check document completeness\nbefore close" as UC_CloseGuard
+  }
+
+  package "Document Management" {
+    usecase "Upload ATW" as UC_UploadAtw
+    usecase "Upload EIR,\nGate Pass, DR, or POD" as UC_UploadDriverDocs
+    usecase "Version uploaded document" as UC_VersionDocument
+    usecase "Verify or reject document" as UC_VerifyDocument
+    usecase "Generate waybill\nfrom trip and EIR data" as UC_GenerateWaybill
+    usecase "View document versions\nand completeness" as UC_ViewDocuments
+  }
+
+  package "Post-Delivery Optimization" {
+    usecase "Generate post-delivery\nrecommendations" as UC_GenerateRecommendations
+    usecase "Score pending unassigned\nnearby trips" as UC_ScoreJobs
+    usecase "View pending\nrecommendations" as UC_ViewRecommendations
+    usecase "Accept recommendation" as UC_AcceptRecommendation
+    usecase "Ignore recommendation" as UC_IgnoreRecommendation
+    usecase "Expire recommendation\nafter 30 minutes" as UC_ExpireRecommendation
+    usecase "Audit recommendation\nreview action" as UC_AuditRecommendation
+  }
+
+  package "Real-Time & Reporting" {
+    usecase "Broadcast SignalR\noperational update" as UC_Broadcast
+    usecase "Receive push/background\nnotification" as UC_PushNotification
+    usecase "View dashboard KPIs" as UC_Dashboard
+    usecase "View dispatch reports" as UC_Reports
+    usecase "View recommendation history" as UC_RecommendationHistory
+  }
+}
+
+Customer --> UC_Auth
+Customer --> UC_RequestDraft
+Customer --> UC_RequestAtw
+Customer --> UC_SubmitRequest
+Customer --> UC_TrackShipment
+Customer --> UC_PushNotification
+
+Driver --> UC_Auth
+Driver --> UC_MonitorTrips
+Driver --> UC_UpdateStatus
+Driver --> UC_UploadDriverDocs
+Driver --> UC_ViewDocuments
+Driver --> UC_PushNotification
+
+Dispatcher --> UC_Auth
+Dispatcher --> UC_ReviewRequest
+Dispatcher --> UC_ApproveRequest
+Dispatcher --> UC_RejectRequest
+Dispatcher --> UC_ConvertRequest
+Dispatcher --> UC_CreateTrip
+Dispatcher --> UC_AssignResources
+Dispatcher --> UC_DispatchTrip
+Dispatcher --> UC_MonitorTrips
+Dispatcher --> UC_UploadAtw
+Dispatcher --> UC_VerifyDocument
+Dispatcher --> UC_GenerateWaybill
+Dispatcher --> UC_ViewRecommendations
+Dispatcher --> UC_AcceptRecommendation
+Dispatcher --> UC_IgnoreRecommendation
+Dispatcher --> UC_Reports
+Dispatcher --> UC_AuditLogs
+
+Manager --> UC_Auth
+Manager --> UC_ReviewRequest
+Manager --> UC_ApproveRequest
+Manager --> UC_RejectRequest
+Manager --> UC_AssignResources
+Manager --> UC_DispatchTrip
+Manager --> UC_ManagerOverride
+Manager --> UC_ExceptionStatus
+Manager --> UC_CloseTrip
+Manager --> UC_VerifyDocument
+Manager --> UC_ViewRecommendations
+Manager --> UC_AcceptRecommendation
+Manager --> UC_IgnoreRecommendation
+Manager --> UC_Reports
+Manager --> UC_AuditLogs
+
+Finance --> UC_Auth
+Finance --> UC_ViewDocuments
+Finance --> UC_VerifyDocument
+Finance --> UC_Reports
+Finance --> UC_AuditLogs
+
+Admin --> UC_Auth
+Admin --> UC_ManageUsers
+Admin --> UC_UploadAtw
+Admin --> UC_VerifyDocument
+Admin --> UC_ViewRecommendations
+Admin --> UC_AcceptRecommendation
+Admin --> UC_IgnoreRecommendation
+Admin --> UC_Reports
+Admin --> UC_AuditLogs
+
+CEO --> UC_Auth
+CEO --> UC_Dashboard
+CEO --> UC_Reports
+CEO --> UC_RecommendationHistory
+
+SuperAdmin --> UC_Auth
+SuperAdmin --> UC_ManageUsers
+SuperAdmin --> UC_Reports
+SuperAdmin --> UC_AuditLogs
+SuperAdmin --> UC_RecommendationHistory
+
+UC_ManageUsers ..> UC_ForcePasswordChange : <<include>>
+UC_SubmitRequest ..> UC_Broadcast : <<include>>
+UC_ReviewRequest <.. UC_ApproveRequest : <<extend>>
+UC_ReviewRequest <.. UC_RejectRequest : <<extend>>
+UC_ConvertRequest ..> UC_CreateTrip : <<include>>
+
+UC_DispatchTrip ..> UC_PreDispatch : <<include>>
+UC_PreDispatch ..> UC_ConflictCheck : <<include>>
+UC_PreDispatch ..> UC_ReadinessGuards : <<include>>
+UC_ManagerOverride ..> UC_PreDispatch : <<extend>>
+UC_UpdateStatus ..> UC_StatusHistory : <<include>>
+UC_UpdateStatus ..> UC_Broadcast : <<include>>
+UC_UpdateStatus <.. UC_GenerateRecommendations : <<extend>>
+UC_ExceptionStatus ..> UC_StatusHistory : <<include>>
+UC_CloseTrip ..> UC_CloseGuard : <<include>>
+
+UC_UploadAtw ..> UC_VersionDocument : <<include>>
+UC_UploadDriverDocs ..> UC_VersionDocument : <<include>>
+UC_UploadDriverDocs ..> UC_Broadcast : <<include>>
+UC_VerifyDocument ..> UC_Broadcast : <<include>>
+
+UC_GenerateRecommendations ..> UC_ScoreJobs : <<include>>
+UC_GenerateRecommendations ..> UC_Broadcast : <<include>>
+UC_AcceptRecommendation ..> UC_AuditRecommendation : <<include>>
+UC_IgnoreRecommendation ..> UC_AuditRecommendation : <<include>>
+UC_ViewRecommendations <.. UC_AcceptRecommendation : <<extend>>
+UC_ViewRecommendations <.. UC_IgnoreRecommendation : <<extend>>
+UC_ViewRecommendations <.. UC_ExpireRecommendation : <<extend>>
+UC_Reports ..> UC_RecommendationHistory : <<include>>
+
+UC_Broadcast <.. UC_PushNotification : <<extend>>
+
+note right of UC_GenerateWaybill
+Waybill is generated by the system.
+It is not uploaded as a photo.
+end note
+
+note bottom of UC_AcceptRecommendation
+Accepting a recommendation does not auto-assign.
+The dispatcher still confirms assignment manually.
+end note
+@enduml

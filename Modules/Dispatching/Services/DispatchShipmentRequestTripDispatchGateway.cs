@@ -21,7 +21,7 @@ public sealed class DispatchShipmentRequestTripDispatchGateway : IShipmentReques
             tripDraft.CustomerId,
             null,
             null,
-            null,
+            "Dropoff time is a placeholder - update before dispatching.",
             new[]
             {
                 new DispatchTripStopInput(
@@ -31,8 +31,15 @@ public sealed class DispatchShipmentRequestTripDispatchGateway : IShipmentReques
                 new DispatchTripStopInput(
                     TripStopType.Dropoff,
                     tripDraft.DropoffLocation,
-                    tripDraft.PickupTime)
-            });
+                    tripDraft.PickupTime.AddHours(1))
+            },
+            null,
+            tripDraft.ContainerNumber,
+            null,
+            tripDraft.BookingNumber,
+            tripDraft.ShippingLine,
+            tripDraft.ContainerSize,
+            tripDraft.TripType);
 
         var trip = await _tripLifecycleService.CreateDraftAsync(lifecycleCommand, actor, cancellationToken);
         return trip.Id;

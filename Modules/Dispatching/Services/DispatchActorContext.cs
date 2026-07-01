@@ -6,7 +6,8 @@ public sealed record DispatchActorContext(
     bool IsDispatcher,
     bool IsDriver,
     bool IsFinance,
-    bool IsCeo)
+    bool IsCeo,
+    bool IsAdmin = false)
 {
-    public bool IsPrivileged => IsManager || IsDispatcher || IsFinance || IsCeo;
+    public bool IsPrivileged => IsManager || IsDispatcher || IsFinance || IsCeo || IsAdmin;
 }

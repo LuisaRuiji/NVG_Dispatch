@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import { statusLabels } from "./types";
 import { RefreshCw } from "lucide-react";
+import RecommendationPanel from "./components/RecommendationPanel";
 
 type CustomerOption = { id: string; name: string };
 type DriverOption = { id: string; username: string };
@@ -82,6 +83,15 @@ const formatWindow = (trip: DispatchTripListItem) => {
   return `${startDate} ${startTime}-${endTime}`;
 };
 
+const mobilePrimaryActionLabel = (trip: DispatchTripListItem) => {
+  if (trip.status === "DRAFT") return "Open to Prepare Dispatch";
+  if (trip.status === "DELIVERED" && !trip.closeDocumentReady) return "Open to Resolve Documents";
+  if (trip.status === "DELIVERED" && trip.closeDocumentReady) return "Open to Review Close";
+  if (trip.status === "FAILED_ATTEMPT") return "Open to Resolve Failed";
+  if (trip.status === "ON_HOLD") return "Open to Review Hold";
+  return "Open Trip";
+};
+
 function PodBadge({ trip }: { trip: DispatchTripListItem }) {
   const state = trip.podState ?? "MISSING";
   return (
@@ -103,16 +113,8 @@ function CloseDocsBadge({ trip }: { trip: DispatchTripListItem }) {
       return null;
     }
 
-    if (rawReason === "POD must be verified.") {
-      return "POD must be verified";
-    }
-
-    if (rawReason === "POD must be uploaded.") {
-      return "POD must be uploaded";
-    }
-
-    if (rawReason === "POD must be uploaded or POD pending override must be set.") {
-      return "POD required before close";
+    if (rawReason.includes("ATW") || rawReason.includes("Waybill")) {
+      return "Required docs incomplete";
     }
 
     return "Document blockers present";
@@ -358,6 +360,8 @@ export default function DispatchTripsPage() {
         }
       />
 
+      {canOperate ? <RecommendationPanel /> : null}
+
       <div className="surface-card p-6">
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
           <div>
@@ -476,7 +480,46 @@ export default function DispatchTripsPage() {
       ) : trips.length === 0 ? (
         <EmptyState title="No trips" description="No trips match the current filters." />
       ) : (
-        <div className="surface-card p-6">
+        <div className="surface-card p-3 md:p-6">
+          <div className="grid gap-3 md:hidden">
+            {trips.map((trip) => (
+              <button
+                key={trip.id}
+                type="button"
+                className={`rounded-2xl border border-border bg-card p-4 text-left shadow-card transition-all duration-200 active:scale-[0.99] ${rowClass(trip)}`}
+                onClick={() => openTrip(trip.id)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Container</p>
+                    <p className="mt-1 font-mono text-lg font-semibold text-foreground">
+                      {trip.containerNumber ?? "Container pending"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Trip {trip.id.slice(0, 8)}</p>
+                  </div>
+                  <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
+                </div>
+                <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-sm">
+                  <p className="font-medium text-foreground">{trip.pickupLocation ?? "Pickup not set"}</p>
+                  <p className="mt-1 text-muted-foreground">{trip.dropoffLocation ?? "Dropoff not set"}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{formatWindow(trip)}</p>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                  <p>Driver: {trip.driverUsername ?? "Unassigned"}</p>
+                  <p>Truck: {trip.truckAssetCode ?? "Unassigned"}</p>
+                  <p>Customer: {trip.customer?.name ?? "-"}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap items-start gap-2">
+                  <PodBadge trip={trip} />
+                  <CloseDocsBadge trip={trip} />
+                </div>
+                <div className="mt-4 flex h-12 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                  {mobilePrimaryActionLabel(trip)}
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="hidden md:block">
           <DataTable>
             <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
               <tr>
@@ -601,6 +644,7 @@ export default function DispatchTripsPage() {
               ))}
             </tbody>
           </DataTable>
+          </div>
 
           <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
             <span>
@@ -626,7 +670,6 @@ export default function DispatchTripsPage() {
       {actionModal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setActionModal(null)}
           role="presentation"
         >
           <div

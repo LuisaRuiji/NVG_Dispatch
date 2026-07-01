@@ -20,17 +20,20 @@ public sealed class DispatchTripsController : ControllerBase
 {
     private readonly ITripLifecycleService _tripLifecycleService;
     private readonly IDispatchDocumentWorkflowService _documentWorkflowService;
+    private readonly IGeneratedWaybillService _generatedWaybillService;
     private readonly DispatchTripQueryService _queryService;
     private readonly DispatchingOptions _options;
 
     public DispatchTripsController(
         ITripLifecycleService tripLifecycleService,
         IDispatchDocumentWorkflowService documentWorkflowService,
+        IGeneratedWaybillService generatedWaybillService,
         DispatchTripQueryService queryService,
         IOptions<DispatchingOptions> options)
     {
         _tripLifecycleService = tripLifecycleService;
         _documentWorkflowService = documentWorkflowService;
+        _generatedWaybillService = generatedWaybillService;
         _queryService = queryService;
         _options = options.Value ?? new DispatchingOptions();
     }
@@ -310,7 +313,11 @@ public sealed class DispatchTripsController : ControllerBase
             request.Notes,
             request.Stops?.Select(stop => new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt))
                 .ToList(),
-            MapFinancials(request.Financials));
+            MapFinancials(request.Financials),
+            request.ContainerNumber,
+            request.EirNumber,
+            request.BookingNumber,
+            request.ShippingLine);
 
         var trip = await _tripLifecycleService.CreateDraftAsync(command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
@@ -337,7 +344,11 @@ public sealed class DispatchTripsController : ControllerBase
                 .ToList(),
             request.Remarks,
             rowVersion,
-            MapFinancials(request.Financials));
+            MapFinancials(request.Financials),
+            request.ContainerNumber,
+            request.EirNumber,
+            request.BookingNumber,
+            request.ShippingLine);
 
         var trip = await _tripLifecycleService.UpdateTripAsync(tripId, command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
@@ -361,6 +372,10 @@ public sealed class DispatchTripsController : ControllerBase
             detail.PodPending,
             detail.HoldPreviousStatus,
             detail.Notes,
+            detail.ContainerNumber,
+            detail.EirNumber,
+            detail.BookingNumber,
+            detail.ShippingLine,
             detail.CreatedAt,
             detail.UpdatedAt,
             detail.Stops.Select(stop => new DispatchTripStopResponse(
@@ -705,8 +720,32 @@ public sealed class DispatchTripsController : ControllerBase
         return Ok(new DispatchTripDocumentLinkResponse(storageKey));
     }
 
+    [HttpGet("{tripId:guid}/waybill")]
+    public async Task<ActionResult<GeneratedWaybillResponse>> GetGeneratedWaybill(
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var waybill = await _generatedWaybillService.GetActiveAsync(tripId, BuildActor(), cancellationToken);
+        if (waybill is null)
+        {
+            return NotFound("Waybill not generated.");
+        }
+
+        return Ok(MapGeneratedWaybill(waybill));
+    }
+
+    [HttpPost("{tripId:guid}/generate-waybill")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin}")]
+    public async Task<ActionResult<GeneratedWaybillResponse>> GenerateWaybill(
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var waybill = await _generatedWaybillService.GenerateAsync(tripId, BuildActor(), cancellationToken);
+        return Ok(MapGeneratedWaybill(waybill));
+    }
+
     [HttpPost("{tripId:guid}/documents")]
-    [Authorize(Roles = RoleNames.Driver)]
+    [Authorize(Roles = $"{RoleNames.Driver},{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin}")]
     public async Task<ActionResult<DispatchTripDocumentResponse>> UploadDocument(
         Guid tripId,
         DispatchTripDocumentUploadRequest request,
@@ -735,7 +774,7 @@ public sealed class DispatchTripsController : ControllerBase
     }
 
     [HttpPost("{tripId:guid}/documents/{docId:guid}/verify")]
-    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.HeadOfFinance}")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<DispatchTripDocumentResponse>> VerifyDocument(
         Guid tripId,
         Guid docId,
@@ -764,7 +803,7 @@ public sealed class DispatchTripsController : ControllerBase
     }
 
     [HttpPost("{tripId:guid}/documents/{docId:guid}/reject")]
-    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.HeadOfFinance}")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
     public async Task<ActionResult<DispatchTripDocumentResponse>> RejectDocument(
         Guid tripId,
         Guid docId,
@@ -819,6 +858,18 @@ public sealed class DispatchTripsController : ControllerBase
                 financials.OfficialReceiptNumber);
     }
 
+    private static GeneratedWaybillResponse MapGeneratedWaybill(NVGInventory.Modules.Dispatching.Entities.GeneratedWaybill waybill)
+    {
+        return new GeneratedWaybillResponse(
+            waybill.Id,
+            waybill.TripId,
+            waybill.WaybillNumber,
+            waybill.Version,
+            waybill.GeneratedAt,
+            waybill.GeneratedByUserId,
+            waybill.WaybillDataJson);
+    }
+
     private DispatchActorContext BuildActor()
     {
         return new DispatchActorContext(
@@ -827,7 +878,8 @@ public sealed class DispatchTripsController : ControllerBase
             User.IsInRole(RoleNames.Dispatcher),
             User.IsInRole(RoleNames.Driver),
             User.IsInRole(RoleNames.HeadOfFinance),
-            User.IsInRole(RoleNames.Ceo));
+            User.IsInRole(RoleNames.Ceo),
+            User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.SuperAdmin));
     }
 
     private static bool TryResolvePaging(
@@ -881,6 +933,7 @@ public sealed class DispatchTripsController : ControllerBase
                 item.Id,
                 item.Status,
                 new DispatchCustomerSummaryResponse(item.CustomerId, item.CustomerName),
+                item.ContainerNumber,
                 item.DriverUserId,
                 item.DriverUsername,
                 item.TruckAssetId,

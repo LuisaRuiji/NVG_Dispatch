@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
-import type { ShipmentRequestListItem } from "./types";
+import { containerSizeLabels, tripTypeLabels, type ShipmentRequestListItem } from "./types";
 
 export default function PortalRequestsPage() {
   const nav = useNavigate();
@@ -99,7 +99,15 @@ export default function PortalRequestsPage() {
               {requests.map((request) => (
                 <tr key={request.id} className="border-t border-border/60">
                   <td className="px-4 py-3 text-sm font-semibold text-foreground">
-                    {request.id.slice(0, 8)}
+                    <div>{request.id.slice(0, 8)}</div>
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">
+                      {containerSizeLabels[request.containerSize]} / {tripTypeLabels[request.tripType]}
+                    </div>
+                    {request.containerNumber ? (
+                      <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                        {request.containerNumber}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={request.status} />

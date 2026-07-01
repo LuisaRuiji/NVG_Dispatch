@@ -58,10 +58,11 @@ export default function ReportsPage() {
   const { toasts, show } = useToast();
 
   const roles = me?.roles ?? [];
+  const isAdmin = roles.includes("Admin") || roles.includes("SuperAdmin");
   const canSeeSupplierSpend =
-    roles.includes("Manager") || roles.includes("HeadOfFinance") || roles.includes("CEO");
-  const canSeeInventoryValuation = roles.includes("Manager") || roles.includes("InventoryOfficer");
-  const canSeeAssetMaintenance = roles.includes("Manager") || roles.includes("InventoryOfficer");
+    isAdmin || roles.includes("Manager") || roles.includes("HeadOfFinance") || roles.includes("CEO");
+  const canSeeInventoryValuation = isAdmin || roles.includes("Manager") || roles.includes("InventoryOfficer");
+  const canSeeAssetMaintenance = isAdmin || roles.includes("Manager") || roles.includes("InventoryOfficer");
 
   const availableTabs = useMemo(() => {
     const tabs: { key: TabKey; label: string }[] = [];
@@ -246,7 +247,10 @@ export default function ReportsPage() {
   return (
     <div>
       <ToastHost toasts={toasts} />
-      <PageHeader title="Reports" description="Operational and financial reporting." />
+      <PageHeader
+        title="Inventory Reports"
+        description="Supplier spend, inventory valuation, and asset maintenance."
+      />
 
       <div className="flex flex-wrap gap-2">
         {availableTabs.map((tab) => (

@@ -4,5 +4,8 @@ public enum TripDocumentType
 {
     Waybill,
     Pod,
-    Atw
+    Atw,
+    Eir,
+    GatePass,
+    Dr
 }

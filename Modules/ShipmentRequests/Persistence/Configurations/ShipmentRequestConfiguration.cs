@@ -38,7 +38,13 @@ public sealed class ShipmentRequestConfiguration : IEntityTypeConfiguration<Ship
         entity.Property(request => request.RequestedPickupTime).HasColumnName("requested_pickup_time");
         entity.Property(request => request.CargoDescription).HasColumnName("cargo_description").HasMaxLength(500);
         entity.Property(request => request.CargoWeight).HasColumnName("cargo_weight").HasColumnType("decimal(18,3)");
+        entity.Property(request => request.ContainerSize).HasColumnName("container_size").HasMaxLength(20);
+        entity.Property(request => request.TripType).HasColumnName("trip_type").HasMaxLength(30);
+        entity.Property(request => request.ContainerNumber).HasColumnName("container_number").HasMaxLength(20);
+        entity.Property(request => request.ShippingLine).HasColumnName("shipping_line").HasMaxLength(120);
+        entity.Property(request => request.BookingNumber).HasColumnName("booking_number").HasMaxLength(60);
         entity.Property(request => request.SpecialInstructions).HasColumnName("special_instructions").HasMaxLength(600);
+        entity.Property(request => request.RejectionRemarks).HasColumnName("rejection_remarks").HasMaxLength(600);
         entity.Property(request => request.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
         entity.Property(request => request.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(request => request.ApprovedAt).HasColumnName("approved_at");

@@ -6,7 +6,12 @@ public sealed record ShipmentRequestTripDraftData(
     Guid CustomerId,
     string PickupLocation,
     string DropoffLocation,
-    DateTime PickupTime);
+    DateTime PickupTime,
+    string? ContainerNumber,
+    string? BookingNumber,
+    string? ShippingLine,
+    string? ContainerSize,
+    string? TripType);
 
 public interface IShipmentRequestTripDispatchGateway
 {

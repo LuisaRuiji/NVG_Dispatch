@@ -15,7 +15,13 @@ public sealed class ShipmentRequest
     public DateTime? RequestedPickupTime { get; set; }
     public string? CargoDescription { get; set; }
     public decimal? CargoWeight { get; set; }
+    public string? ContainerSize { get; set; }
+    public string? TripType { get; set; }
+    public string? ContainerNumber { get; set; }
+    public string? ShippingLine { get; set; }
+    public string? BookingNumber { get; set; }
     public string? SpecialInstructions { get; set; }
+    public string? RejectionRemarks { get; set; }
     public DateTime CreatedAt { get; set; }
     public Guid CreatedByUserId { get; set; }
     public User? CreatedByUser { get; set; }

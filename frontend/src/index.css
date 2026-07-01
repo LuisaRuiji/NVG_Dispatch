@@ -162,6 +162,15 @@
     transform: translateX(2px);
   }
 
+  .sidebar-nav {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .sidebar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
   .table-smooth tbody tr {
     transition: background-color 140ms ease;
   }

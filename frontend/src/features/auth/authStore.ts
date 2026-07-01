@@ -1,4 +1,5 @@
-import { setAccessToken, api } from "@/lib/api";
+import { ApiRequestError, setAccessToken, api } from "@/lib/api";
+import { registerPushNotifications } from "@/lib/pushNotifications";
 import type {
   LoginRequest,
   LoginResponse,
@@ -12,10 +13,12 @@ import type {
 
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = "nvg_access_token";
 const LEGACY_REFRESH_TOKEN_STORAGE_KEY = "nvg_refresh_token";
-const CSRF_HEADER = { "X-NVG-CSRF": "1" };
+const CSRF_HEADER = { "X-VAIA-CSRF": "1" };
 
 let token: string | null = null;
 let me: MeResponse | null = null;
+let refreshInFlight: Promise<boolean> | null = null;
+let refreshBlocked = false;
 
 export function getToken() {
   return token;
@@ -29,18 +32,8 @@ export function getDefaultRoute(current: MeResponse | null = me) {
   if (!current) {
     return "/login";
   }
-  const roles = current.roles ?? [];
-  if (roles.includes("Admin") || roles.includes("SuperAdmin")) {
-    return "/admin/users";
-  }
-  if (roles.includes("Driver")) {
-    return "/dispatch/my-trips";
-  }
-  if (roles.includes("Dispatcher") || roles.includes("Manager") || roles.includes("HeadOfFinance") || roles.includes("CEO")) {
-    return "/dispatch";
-  }
-  if (roles.includes("Customer")) {
-    return "/portal/dashboard";
+  if (current.mustChangePassword) {
+    return "/change-password";
   }
   return "/dashboard";
 }
@@ -64,6 +57,7 @@ export async function login(payload: LoginRequest): Promise<MeResponse | MfaRequ
 
   applyAccessToken(resp);
   me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+  void registerPushNotifications();
   return me;
 }
 
@@ -75,6 +69,7 @@ export async function verifyMfaLogin(payload: MfaVerifyRequest) {
   });
   applyAccessToken(resp);
   me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+  void registerPushNotifications();
   return me;
 }
 
@@ -124,6 +119,7 @@ export async function loadMeIfTokenExists() {
   if (token) {
     try {
       me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+      void registerPushNotifications();
       return me;
     } catch {
       token = null;
@@ -133,6 +129,7 @@ export async function loadMeIfTokenExists() {
 
   if (await refreshSession()) {
     me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+    void registerPushNotifications();
     return me;
   }
 
@@ -141,18 +138,32 @@ export async function loadMeIfTokenExists() {
 }
 
 export async function refreshSession() {
-  try {
-    const resp = await api<LoginResponse>("/api/auth/refresh", {
-      method: "POST",
-      headers: CSRF_HEADER,
-      body: JSON.stringify({}),
-      auth: false
-    });
-    applyAccessToken(resp);
-    return true;
-  } catch {
+  if (refreshBlocked) {
     return false;
   }
+
+  refreshInFlight ??= (async () => {
+    try {
+      const resp = await api<LoginResponse>("/api/auth/refresh", {
+        method: "POST",
+        headers: CSRF_HEADER,
+        body: JSON.stringify({}),
+        auth: false
+      });
+      applyAccessToken(resp);
+      return true;
+    } catch (error) {
+      if (error instanceof ApiRequestError && (error.status === 400 || error.status === 401)) {
+        refreshBlocked = true;
+        clearSessionState();
+      }
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
 }
 
 export function logout() {
@@ -167,8 +178,21 @@ export function logout() {
   clearSessionState();
 }
 
+export function clearInvalidSession() {
+  refreshBlocked = true;
+  clearSessionState();
+}
+
+export function changePassword(newPassword: string) {
+  return api<void>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ newPassword })
+  });
+}
+
 function applyAccessToken(resp: LoginResponse) {
   token = resp.accessToken;
+  refreshBlocked = false;
   setAccessToken(token);
 }
 

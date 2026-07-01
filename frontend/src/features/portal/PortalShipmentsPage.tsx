@@ -75,7 +75,40 @@ export default function PortalShipmentsPage() {
       ) : shipments.length === 0 ? (
         <EmptyState title="No shipments yet" description="Converted trips will appear here." />
       ) : (
-        <div className="surface-card p-4">
+        <div className="surface-card p-3 md:p-4">
+          <div className="grid gap-3 md:hidden">
+            {shipments.map((shipment) => (
+              <button
+                key={shipment.tripId}
+                className="rounded-2xl border border-border bg-card p-4 text-left shadow-card transition-all duration-200 active:scale-[0.99]"
+                onClick={() => nav(`/portal/shipments/${shipment.tripId}`)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Container</p>
+                    <p className="mt-1 font-mono text-lg font-semibold text-foreground">
+                      {shipment.containerNumber ?? "Container pending"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Trip {shipment.tripId.slice(0, 8)}</p>
+                  </div>
+                  <StatusBadge status={statusLabels[shipment.status] ?? shipment.status} />
+                </div>
+                <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">{shipment.pickupLocation}</p>
+                  <p className="mt-1">{shipment.dropoffLocation}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="rounded-full border border-border bg-muted px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    POD {shipment.podState}
+                  </span>
+                  <span className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                    View Tracking
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="hidden md:block">
           <DataTable>
             <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
               <tr>
@@ -93,7 +126,8 @@ export default function PortalShipmentsPage() {
               {shipments.map((shipment) => (
                 <tr key={shipment.tripId} className="border-t border-border/60">
                   <td className="px-4 py-3 text-sm font-semibold text-foreground">
-                    {shipment.tripId.slice(0, 8)}
+                    <div>{shipment.containerNumber ?? shipment.tripId.slice(0, 8)}</div>
+                    <div className="text-xs font-normal text-muted-foreground">{shipment.tripId.slice(0, 8)}</div>
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={statusLabels[shipment.status] ?? shipment.status} />
@@ -116,6 +150,7 @@ export default function PortalShipmentsPage() {
               ))}
             </tbody>
           </DataTable>
+          </div>
 
           <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
             <span>

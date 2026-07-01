@@ -26,6 +26,8 @@ appsettings*.json
 # Docs (except README.md)
 *.md
 !README.md
+!AGENTS.md
+!DESIGN.md
 !POLICY.md
 !SECURITY.md
 !Docs/Architecture/01-Module-Inventory.md

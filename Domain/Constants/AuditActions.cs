@@ -27,10 +27,12 @@ public static class AuditActions
     public const string SupplierDeactivated = "SUPPLIER_DEACTIVATED";
 
     public const string UserCreated = "USER_CREATED";
+    public const string UserProfileUpdated = "USER_PROFILE_UPDATED";
     public const string UserRoleAssigned = "USER_ROLE_ASSIGNED";
     public const string UserRolesReplaced = "USER_ROLES_REPLACED";
     public const string UserStatusUpdated = "USER_STATUS_UPDATED";
     public const string UserPasswordReset = "USER_PASSWORD_RESET";
+    public const string UserPasswordChanged = "USER_PASSWORD_CHANGED";
     public const string UserDeactivated = "USER_DEACTIVATED";
 
     public const string DispatchTripCreated = "DISPATCH_TRIP_CREATED";
@@ -45,6 +47,10 @@ public static class AuditActions
     public const string DispatchTripDocumentUploaded = "DISPATCH_TRIP_DOCUMENT_UPLOADED";
     public const string DispatchTripDocumentVerified = "DISPATCH_TRIP_DOCUMENT_VERIFIED";
     public const string DispatchTripDocumentRejected = "DISPATCH_TRIP_DOCUMENT_REJECTED";
+    public const string RecommendationAccepted = "RECOMMENDATION_ACCEPTED";
+    public const string RecommendationIgnored = "RECOMMENDATION_IGNORED";
+    public const string WaybillGenerated = "WAYBILL_GENERATED";
+    public const string FinancialFieldAccessed = "FINANCIAL_FIELD_ACCESSED";
 
     public const string ModuleSettingUpdated = "MODULE_SETTING_UPDATED";
 }

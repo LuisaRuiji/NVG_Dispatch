@@ -36,6 +36,8 @@ export default function IntegrityPage() {
   const [loading, setLoading] = useState(false);
 
   const canAccess =
+    me?.roles?.includes("Admin") ||
+    me?.roles?.includes("SuperAdmin") ||
     me?.roles?.includes("Manager") ||
     me?.roles?.includes("HeadOfFinance") ||
     me?.roles?.includes("CEO");

@@ -20,7 +20,7 @@ import type {
   TripStatus
 } from "./types";
 import { statusLabels } from "./types";
-import { RefreshCw } from "lucide-react";
+import { ArrowUpRight, RefreshCw } from "lucide-react";
 
 type PanelState = {
   items: DispatchTripListItem[];
@@ -66,16 +66,8 @@ function CloseDocsBadge({ trip }: { trip: DispatchTripListItem }) {
       return null;
     }
 
-    if (rawReason === "POD must be verified.") {
-      return "POD must be verified";
-    }
-
-    if (rawReason === "POD must be uploaded.") {
-      return "POD must be uploaded";
-    }
-
-    if (rawReason === "POD must be uploaded or POD pending override must be set.") {
-      return "POD required before close";
+    if (rawReason.includes("ATW") || rawReason.includes("Waybill")) {
+      return "Required docs incomplete";
     }
 
     return "Document blockers present";
@@ -614,47 +606,35 @@ export default function DispatchBoardPage() {
             ) : panel.state.items.length === 0 ? (
               <EmptyState title={panel.emptyTitle} description={panel.emptyDescription} />
             ) : (
-              <DataTable>
-                <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Trip</th>
-                    <th className="px-4 py-3 text-left">Customer</th>
-                    <th className="px-4 py-3 text-left">Driver</th>
-                    <th className="px-4 py-3 text-left">Stop</th>
-                    <th className="px-4 py-3 text-left">Updated</th>
-                    <th className="px-4 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {panel.state.items.map((trip) => (
-                    <tr
-                      key={trip.id}
-                      className="cursor-pointer text-sm hover:bg-muted/30"
-                      onClick={() => nav(`/dispatch/trips/${trip.id}`)}
-                    >
-                      <td className="px-4 py-3 font-medium text-foreground">{trip.id.slice(0, 8)}</td>
-                      <td className="px-4 py-3">{trip.customer?.name ?? "-"}</td>
-                      <td className="px-4 py-3">{trip.driverUsername ?? "-"}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{getStopLabel(trip.status)}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
+              <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-white">
+                {panel.state.items.map((trip) => (
+                  <button
+                    key={trip.id}
+                    type="button"
+                    className="group grid w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(0,1fr)_auto]"
+                    onClick={() => nav(`/dispatch/trips/${trip.id}`)}
+                  >
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="font-mono text-sm font-semibold text-foreground">{trip.id.slice(0, 8)}</span>
+                        <span className="text-sm font-medium text-foreground">{trip.customer?.name ?? "-"}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>Driver: {trip.driverUsername ?? "-"}</span>
+                        <span>Stop: {getStopLabel(trip.status)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      <span className="text-xs text-muted-foreground">
                         {formatDateTime(trip.updatedAt ?? trip.createdAt)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            nav(`/dispatch/trips/${trip.id}`);
-                          }}
-                        >
-                          Open
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </DataTable>
+                      </span>
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:text-primary">
+                        <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         ))}

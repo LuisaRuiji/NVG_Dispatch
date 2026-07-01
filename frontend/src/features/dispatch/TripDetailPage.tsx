@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
@@ -8,9 +8,10 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
-import { ApiRequestError, api } from "@/lib/api";
+import { ApiRequestError, api, apiOptional } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import { getMe } from "@/features/auth/authStore";
+import { useDispatchHub } from "@/hooks/useDispatchHub";
 import type {
   DispatchTripDetail,
   DispatchTripDocument,
@@ -18,6 +19,7 @@ import type {
   DispatchTripDocumentVersion,
   DispatchTripHistory,
   DispatchTripSummary,
+  GeneratedWaybill,
   TripDocumentType,
   TripStatus
 } from "./types";
@@ -36,6 +38,10 @@ type ScheduleForm = {
   dropoffScheduledAt: string;
   driverUserId: string;
   truckAssetId: string;
+  containerNumber: string;
+  eirNumber: string;
+  bookingNumber: string;
+  shippingLine: string;
   notes: string;
   changeRemarks: string;
 };
@@ -75,7 +81,7 @@ type ActionModal =
   | { type: "DOC_REJECT"; docId: string; remarks: string }
   | null;
 
-const docTypes: TripDocumentType[] = ["WAYBILL", "POD", "ATW"];
+const docTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD", "WAYBILL"];
 const failedAttemptEligible: TripStatus[] = [
   "ENROUTE_PICKUP",
   "AT_PICKUP",
@@ -181,11 +187,14 @@ export default function TripDetailPage() {
   const isManager = roles.includes("Manager");
   const isDispatcher = roles.includes("Dispatcher");
   const isFinance = roles.includes("HeadOfFinance");
+  const isSuperAdmin = roles.includes("SuperAdmin");
+  const isAdmin = roles.includes("Admin") || isSuperAdmin;
 
   const [loading, setLoading] = useState(true);
   const [trip, setTrip] = useState<DispatchTripDetail | null>(null);
   const [summary, setSummary] = useState<DispatchTripSummary | null>(null);
   const [documents, setDocuments] = useState<DispatchTripDocument[]>([]);
+  const [generatedWaybill, setGeneratedWaybill] = useState<GeneratedWaybill | null>(null);
   const [timeline, setTimeline] = useState<DispatchTripHistory[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [modal, setModal] = useState<ActionModal>(null);
@@ -205,6 +214,8 @@ export default function TripDetailPage() {
   const [versionState, setVersionState] = useState<VersionStateFilter>("ALL");
   const [linkKey, setLinkKey] = useState<string | null>(null);
   const [assignmentConflict, setAssignmentConflict] = useState<AssignmentConflictState | null>(null);
+  const [updatedJustNow, setUpdatedJustNow] = useState(false);
+  const updatedTimerRef = useRef<number | null>(null);
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
     pickupLocation: "",
@@ -213,6 +224,10 @@ export default function TripDetailPage() {
     dropoffScheduledAt: "",
     driverUserId: "",
     truckAssetId: "",
+    containerNumber: "",
+    eirNumber: "",
+    bookingNumber: "",
+    shippingLine: "",
     notes: "",
     changeRemarks: ""
   });
@@ -222,7 +237,7 @@ export default function TripDetailPage() {
     remarks: ""
   });
 
-  const canVerifyDocs = isManager || isFinance;
+  const canVerifyDocs = isManager || isDispatcher || isAdmin;
   const canEditSchedule = isManager || isDispatcher;
   const canViewVersions = isManager || isFinance || isDispatcher;
 
@@ -233,13 +248,15 @@ export default function TripDetailPage() {
       const [detail, summaryData, docs, history] = await Promise.all([
         api<DispatchTripDetail>(`/api/dispatch/trips/${id}`, { method: "GET" }),
         api<DispatchTripSummary>(`/api/dispatch/trips/${id}/summary`, { method: "GET" }),
-        api<DispatchTripDocument[]>(`/api/dispatch/trips/${id}/documents`, { method: "GET" }),
+        apiOptional<DispatchTripDocument[]>(`/api/dispatch/trips/${id}/documents`, { method: "GET" }),
         api<DispatchTripHistory[]>(`/api/dispatch/trips/${id}/history`, { method: "GET" })
       ]);
       setTrip(detail);
       setSummary(summaryData);
       setDocuments(docs ?? []);
       setTimeline(history ?? []);
+      const waybill = await apiOptional<GeneratedWaybill>(`/api/dispatch/trips/${id}/waybill`, { method: "GET" });
+      setGeneratedWaybill(waybill);
       setAssignmentConflict(null);
     } catch (e: any) {
       console.error(e);
@@ -248,6 +265,49 @@ export default function TripDetailPage() {
       setLoading(false);
     }
   };
+
+  const isCurrentTripEvent = (eventTripId: string) =>
+    Boolean(id && eventTripId.toLowerCase() === id.toLowerCase());
+
+  const markUpdatedJustNow = () => {
+    setUpdatedJustNow(true);
+    if (updatedTimerRef.current !== null) {
+      window.clearTimeout(updatedTimerRef.current);
+    }
+    updatedTimerRef.current = window.setTimeout(() => {
+      setUpdatedJustNow(false);
+      updatedTimerRef.current = null;
+    }, 3000);
+  };
+
+  useDispatchHub({
+    onTripStatusChanged: (event) => {
+      if (isCurrentTripEvent(event.tripId)) {
+        markUpdatedJustNow();
+        void fetchTrip();
+      }
+    },
+    onDocumentUploaded: (event) => {
+      if (isCurrentTripEvent(event.tripId)) {
+        markUpdatedJustNow();
+        void fetchTrip();
+      }
+    },
+    onDocumentVerified: (event) => {
+      if (isCurrentTripEvent(event.tripId)) {
+        markUpdatedJustNow();
+        void fetchTrip();
+      }
+    }
+  });
+
+  useEffect(() => {
+    return () => {
+      if (updatedTimerRef.current !== null) {
+        window.clearTimeout(updatedTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadReferenceData = async () => {
     try {
@@ -298,6 +358,15 @@ export default function TripDetailPage() {
     return { pickup, dropoff };
   }, [trip]);
 
+  const generatedWaybillData = useMemo(() => {
+    if (!generatedWaybill?.waybillDataJson) return null;
+    try {
+      return JSON.parse(generatedWaybill.waybillDataJson) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }, [generatedWaybill]);
+
   const actualTimes = useMemo(() => {
     if (!timeline.length) return { pickup: null, dropoff: null, delivered: null };
     const pickup = timeline.find((entry) => entry.toStatus === "AT_PICKUP")?.eventAt ?? null;
@@ -324,6 +393,10 @@ export default function TripDetailPage() {
       dropoffScheduledAt: toLocalInput(plannedStops.dropoff?.scheduledAt),
       driverUserId: summary.driverUserId ?? "",
       truckAssetId: summary.truckAssetId ?? "",
+      containerNumber: trip.containerNumber ?? "",
+      eirNumber: trip.eirNumber ?? "",
+      bookingNumber: trip.bookingNumber ?? "",
+      shippingLine: trip.shippingLine ?? "",
       notes: trip.notes ?? "",
       changeRemarks: ""
     });
@@ -415,6 +488,10 @@ export default function TripDetailPage() {
           truckAssetId: scheduleForm.truckAssetId || null,
           notes: scheduleForm.notes || null,
           remarks: scheduleForm.changeRemarks || null,
+          containerNumber: scheduleForm.containerNumber.trim() || null,
+          eirNumber: scheduleForm.eirNumber.trim() || null,
+          bookingNumber: scheduleForm.bookingNumber.trim() || null,
+          shippingLine: scheduleForm.shippingLine.trim() || null,
           stops: buildStopsPayload(),
           rowVersion: currentRowVersion
         })
@@ -449,6 +526,14 @@ export default function TripDetailPage() {
       show("Assign a driver before dispatching.", "error");
       return;
     }
+    if (!scheduleForm.containerNumber.trim()) {
+      show("Container number is required before dispatching.", "error");
+      return;
+    }
+    if (!scheduleForm.truckAssetId && (!isManager || !scheduleForm.changeRemarks.trim())) {
+      show(isManager ? "Assign a truck or add override remarks before dispatching." : "Assign a truck before dispatching.", "error");
+      return;
+    }
     const saved = await handleSaveSchedule(true);
     if (!saved) return;
     try {
@@ -459,7 +544,7 @@ export default function TripDetailPage() {
         body: JSON.stringify({
           driverUserId: scheduleForm.driverUserId,
           truckAssetId: scheduleForm.truckAssetId || null,
-          remarks: null,
+          remarks: scheduleForm.changeRemarks || null,
           rowVersion: currentRowVersion
         })
       });
@@ -569,6 +654,36 @@ export default function TripDetailPage() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleGenerateWaybill = async () => {
+    if (!tripId) return;
+    try {
+      setActionLoading(true);
+      const waybill = await api<GeneratedWaybill>(`/api/dispatch/trips/${tripId}/generate-waybill`, {
+        method: "POST"
+      });
+      setGeneratedWaybill(waybill);
+      show("Waybill generated.", "success");
+      await fetchTrip();
+    } catch (e: any) {
+      console.error(e);
+      show(e?.message ?? "Failed to generate waybill.", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const canUploadDocument = (docType: TripDocumentType) => {
+    if (docType === "WAYBILL") return false;
+    if (docType === "ATW") return isDispatcher || isManager || isAdmin;
+    if (docType === "POD") return isDispatcher || isDriver;
+    return isDriver;
+  };
+
+  const documentUploadLabel = (docType: TripDocumentType) => {
+    if (docType === "ATW") return "Upload ATW (received from customer)";
+    return documents.find((doc) => doc.type === docType) ? "Replace" : "Upload";
   };
 
   const handleVerifyDoc = async (docId: string) => {
@@ -704,6 +819,11 @@ export default function TripDetailPage() {
         }
         actions={
           <div className="flex items-center gap-2">
+            {updatedJustNow ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                Updated just now
+              </span>
+            ) : null}
             <Button variant="outline" onClick={() => nav(-1)}>
               Back
             </Button>
@@ -1032,16 +1152,22 @@ export default function TripDetailPage() {
                 <tbody className="divide-y divide-border/50">
                   {docTypes.map((type) => {
                     const doc = documents.find((d) => d.type === type);
-                    const state = doc?.state ?? "MISSING";
+                    const state = type === "WAYBILL" ? (generatedWaybill ? "VERIFIED" : "MISSING") : doc?.state ?? "MISSING";
                     return (
                       <tr key={type} className="text-sm">
                         <td className="px-4 py-3 font-medium text-foreground">{type}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">{doc ? "Active" : "-"}</td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {doc?.uploadedByUsername ?? doc?.uploadedByUserId ?? "-"}
+                          {type === "WAYBILL" && generatedWaybill ? `v${generatedWaybill.version}` : doc ? "Active" : "-"}
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : "-"}
+                          {type === "WAYBILL" && generatedWaybill
+                            ? generatedWaybill.generatedByUserId
+                            : doc?.uploadedByUsername ?? doc?.uploadedByUserId ?? "-"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {type === "WAYBILL" && generatedWaybill
+                            ? new Date(generatedWaybill.generatedAt).toLocaleString()
+                            : doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : "-"}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -1054,7 +1180,25 @@ export default function TripDetailPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {isDriver ? (
+                            {type === "WAYBILL" ? (
+                              <>
+                                {isDispatcher || isManager || isAdmin ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={actionLoading}
+                                    onClick={handleGenerateWaybill}
+                                  >
+                                    Generate Waybill
+                                  </Button>
+                                ) : null}
+                                {generatedWaybill ? (
+                                  <Button variant="outline" size="sm" onClick={() => window.print()}>
+                                    Print
+                                  </Button>
+                                ) : null}
+                              </>
+                            ) : canUploadDocument(type) ? (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1063,7 +1207,7 @@ export default function TripDetailPage() {
                                   setModal({ type: "DOC_UPLOAD", docType: type, storageKey: "" })
                                 }
                               >
-                                Upload
+                                {documentUploadLabel(type)}
                               </Button>
                             ) : null}
                             {canVerifyDocs && doc && doc.state === "UPLOADED" ? (
@@ -1100,6 +1244,34 @@ export default function TripDetailPage() {
                 </tbody>
               </DataTable>
             </div>
+            {generatedWaybill ? (
+              <div className="mt-5 rounded-lg border border-border bg-background p-5 print:border-0 print:shadow-none">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">NVG Dispatch</p>
+                    <h4 className="mt-1 text-lg font-semibold text-foreground">Waybill</h4>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => window.print()}>
+                    Print
+                  </Button>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
+                  <WaybillField label="Waybill No" value={generatedWaybill.waybillNumber} />
+                  <WaybillField label="Date" value={new Date(generatedWaybill.generatedAt).toLocaleString()} />
+                  <WaybillField label="Container No" value={readWaybillValue(generatedWaybillData, "ContainerNumber")} />
+                  <WaybillField label="EIR No" value={readWaybillValue(generatedWaybillData, "EirNumber")} />
+                  <WaybillField label="Booking No" value={readWaybillValue(generatedWaybillData, "BookingNumber")} />
+                  <WaybillField label="Shipping Line" value={readWaybillValue(generatedWaybillData, "ShippingLine")} />
+                  <WaybillField label="From" value={readWaybillValue(generatedWaybillData, "PickupLocation")} />
+                  <WaybillField label="To" value={readWaybillValue(generatedWaybillData, "DropoffLocation")} />
+                  <WaybillField label="Driver" value={readWaybillValue(generatedWaybillData, "DriverName")} />
+                  <WaybillField label="Truck" value={readWaybillValue(generatedWaybillData, "TruckPlate")} />
+                  <WaybillField label="Customer" value={readWaybillValue(generatedWaybillData, "CustomerName")} />
+                  <WaybillField label="Pickup Time" value={formatWaybillDate(readWaybillValue(generatedWaybillData, "ActualPickupTime"))} />
+                  <WaybillField label="Delivery Time" value={formatWaybillDate(readWaybillValue(generatedWaybillData, "ActualDropoffTime"))} />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1200,6 +1372,44 @@ export default function TripDetailPage() {
         <div className="surface-card p-6">
           <h3 className="text-sm font-semibold">Trip Metadata</h3>
           <div className="mt-4 grid gap-3 text-sm text-muted-foreground">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="text-xs uppercase text-muted-foreground">Container Number</label>
+                <input
+                  value={scheduleForm.containerNumber}
+                  onChange={(e) => setScheduleForm((prev) => ({ ...prev, containerNumber: e.target.value }))}
+                  className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                  disabled={!canEditSchedule}
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase text-muted-foreground">EIR Number</label>
+                <input
+                  value={scheduleForm.eirNumber}
+                  onChange={(e) => setScheduleForm((prev) => ({ ...prev, eirNumber: e.target.value }))}
+                  className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                  disabled={!canEditSchedule}
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase text-muted-foreground">Booking Number</label>
+                <input
+                  value={scheduleForm.bookingNumber}
+                  onChange={(e) => setScheduleForm((prev) => ({ ...prev, bookingNumber: e.target.value }))}
+                  className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                  disabled={!canEditSchedule}
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase text-muted-foreground">Shipping Line</label>
+                <input
+                  value={scheduleForm.shippingLine}
+                  onChange={(e) => setScheduleForm((prev) => ({ ...prev, shippingLine: e.target.value }))}
+                  className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                  disabled={!canEditSchedule}
+                />
+              </div>
+            </div>
             <div>
               <p className="text-xs uppercase">Created At</p>
               <p className="mt-1 text-foreground">{new Date(trip.createdAt).toLocaleString()}</p>
@@ -1236,7 +1446,6 @@ export default function TripDetailPage() {
         <div className="fixed inset-0 z-50">
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-            onClick={() => setVersionsOpen(false)}
             role="presentation"
           />
           <div
@@ -1419,7 +1628,6 @@ export default function TripDetailPage() {
       {correctOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setCorrectOpen(false)}
           role="presentation"
         >
           <div
@@ -1506,7 +1714,6 @@ export default function TripDetailPage() {
       {modal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
-          onClick={() => setModal(null)}
           role="presentation"
         >
           <div
@@ -1649,6 +1856,28 @@ export default function TripDetailPage() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function readWaybillValue(data: Record<string, unknown> | null, key: string) {
+  if (!data) return null;
+  const camel = key.charAt(0).toLowerCase() + key.slice(1);
+  const value = data[key] ?? data[camel];
+  return value == null ? null : String(value);
+}
+
+function formatWaybillDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function WaybillField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <p className="text-xs uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 font-medium text-foreground">{value || "-"}</p>
     </div>
   );
 }

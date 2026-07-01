@@ -39,6 +39,7 @@ public sealed class UsersControllerAuditTests
         Assert.Equal(AuditActions.UserCreated, audit.Action);
         Assert.Equal(EntityTypes.User, audit.EntityType);
         Assert.Equal(ActorUserId, audit.ActorUserId);
+        Assert.Equal(RoleNames.SuperAdmin, audit.ActorRole);
         Assert.Contains("new_user", audit.AfterJson);
         Assert.DoesNotContain(ValidPassword, audit.AfterJson);
         Assert.DoesNotContain("Password", audit.AfterJson);
@@ -86,6 +87,7 @@ public sealed class UsersControllerAuditTests
                 new[]
                 {
                     new Claim(JwtRegisteredClaimNames.Sub, ActorUserId.ToString()),
+                    new Claim("role", RoleNames.SuperAdmin),
                     new Claim(ClaimTypes.Role, RoleNames.SuperAdmin)
                 },
                 authenticationType: "Test"))

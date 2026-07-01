@@ -10,6 +10,7 @@ import DataTable from "@/components/DataTable";
 import StatusBadge from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import { Button } from "@/components/ui/button";
 import type { PagedResult } from "@/lib/paging";
 
 type RequestQueueProps = {
@@ -94,6 +95,10 @@ export default function RequestQueuePage({
     return Number.isNaN(dt.getTime()) ? value : dt.toLocaleString();
   };
 
+  const formatShortRequestId = (id: string) => `Request ${id.slice(0, 8)}`;
+
+  const formatRequestType = (type: string) => type.replace(/_/g, " ").toUpperCase();
+
   return (
     <div>
       <ToastHost toasts={toasts} />
@@ -109,53 +114,84 @@ export default function RequestQueuePage({
               handleSearch();
             }
           }}
-          className="h-9 w-72 rounded-lg border border-border bg-white px-3 text-sm"
+          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-72"
         />
-        <button
+        <Button
+          variant="outline"
           onClick={handleSearch}
           disabled={!searchId.trim()}
-          className="rounded-lg border border-border px-3 py-2 text-sm"
+          className="h-10 w-full sm:w-auto"
         >
           Go
-        </button>
+        </Button>
       </div>
 
       {loading && items.length === 0 ? (
         <LoadingSkeleton rows={5} />
       ) : (
-        <DataTable>
-          <thead className="sticky top-0 bg-muted/40 text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3 text-left">Id</th>
-              <th className="px-4 py-3 text-left">Type</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-left">Asset</th>
-              <th className="px-4 py-3 text-left">Requester</th>
-              <th className="px-4 py-3 text-left">Submitted</th>
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="grid gap-3 md:hidden">
             {items.map((item) => {
               const submittedAt = item.submittedAt ?? item.createdAt;
               return (
-                <tr key={item.id} className="border-t border-border">
-                  <td className="px-4 py-3 text-sm text-primary">
-                    <Link to={`/requests/${item.id}`} className="hover:underline">
-                      {item.id}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-sm">{item.requestType}</td>
-                  <td className="px-4 py-3 text-sm">
+                <article key={item.id} className="surface-card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-foreground">{formatShortRequestId(item.id)}</h3>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        {formatRequestType(item.requestType)}
+                      </p>
+                    </div>
                     <StatusBadge status={item.status} />
-                  </td>
-                  <td className="px-4 py-3 text-sm">{item.assetCode ?? "-"}</td>
-                  <td className="px-4 py-3 text-sm">{item.requesterUsername ?? "-"}</td>
-                  <td className="px-4 py-3 text-sm">{formatDate(submittedAt)}</td>
-                </tr>
+                  </div>
+
+                  <div className="mt-3 grid gap-1 text-sm text-muted-foreground">
+                    <p>Asset: {item.assetCode ?? "-"}</p>
+                    <p>Submitted: {formatDate(submittedAt)}</p>
+                  </div>
+
+                  <Button className="mt-4 h-12 w-full" onClick={() => nav(`/requests/${item.id}`)}>
+                    View Details
+                  </Button>
+                </article>
               );
             })}
-          </tbody>
-        </DataTable>
+          </div>
+
+          <DataTable className="hidden md:block">
+            <thead className="sticky top-0 bg-muted/40 text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 text-left">Id</th>
+                <th className="px-4 py-3 text-left">Type</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Asset</th>
+                <th className="px-4 py-3 text-left">Requester</th>
+                <th className="px-4 py-3 text-left">Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => {
+                const submittedAt = item.submittedAt ?? item.createdAt;
+                return (
+                  <tr key={item.id} className="border-t border-border">
+                    <td className="px-4 py-3 text-sm text-primary">
+                      <Link to={`/requests/${item.id}`} className="hover:underline">
+                        {item.id}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{formatRequestType(item.requestType)}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <StatusBadge status={item.status} />
+                    </td>
+                    <td className="px-4 py-3 text-sm">{item.assetCode ?? "-"}</td>
+                    <td className="px-4 py-3 text-sm">{item.requesterUsername ?? "-"}</td>
+                    <td className="px-4 py-3 text-sm">{formatDate(submittedAt)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        </>
       )}
 
       {items.length === 0 && !loading ? (

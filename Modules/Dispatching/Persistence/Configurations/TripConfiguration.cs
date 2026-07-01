@@ -60,6 +60,13 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
             .HasConversion(statusConverter)
             .HasMaxLength(30);
         entity.Property(trip => trip.Notes).HasColumnName("notes").HasMaxLength(400);
+        entity.Property(trip => trip.ContainerNumber).HasColumnName("container_number").HasMaxLength(20);
+        entity.Property(trip => trip.WaybillNumber).HasColumnName("waybill_number").HasMaxLength(30);
+        entity.Property(trip => trip.EirNumber).HasColumnName("eir_number").HasMaxLength(30);
+        entity.Property(trip => trip.BookingNumber).HasColumnName("booking_number").HasMaxLength(30);
+        entity.Property(trip => trip.ShippingLine).HasColumnName("shipping_line").HasMaxLength(40);
+        entity.Property(trip => trip.ContainerSize).HasColumnName("container_size").HasMaxLength(20);
+        entity.Property(trip => trip.TripType).HasColumnName("trip_type").HasMaxLength(30);
         entity.Property(trip => trip.Rate)
             .HasColumnName("rate_encrypted")
             .HasConversion(sensitiveDecimalConverter)

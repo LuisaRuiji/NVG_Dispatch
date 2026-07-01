@@ -6,6 +6,8 @@ using Microsoft.IdentityModel.Tokens;
 using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Entities;
+using NVGInventory.Domain.Exceptions;
+using NVGInventory.Domain.Services;
 
 namespace NVGInventory.Security;
 
@@ -18,7 +20,10 @@ public sealed record AuthResult(
     string AccessToken,
     DateTime ExpiresAtUtc,
     string TokenJti,
-    string RefreshToken);
+    string RefreshToken,
+    DateTime RefreshTokenExpiresAtUtc,
+    bool RefreshTokenIsPersistent,
+    bool MustChangePassword);
 
 public sealed record MfaChallengeResult(
     Guid ChallengeId,
@@ -85,6 +90,7 @@ public sealed class AuthService
     private readonly JwtOptions _options;
     private readonly TotpAuthenticator _totpAuthenticator;
     private readonly MfaOptions _mfaOptions;
+    private readonly IPasswordHashService _passwordHashService;
 
     public AuthService(
         InventoryDbContext dbContext,
@@ -95,7 +101,8 @@ public sealed class AuthService
             tokenService,
             options,
             new TotpAuthenticator(),
-            Options.Create(new MfaOptions()))
+            Options.Create(new MfaOptions()),
+            new BCryptPasswordHashService())
     {
     }
 
@@ -104,19 +111,22 @@ public sealed class AuthService
         JwtTokenService tokenService,
         IOptions<JwtOptions> options,
         TotpAuthenticator totpAuthenticator,
-        IOptions<MfaOptions> mfaOptions)
+        IOptions<MfaOptions> mfaOptions,
+        IPasswordHashService? passwordHashService = null)
     {
         _dbContext = dbContext;
         _tokenService = tokenService;
         _options = options.Value;
         _totpAuthenticator = totpAuthenticator;
         _mfaOptions = mfaOptions.Value;
+        _passwordHashService = passwordHashService ?? new BCryptPasswordHashService();
     }
 
     public async Task<AuthAttemptResult> TryLoginAsync(
         LoginCommand command,
         string? ipAddress = null,
         string? userAgent = null,
+        bool rememberMe = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(command.Username) || string.IsNullOrWhiteSpace(command.Password))
@@ -152,7 +162,7 @@ public sealed class AuthService
                     .ToList());
         }
 
-        var validPassword = BCrypt.Net.BCrypt.Verify(command.Password, user.PasswordHash);
+        var validPassword = _passwordHashService.VerifyPassword(command.Password, user.PasswordHash);
         if (!validPassword)
         {
             return new AuthAttemptResult(
@@ -203,11 +213,14 @@ public sealed class AuthService
         }
 
         var token = _tokenService.CreateAccessToken(user, roles);
+        var now = DateTime.UtcNow;
+        var refreshExpiresAt = GetRefreshTokenExpiresAt(now, rememberMe);
         var refreshToken = CreateRefreshToken(
             user.Id,
             Guid.NewGuid(),
             ipAddress,
-            userAgent);
+            userAgent,
+            refreshExpiresAt);
         _dbContext.RefreshTokens.Add(refreshToken.Entity);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -218,7 +231,10 @@ public sealed class AuthService
             token.AccessToken,
             token.ExpiresAtUtc,
             token.Jti,
-            refreshToken.RawToken);
+            refreshToken.RawToken,
+            refreshToken.Entity.ExpiresAt,
+            rememberMe,
+            user.MustChangePassword);
 
         return new AuthAttemptResult(
             true,
@@ -234,6 +250,7 @@ public sealed class AuthService
         string code,
         string? ipAddress,
         string? userAgent,
+        bool rememberMe = false,
         CancellationToken cancellationToken = default)
     {
         if (challengeId == Guid.Empty || string.IsNullOrWhiteSpace(code))
@@ -335,7 +352,12 @@ public sealed class AuthService
         await ConsumeActiveChallengesAsync(user.Id, challenge.Id, now, cancellationToken);
 
         var accessToken = _tokenService.CreateAccessToken(user, roles, now);
-        var refreshToken = CreateRefreshToken(user.Id, Guid.NewGuid(), ipAddress, userAgent);
+        var refreshToken = CreateRefreshToken(
+            user.Id,
+            Guid.NewGuid(),
+            ipAddress,
+            userAgent,
+            GetRefreshTokenExpiresAt(now, rememberMe));
         _dbContext.RefreshTokens.Add(refreshToken.Entity);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -348,7 +370,10 @@ public sealed class AuthService
                 accessToken.AccessToken,
                 accessToken.ExpiresAtUtc,
                 accessToken.Jti,
-                refreshToken.RawToken),
+                refreshToken.RawToken,
+                refreshToken.Entity.ExpiresAt,
+                rememberMe,
+                user.MustChangePassword),
             null,
             user.Id,
             user.Username,
@@ -611,7 +636,16 @@ public sealed class AuthService
         var roles = GetRoleSnapshot(user);
 
         var accessToken = _tokenService.CreateAccessToken(user, roles);
-        var nextRefreshToken = CreateRefreshToken(user.Id, existing.FamilyId, ipAddress, userAgent);
+        var familyCreatedAt = await _dbContext.RefreshTokens
+            .Where(token => token.FamilyId == existing.FamilyId)
+            .MinAsync(token => token.CreatedAt, cancellationToken);
+        var isPersistent = existing.ExpiresAt - familyCreatedAt >= TimeSpan.FromDays(1);
+        var nextRefreshToken = CreateRefreshToken(
+            user.Id,
+            existing.FamilyId,
+            ipAddress,
+            userAgent,
+            existing.ExpiresAt);
 
         existing.RevokedAt = now;
         existing.RevokedByIp = ipAddress;
@@ -629,8 +663,53 @@ public sealed class AuthService
                 accessToken.AccessToken,
                 accessToken.ExpiresAtUtc,
                 accessToken.Jti,
-                nextRefreshToken.RawToken),
+                nextRefreshToken.RawToken,
+                nextRefreshToken.Entity.ExpiresAt,
+                isPersistent,
+                user.MustChangePassword),
             null);
+    }
+
+    public async Task ChangePasswordAsync(
+        Guid userId,
+        string newPassword,
+        string? ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            throw new BusinessRuleViolationException("New password is required.");
+        }
+
+        PasswordPolicy.EnsureValid(newPassword);
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+        if (user is null)
+        {
+            throw new NotFoundException("User not found.");
+        }
+
+        if (!user.IsActive)
+        {
+            throw new BusinessRuleViolationException("User must be active.");
+        }
+
+        user.PasswordHash = _passwordHashService.HashPassword(newPassword);
+        user.MustChangePassword = false;
+
+        var now = DateTime.UtcNow;
+        var refreshTokens = await _dbContext.RefreshTokens
+            .Where(token => token.UserId == userId && token.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var token in refreshTokens)
+        {
+            token.RevokedAt = now;
+            token.RevokedByIp = ipAddress;
+            token.RevokedReason = "PASSWORD_CHANGED";
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task RevokeRefreshTokenAsync(
@@ -713,11 +792,11 @@ public sealed class AuthService
         Guid userId,
         Guid familyId,
         string? ipAddress,
-        string? userAgent)
+        string? userAgent,
+        DateTime expiresAt)
     {
         var rawToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(64));
         var now = DateTime.UtcNow;
-        var days = _options.RefreshTokenDays <= 0 ? 7 : _options.RefreshTokenDays;
         var entity = new RefreshToken
         {
             Id = Guid.NewGuid(),
@@ -725,12 +804,24 @@ public sealed class AuthService
             FamilyId = familyId,
             TokenHash = HashRefreshToken(rawToken),
             CreatedAt = now,
-            ExpiresAt = now.AddDays(days),
+            ExpiresAt = expiresAt,
             CreatedByIp = ipAddress,
             UserAgent = string.IsNullOrWhiteSpace(userAgent) ? null : userAgent
         };
 
         return new RefreshTokenCreateResult(rawToken, entity);
+    }
+
+    private DateTime GetRefreshTokenExpiresAt(DateTime now, bool rememberMe)
+    {
+        if (rememberMe)
+        {
+            var days = _options.RefreshTokenDays <= 0 ? 7 : _options.RefreshTokenDays;
+            return now.AddDays(days);
+        }
+
+        var hours = _options.SessionRefreshTokenHours <= 0 ? 12 : _options.SessionRefreshTokenHours;
+        return now.AddHours(hours);
     }
 
     private MfaChallenge CreateMfaChallenge(
