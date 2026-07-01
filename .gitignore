@@ -2,17 +2,22 @@
 bin/
 obj/
 .vs/
+*.tsbuildinfo
+**/artifacts/
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 
 # Logs/temp
+tmp/
 tmp-*.log
 *.log
 .env
 !.env.example
 creds.txt
+IPO.txt
+Task_IT21
 
 # ASP.NET Core local/deployment configuration
 appsettings*.json
@@ -26,8 +31,6 @@ appsettings*.json
 # Docs (except README.md)
 *.md
 !README.md
-!AGENTS.md
-!DESIGN.md
 !POLICY.md
 !SECURITY.md
 !Docs/Architecture/01-Module-Inventory.md
