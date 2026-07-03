@@ -27,11 +27,15 @@ public sealed class DispatchShipmentRequestTripDispatchGateway : IShipmentReques
                 new DispatchTripStopInput(
                     TripStopType.Pickup,
                     tripDraft.PickupLocation,
-                    tripDraft.PickupTime),
+                    tripDraft.PickupTime,
+                    tripDraft.PickupLatitude,
+                    tripDraft.PickupLongitude),
                 new DispatchTripStopInput(
                     TripStopType.Dropoff,
                     tripDraft.DropoffLocation,
-                    tripDraft.PickupTime.AddHours(1))
+                    tripDraft.PickupTime.AddHours(1),
+                    tripDraft.DropoffLatitude,
+                    tripDraft.DropoffLongitude)
             },
             null,
             tripDraft.ContainerNumber,

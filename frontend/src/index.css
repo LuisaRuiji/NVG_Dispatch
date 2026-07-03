@@ -102,6 +102,62 @@
   .chip {
     @apply inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-secondary-foreground;
   }
+
+  .trip-map-shell {
+    @apply overflow-hidden rounded-2xl border border-border bg-muted/30;
+  }
+
+  .trip-map-canvas {
+    @apply h-full min-h-[18rem] w-full;
+  }
+
+  .trip-map-canvas .leaflet-container {
+    @apply h-full min-h-[18rem] w-full font-sans;
+  }
+
+  .trip-map-marker {
+    position: relative;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid hsl(var(--background));
+    border-radius: 9999px;
+    box-shadow: 0 8px 20px hsl(var(--foreground) / 0.22);
+  }
+
+  .trip-map-marker::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -0.45rem;
+    width: 0.55rem;
+    height: 0.55rem;
+    transform: translateX(-50%) rotate(45deg);
+    border-right: 2px solid hsl(var(--background));
+    border-bottom: 2px solid hsl(var(--background));
+    background: inherit;
+  }
+
+  .trip-map-marker-pickup {
+    background: hsl(var(--primary));
+  }
+
+  .trip-map-marker-dropoff {
+    background: hsl(var(--accent));
+  }
+
+  .trip-map-marker-driver {
+    width: 1.25rem;
+    height: 1.25rem;
+    background: hsl(var(--foreground));
+  }
+
+  .trip-map-marker-driver::before {
+    content: "";
+    position: absolute;
+    inset: -0.45rem;
+    border: 1px solid hsl(var(--foreground) / 0.3);
+    border-radius: 9999px;
+  }
 }
 
 @keyframes fade-up {

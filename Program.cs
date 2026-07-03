@@ -116,6 +116,7 @@ builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ITripLifecycleService>(serviceProvider =>
     serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchTripService>());
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripLocationService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDocumentWorkflowService>(serviceProvider =>
     serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>());

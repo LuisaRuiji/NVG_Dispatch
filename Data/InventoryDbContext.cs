@@ -55,6 +55,7 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<Trailer> DispatchTrailers => Set<Trailer>();
     public DbSet<Trip> DispatchTrips => Set<Trip>();
     public DbSet<TripStop> DispatchTripStops => Set<TripStop>();
+    public DbSet<TripLocationPing> DispatchTripLocationPings => Set<TripLocationPing>();
     public DbSet<TripStatusHistory> DispatchTripStatusHistories => Set<TripStatusHistory>();
     public DbSet<TripDocument> DispatchTripDocuments => Set<TripDocument>();
     public DbSet<GeneratedWaybill> GeneratedWaybills => Set<GeneratedWaybill>();
@@ -100,6 +101,7 @@ public sealed class InventoryDbContext : DbContext
         modelBuilder.ApplyConfiguration(new DispatchRecommendationConfiguration());
         modelBuilder.ApplyConfiguration(new GeneratedWaybillConfiguration());
         modelBuilder.ApplyConfiguration(new TripStopConfiguration());
+        modelBuilder.ApplyConfiguration(new TripLocationPingConfiguration());
         modelBuilder.ApplyConfiguration(new TripStatusHistoryConfiguration());
         modelBuilder.ApplyConfiguration(new ShipmentRequestConfiguration());
         modelBuilder.ApplyConfiguration(new ShipmentRequestDocumentConfiguration());

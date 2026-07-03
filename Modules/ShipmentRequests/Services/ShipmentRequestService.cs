@@ -28,7 +28,11 @@ public sealed record CreateShipmentRequestCommand(
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
-    Guid CreatedByUserId);
+    Guid CreatedByUserId,
+    double? PickupLatitude = null,
+    double? PickupLongitude = null,
+    double? DropoffLatitude = null,
+    double? DropoffLongitude = null);
 
 public sealed record UpdateShipmentRequestCommand(
     Guid CustomerId,
@@ -43,7 +47,11 @@ public sealed record UpdateShipmentRequestCommand(
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
-    Guid UpdatedByUserId);
+    Guid UpdatedByUserId,
+    double? PickupLatitude = null,
+    double? PickupLongitude = null,
+    double? DropoffLatitude = null,
+    double? DropoffLongitude = null);
 
 public sealed record UploadShipmentRequestDocumentCommand(
     Guid RequestId,
@@ -83,6 +91,8 @@ public sealed class ShipmentRequestService
         await _userService.EnsureActiveUserAsync(command.CreatedByUserId, cancellationToken);
         await EnsureCustomerExistsAsync(command.CustomerId, cancellationToken);
         EnsureLocations(command.PickupLocation, command.DropoffLocation);
+        EnsureCoordinatePair(command.PickupLatitude, command.PickupLongitude);
+        EnsureCoordinatePair(command.DropoffLatitude, command.DropoffLongitude);
 
         var now = DateTime.UtcNow;
         var request = new ShipmentRequest
@@ -92,6 +102,10 @@ public sealed class ShipmentRequestService
             Status = ShipmentRequestStatus.Draft,
             PickupLocation = command.PickupLocation.Trim(),
             DropoffLocation = command.DropoffLocation.Trim(),
+            PickupLatitude = command.PickupLatitude,
+            PickupLongitude = command.PickupLongitude,
+            DropoffLatitude = command.DropoffLatitude,
+            DropoffLongitude = command.DropoffLongitude,
             RequestedPickupTime = command.RequestedPickupTime,
             ContainerSize = ToStorageValue(command.ContainerSize),
             TripType = ToStorageValue(command.TripType),
@@ -141,9 +155,15 @@ public sealed class ShipmentRequestService
         }
 
         EnsureLocations(command.PickupLocation, command.DropoffLocation);
+        EnsureCoordinatePair(command.PickupLatitude, command.PickupLongitude);
+        EnsureCoordinatePair(command.DropoffLatitude, command.DropoffLongitude);
 
         request.PickupLocation = command.PickupLocation.Trim();
         request.DropoffLocation = command.DropoffLocation.Trim();
+        request.PickupLatitude = command.PickupLatitude;
+        request.PickupLongitude = command.PickupLongitude;
+        request.DropoffLatitude = command.DropoffLatitude;
+        request.DropoffLongitude = command.DropoffLongitude;
         request.RequestedPickupTime = command.RequestedPickupTime;
         request.ContainerSize = ToStorageValue(command.ContainerSize);
         request.TripType = ToStorageValue(command.TripType);
@@ -416,6 +436,24 @@ public sealed class ShipmentRequestService
         if (string.IsNullOrWhiteSpace(dropoff))
         {
             throw new BusinessRuleViolationException("DropoffLocation is required.");
+        }
+    }
+
+    private static void EnsureCoordinatePair(double? latitude, double? longitude)
+    {
+        if (latitude.HasValue != longitude.HasValue)
+        {
+            throw new BusinessRuleViolationException("Both latitude and longitude are required when setting location coordinates.");
+        }
+
+        if (latitude is < -90 or > 90)
+        {
+            throw new BusinessRuleViolationException("Latitude must be between -90 and 90.");
+        }
+
+        if (longitude is < -180 or > 180)
+        {
+            throw new BusinessRuleViolationException("Longitude must be between -180 and 180.");
         }
     }
 

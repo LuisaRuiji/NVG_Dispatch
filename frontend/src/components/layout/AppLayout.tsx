@@ -21,7 +21,8 @@ import {
   ClipboardCheck,
   User,
   Settings,
-  Bell
+  Bell,
+  Map as MapIcon
 } from "lucide-react";
 
 type NavItem = {
@@ -60,6 +61,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
     title: "Dispatch",
     items: [
       { label: "Dispatch Board", to: "/dispatch/board", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Map", to: "/dispatch/map", roles: ["Manager", "Dispatcher"], icon: MapIcon, moduleKey: "dispatch" },
       { label: "Requests", to: "/dispatch/requests", roles: ["Manager", "Dispatcher"], icon: ClipboardList, moduleKey: "dispatch" },
       { label: "Trips", to: "/dispatch/trips", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
       { label: "Documents", to: "/dispatch/documents", roles: ["Manager", "HeadOfFinance"], icon: FileText, moduleKey: "dispatch" },

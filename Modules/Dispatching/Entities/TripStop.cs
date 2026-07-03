@@ -9,6 +9,8 @@ public sealed class TripStop
     public Trip? Trip { get; set; }
     public TripStopType StopType { get; set; }
     public string LocationText { get; set; } = string.Empty;
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
     public DateTime? ScheduledAt { get; set; }
     public DateTime? ActualAt { get; set; }
     public DateTime CreatedAt { get; set; }

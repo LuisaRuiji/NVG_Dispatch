@@ -5,6 +5,7 @@ import ToastHost from "@/components/ToastHost";
 import StatusBadge from "@/components/StatusBadge";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
+import TripMap from "@/components/dispatch/TripMap";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
@@ -75,6 +76,9 @@ export default function PortalShipmentDetailPage() {
 
   const podDoc = documents.find((doc) => doc.type === "POD");
   const atwDoc = documents.find((doc) => doc.type === "ATW");
+  const pickupStop = detail.stops.find((stop) => stop.stopType === "PICKUP") ?? null;
+  const dropoffStop = detail.stops.find((stop) => stop.stopType === "DROPOFF") ?? null;
+  const latestLocation = detail.latestDriverLocation;
 
   return (
     <div className="space-y-6">
@@ -126,6 +130,57 @@ export default function PortalShipmentDetailPage() {
         </div>
 
         <ShipmentProgressStepper status={detail.status} />
+      </div>
+
+      <div className="surface-card p-4 md:p-6">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Shipment Map</p>
+            <h3 className="mt-2 text-base font-semibold text-foreground">Pickup, Dropoff, and Latest Update</h3>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {latestLocation?.recordedAt
+              ? `Last update ${new Date(latestLocation.recordedAt).toLocaleString()}`
+              : "No active location update"}
+          </span>
+        </div>
+        <div className="mt-4">
+          <TripMap
+            pickup={{
+              latitude: pickupStop?.latitude,
+              longitude: pickupStop?.longitude,
+              label: pickupStop?.locationText ?? detail.pickupLocation,
+              detail: pickupStop?.scheduledAt
+                ? new Date(pickupStop.scheduledAt).toLocaleString()
+                : detail.pickupTime
+                ? new Date(detail.pickupTime).toLocaleString()
+                : null
+            }}
+            dropoff={{
+              latitude: dropoffStop?.latitude,
+              longitude: dropoffStop?.longitude,
+              label: dropoffStop?.locationText ?? detail.dropoffLocation,
+              detail: dropoffStop?.scheduledAt
+                ? new Date(dropoffStop.scheduledAt).toLocaleString()
+                : detail.dropoffTime
+                ? new Date(detail.dropoffTime).toLocaleString()
+                : null
+            }}
+            driver={
+              latestLocation
+                ? {
+                    latitude: latestLocation.latitude,
+                    longitude: latestLocation.longitude,
+                    label: "Latest shipment location"
+                  }
+                : null
+            }
+            driverRecordedAt={latestLocation?.recordedAt}
+            driverAccuracyMeters={latestLocation?.accuracyMeters}
+            emptyTitle="No shipment coordinates yet"
+            heightClassName="h-[20rem] md:h-[24rem]"
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">

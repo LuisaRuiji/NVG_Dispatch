@@ -10,6 +10,7 @@ namespace NVGInventory.Hubs;
 public sealed class VaiaDispatchHub : Hub<IVaiaDispatchClient>
 {
     public const string DispatchOpsGroup = "DispatchOps";
+    public const string DispatchLocationGroup = "DispatchLocations";
 
     public static string DriverGroup(Guid userId) => $"Driver:{userId}";
 
@@ -25,6 +26,12 @@ public sealed class VaiaDispatchHub : Hub<IVaiaDispatchClient>
             user?.IsInRole(RoleNames.Ceo) == true)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, DispatchOpsGroup);
+        }
+
+        if (user?.IsInRole(RoleNames.Dispatcher) == true ||
+            user?.IsInRole(RoleNames.Manager) == true)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, DispatchLocationGroup);
         }
 
         var userId = ResolveUserId(user);

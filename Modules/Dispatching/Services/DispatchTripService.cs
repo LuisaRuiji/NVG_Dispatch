@@ -18,7 +18,9 @@ namespace NVGInventory.Modules.Dispatching.Services;
 public sealed record DispatchTripStopInput(
     TripStopType StopType,
     string LocationText,
-    DateTime? ScheduledAt);
+    DateTime? ScheduledAt,
+    double? Latitude = null,
+    double? Longitude = null);
 
 public sealed record DispatchTripFinancialInput(
     decimal? Rate,
@@ -208,6 +210,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                     TripId = trip.Id,
                     StopType = stop.StopType,
                     LocationText = stop.LocationText,
+                    Latitude = stop.Latitude,
+                    Longitude = stop.Longitude,
                     ScheduledAt = stop.ScheduledAt,
                     CreatedAt = now
                 });
@@ -380,6 +384,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                         TripId = trip.Id,
                         StopType = stop.StopType,
                         LocationText = stop.LocationText,
+                        Latitude = stop.Latitude,
+                        Longitude = stop.Longitude,
                         ScheduledAt = stop.ScheduledAt,
                         CreatedAt = now
                     });
@@ -396,7 +402,9 @@ public sealed class DispatchTripService : ITripLifecycleService
             EnsureScheduledStops(trip.Stops.Select(stop => new DispatchTripStopInput(
                 stop.StopType,
                 stop.LocationText,
-                stop.ScheduledAt)).ToList());
+                stop.ScheduledAt,
+                stop.Latitude,
+                stop.Longitude)).ToList());
         }
 
         if (!isDraft && assignmentChanged)
@@ -547,7 +555,9 @@ public sealed class DispatchTripService : ITripLifecycleService
         EnsureScheduledStops(trip.Stops.Select(stop => new DispatchTripStopInput(
             stop.StopType,
             stop.LocationText,
-            stop.ScheduledAt)).ToList());
+            stop.ScheduledAt,
+            stop.Latitude,
+            stop.Longitude)).ToList());
 
         await _userService.EnsureUserHasRoleAsync(command.DriverUserId, RoleNames.Driver, cancellationToken);
 
@@ -924,6 +934,9 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new BusinessRuleViolationException("Stop locations are required.");
         }
 
+        EnsureStopCoordinates(pickup);
+        EnsureStopCoordinates(dropoff);
+
         if (!pickup.ScheduledAt.HasValue || !dropoff.ScheduledAt.HasValue)
         {
             throw new BusinessRuleViolationException("Scheduled pickup and dropoff times are required.");
@@ -958,6 +971,9 @@ public sealed class DispatchTripService : ITripLifecycleService
         {
             throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
         }
+
+        EnsureStopCoordinates(pickupInput);
+        EnsureStopCoordinates(dropoffInput);
 
         var pickupStop = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
         var dropoffStop = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
@@ -999,6 +1015,38 @@ public sealed class DispatchTripService : ITripLifecycleService
         {
             scheduleChanged = true;
             dropoffStop.ScheduledAt = dropoffInput.ScheduledAt;
+        }
+
+        if (pickupInput.Latitude != pickupStop.Latitude || pickupInput.Longitude != pickupStop.Longitude)
+        {
+            scheduleChanged = true;
+            pickupStop.Latitude = pickupInput.Latitude;
+            pickupStop.Longitude = pickupInput.Longitude;
+        }
+
+        if (dropoffInput.Latitude != dropoffStop.Latitude || dropoffInput.Longitude != dropoffStop.Longitude)
+        {
+            scheduleChanged = true;
+            dropoffStop.Latitude = dropoffInput.Latitude;
+            dropoffStop.Longitude = dropoffInput.Longitude;
+        }
+    }
+
+    private static void EnsureStopCoordinates(DispatchTripStopInput stop)
+    {
+        if (stop.Latitude.HasValue != stop.Longitude.HasValue)
+        {
+            throw new BusinessRuleViolationException("Both latitude and longitude are required when setting stop coordinates.");
+        }
+
+        if (stop.Latitude is < -90 or > 90)
+        {
+            throw new BusinessRuleViolationException("Latitude must be between -90 and 90.");
+        }
+
+        if (stop.Longitude is < -180 or > 180)
+        {
+            throw new BusinessRuleViolationException("Longitude must be between -180 and 180.");
         }
     }
 
@@ -1805,7 +1853,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         var stop = trip.Stops.FirstOrDefault(s => s.StopType == stopType);
         return stop is null
             ? null
-            : new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt);
+            : new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt, stop.Latitude, stop.Longitude);
     }
 
     private static string? BuildScheduleChangeSummary(

@@ -23,7 +23,11 @@ public sealed record ShipmentRequestListItem(
     int DocumentsCount,
     DateTime CreatedAt,
     DateTime? ApprovedAt,
-    Guid? ConvertedTripId);
+    Guid? ConvertedTripId,
+    double? PickupLatitude,
+    double? PickupLongitude,
+    double? DropoffLatitude,
+    double? DropoffLongitude);
 
 public sealed record ShipmentRequestDetail(
     Guid Id,
@@ -42,6 +46,10 @@ public sealed record ShipmentRequestDetail(
     DateTime CreatedAt,
     DateTime? ApprovedAt,
     Guid? ConvertedTripId,
+    double? PickupLatitude,
+    double? PickupLongitude,
+    double? DropoffLatitude,
+    double? DropoffLongitude,
     IReadOnlyCollection<ShipmentRequestDocument> Documents);
 
 public sealed record DispatchShipmentRequestQueueItem(
@@ -57,7 +65,11 @@ public sealed record DispatchShipmentRequestQueueItem(
     string? ShippingLine,
     string? BookingNumber,
     int DocumentsCount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    double? PickupLatitude,
+    double? PickupLongitude,
+    double? DropoffLatitude,
+    double? DropoffLongitude);
 
 public sealed record CustomerShipmentListItem(
     Guid TripId,
@@ -81,13 +93,16 @@ public sealed record CustomerShipmentDetail(
     TripDocumentState PodState,
     TripDocumentState AtwState,
     bool WaybillGenerated,
+    DispatchTripLatestDriverLocation? LatestDriverLocation,
     IReadOnlyCollection<CustomerShipmentStop> Stops);
 
 public sealed record CustomerShipmentStop(
     TripStopType StopType,
     string LocationText,
     DateTime? ScheduledAt,
-    DateTime? ActualAt);
+    DateTime? ActualAt,
+    double? Latitude,
+    double? Longitude);
 
 public sealed record CustomerShipmentTimelineEntry(
     TripStatus FromStatus,
@@ -143,7 +158,11 @@ public sealed class ShipmentRequestQueryService
                 _dbContext.ShipmentRequestDocuments.Count(doc => doc.RequestId == request.Id),
                 request.CreatedAt,
                 request.ApprovedAt,
-                request.ConvertedTripId))
+                request.ConvertedTripId,
+                request.PickupLatitude,
+                request.PickupLongitude,
+                request.DropoffLatitude,
+                request.DropoffLongitude))
             .ToListAsync(cancellationToken);
 
         return new PagedQueryResult<ShipmentRequestListItem>(items, total);
@@ -182,6 +201,10 @@ public sealed class ShipmentRequestQueryService
             request.CreatedAt,
             request.ApprovedAt,
             request.ConvertedTripId,
+            request.PickupLatitude,
+            request.PickupLongitude,
+            request.DropoffLatitude,
+            request.DropoffLongitude,
             request.Documents.OrderByDescending(d => d.UploadedAt).ToList());
     }
 
@@ -214,7 +237,11 @@ public sealed class ShipmentRequestQueryService
                 request.ShippingLine,
                 request.BookingNumber,
                 _dbContext.ShipmentRequestDocuments.Count(doc => doc.RequestId == request.Id),
-                request.CreatedAt))
+                request.CreatedAt,
+                request.PickupLatitude,
+                request.PickupLongitude,
+                request.DropoffLatitude,
+                request.DropoffLongitude))
             .ToListAsync(cancellationToken);
 
         return new PagedQueryResult<DispatchShipmentRequestQueueItem>(items, total);
@@ -301,11 +328,14 @@ public sealed class ShipmentRequestQueryService
             detail.PodState,
             detail.AtwState,
             detail.WaybillGenerated,
+            detail.LatestDriverLocation,
             detail.Stops.Select(stop => new CustomerShipmentStop(
                 stop.StopType,
                 stop.LocationText,
                 stop.ScheduledAt,
-                stop.ActualAt)).ToList());
+                stop.ActualAt,
+                stop.Latitude,
+                stop.Longitude)).ToList());
     }
 
     private static CustomerShipmentTimelineEntry MapTimelineEntry(DispatchCustomerShipmentTimelineEntry entry)

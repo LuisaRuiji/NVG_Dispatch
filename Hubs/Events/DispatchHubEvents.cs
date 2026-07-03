@@ -30,6 +30,18 @@ public sealed record RecommendationGeneratedEvent(
     string DeliveredAt,
     int RecommendationCount);
 
+public sealed record DriverLocationUpdatedEvent(
+    Guid TripId,
+    Guid DriverId,
+    string DriverName,
+    Guid? TruckId,
+    string? TruckPlate,
+    double Latitude,
+    double Longitude,
+    double? AccuracyMeters,
+    DateTime RecordedAt,
+    string TripStatus);
+
 public sealed record ShipmentRequestSubmittedEvent(
     Guid RequestId,
     string CustomerName,

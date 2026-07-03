@@ -17,7 +17,9 @@ public sealed record DispatchCustomerShipmentStop(
     TripStopType StopType,
     string LocationText,
     DateTime? ScheduledAt,
-    DateTime? ActualAt);
+    DateTime? ActualAt,
+    double? Latitude,
+    double? Longitude);
 
 public sealed record DispatchCustomerShipmentDetail(
     Guid TripId,
@@ -31,6 +33,7 @@ public sealed record DispatchCustomerShipmentDetail(
     TripDocumentState PodState,
     TripDocumentState AtwState,
     bool WaybillGenerated,
+    DispatchTripLatestDriverLocation? LatestDriverLocation,
     IReadOnlyCollection<DispatchCustomerShipmentStop> Stops);
 
 public sealed record DispatchCustomerShipmentTimelineEntry(

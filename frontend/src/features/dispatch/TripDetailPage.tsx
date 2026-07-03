@@ -6,6 +6,8 @@ import StatusBadge from "@/components/StatusBadge";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
+import TripMap from "@/components/dispatch/TripMap";
+import LocationPinPicker from "@/components/dispatch/LocationPinPicker";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { ApiRequestError, api, apiOptional } from "@/lib/api";
@@ -33,8 +35,12 @@ type TruckOption = { id: string; assetCode: string };
 type ScheduleForm = {
   customerId: string;
   pickupLocation: string;
+  pickupLatitude?: number | null;
+  pickupLongitude?: number | null;
   pickupScheduledAt: string;
   dropoffLocation: string;
+  dropoffLatitude?: number | null;
+  dropoffLongitude?: number | null;
   dropoffScheduledAt: string;
   driverUserId: string;
   truckAssetId: string;
@@ -219,8 +225,12 @@ export default function TripDetailPage() {
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
     pickupLocation: "",
+    pickupLatitude: null,
+    pickupLongitude: null,
     pickupScheduledAt: "",
     dropoffLocation: "",
+    dropoffLatitude: null,
+    dropoffLongitude: null,
     dropoffScheduledAt: "",
     driverUserId: "",
     truckAssetId: "",
@@ -297,6 +307,25 @@ export default function TripDetailPage() {
       if (isCurrentTripEvent(event.tripId)) {
         markUpdatedJustNow();
         void fetchTrip();
+      }
+    },
+    onDriverLocationUpdated: (event) => {
+      if (!isManager && !isDispatcher) return;
+      if (isCurrentTripEvent(event.tripId)) {
+        markUpdatedJustNow();
+        setTrip((current) =>
+          current
+            ? {
+                ...current,
+                latestDriverLocation: {
+                  latitude: event.latitude,
+                  longitude: event.longitude,
+                  accuracyMeters: event.accuracyMeters,
+                  recordedAt: event.recordedAt
+                }
+              }
+            : current
+        );
       }
     }
   });
@@ -388,8 +417,12 @@ export default function TripDetailPage() {
     setScheduleForm({
       customerId: summary.customer.id,
       pickupLocation: plannedStops.pickup?.locationText ?? "",
+      pickupLatitude: plannedStops.pickup?.latitude ?? null,
+      pickupLongitude: plannedStops.pickup?.longitude ?? null,
       pickupScheduledAt: toLocalInput(plannedStops.pickup?.scheduledAt),
       dropoffLocation: plannedStops.dropoff?.locationText ?? "",
+      dropoffLatitude: plannedStops.dropoff?.latitude ?? null,
+      dropoffLongitude: plannedStops.dropoff?.longitude ?? null,
       dropoffScheduledAt: toLocalInput(plannedStops.dropoff?.scheduledAt),
       driverUserId: summary.driverUserId ?? "",
       truckAssetId: summary.truckAssetId ?? "",
@@ -436,11 +469,15 @@ export default function TripDetailPage() {
       {
         stopType: "PICKUP",
         locationText: scheduleForm.pickupLocation,
+        latitude: scheduleForm.pickupLatitude ?? null,
+        longitude: scheduleForm.pickupLongitude ?? null,
         scheduledAt: new Date(scheduleForm.pickupScheduledAt).toISOString()
       },
       {
         stopType: "DROPOFF",
         locationText: scheduleForm.dropoffLocation,
+        latitude: scheduleForm.dropoffLatitude ?? null,
+        longitude: scheduleForm.dropoffLongitude ?? null,
         scheduledAt: new Date(scheduleForm.dropoffScheduledAt).toISOString()
       }
     ];
@@ -796,6 +833,8 @@ export default function TripDetailPage() {
     currentStatus !== "CLOSED" &&
     currentStatus !== "CANCELLED" &&
     currentStatus !== "DRAFT";
+  const canViewDispatchMap = isManager || isDispatcher;
+  const latestLocation = trip.latestDriverLocation;
   const versionTotalPages = Math.max(1, Math.ceil(versionTotal / versionPageSize));
 
   return (
@@ -985,7 +1024,55 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-            <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      {canViewDispatchMap ? (
+        <div className="surface-card p-4 md:p-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Trip Map</p>
+              <h3 className="mt-2 text-base font-semibold text-foreground">Pickup, Dropoff, and Latest Driver Ping</h3>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {latestLocation?.recordedAt
+                ? `Last ping ${new Date(latestLocation.recordedAt).toLocaleString()}`
+                : "No driver ping yet"}
+            </span>
+          </div>
+          <div className="mt-4">
+            <TripMap
+              pickup={{
+                latitude: plannedStops.pickup?.latitude,
+                longitude: plannedStops.pickup?.longitude,
+                label: plannedStops.pickup?.locationText ?? "Pickup",
+                detail: plannedStops.pickup?.scheduledAt
+                  ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
+                  : null
+              }}
+              dropoff={{
+                latitude: plannedStops.dropoff?.latitude,
+                longitude: plannedStops.dropoff?.longitude,
+                label: plannedStops.dropoff?.locationText ?? "Dropoff",
+                detail: plannedStops.dropoff?.scheduledAt
+                  ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
+                  : null
+              }}
+              driver={
+                latestLocation
+                  ? {
+                      latitude: latestLocation.latitude,
+                      longitude: latestLocation.longitude,
+                      label: trip.driverUsername ?? "Driver location",
+                      detail: trip.truckAssetCode ? `Truck ${trip.truckAssetCode}` : null
+                    }
+                  : null
+              }
+              driverRecordedAt={latestLocation?.recordedAt}
+              driverAccuracyMeters={latestLocation?.accuracyMeters}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <div className="surface-card p-6" id="trip-timeline">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Trip Timeline</h3>
@@ -1124,6 +1211,22 @@ export default function TripDetailPage() {
                     className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
                   />
                 </div>
+                {canEditLocations ? (
+                  <div className="md:col-span-2">
+                    <label className="text-xs uppercase text-muted-foreground">Map Pins</label>
+                    <div className="mt-2">
+                      <LocationPinPicker
+                        value={{
+                          pickupLatitude: scheduleForm.pickupLatitude,
+                          pickupLongitude: scheduleForm.pickupLongitude,
+                          dropoffLatitude: scheduleForm.dropoffLatitude,
+                          dropoffLongitude: scheduleForm.dropoffLongitude
+                        }}
+                        onChange={(pins) => setScheduleForm((prev) => ({ ...prev, ...pins }))}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

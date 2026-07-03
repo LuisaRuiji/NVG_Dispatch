@@ -45,7 +45,11 @@ export type DispatchTripListItem = {
   createdAt: string;
   updatedAt?: string | null;
   pickupLocation?: string | null;
+  pickupLatitude?: number | null;
+  pickupLongitude?: number | null;
   dropoffLocation?: string | null;
+  dropoffLatitude?: number | null;
+  dropoffLongitude?: number | null;
   pickupScheduledAt?: string | null;
   dropoffScheduledAt?: string | null;
   plannedStart?: string | null;
@@ -54,6 +58,7 @@ export type DispatchTripListItem = {
   latePickup?: boolean;
   lateDelivery?: boolean;
   onHoldMinutes?: number | null;
+  latestDriverLocation?: DispatchTripLatestDriverLocation | null;
   rowVersion: string;
 };
 
@@ -128,8 +133,18 @@ export type DispatchTripStop = {
   id: string;
   stopType: TripStopType;
   locationText: string;
+  latitude?: number | null;
+  longitude?: number | null;
   scheduledAt?: string | null;
   actualAt?: string | null;
+};
+
+export type DispatchTripLatestDriverLocation = {
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number | null;
+  recordedAt: string;
+  isStale?: boolean;
 };
 
 export type DispatchTripFinancials = {
@@ -226,6 +241,20 @@ export type DispatchTripDetail = {
   docVerificationEnabled: boolean;
   rowVersion: string;
   financials?: DispatchTripFinancials | null;
+  latestDriverLocation?: DispatchTripLatestDriverLocation | null;
+};
+
+export type DispatchTripLocationPingRequest = {
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number | null;
+  recordedAt?: string | null;
+};
+
+export type DispatchTripLocationPingResponse = DispatchTripLatestDriverLocation & {
+  id: string;
+  tripId: string;
+  driverId: string;
 };
 
 export type DispatchTripStatusRequest = {

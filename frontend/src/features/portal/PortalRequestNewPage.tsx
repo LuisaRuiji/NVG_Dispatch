@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
+import LocationPinPicker from "@/components/dispatch/LocationPinPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +19,11 @@ import {
 
 type FormState = {
   pickupLocation: string;
+  pickupLatitude?: number | null;
+  pickupLongitude?: number | null;
   dropoffLocation: string;
+  dropoffLatitude?: number | null;
+  dropoffLongitude?: number | null;
   requestedPickupTime: string;
   containerSize: ContainerSize;
   tripType: TripType;
@@ -46,7 +51,11 @@ export default function PortalRequestNewPage() {
   const [atwFile, setAtwFile] = useState<File | null>(null);
   const [form, setForm] = useState<FormState>({
     pickupLocation: "",
+    pickupLatitude: null,
+    pickupLongitude: null,
     dropoffLocation: "",
+    dropoffLatitude: null,
+    dropoffLongitude: null,
     requestedPickupTime: "",
     containerSize: "TWENTY_FT",
     tripType: "PORT_PICKUP",
@@ -69,7 +78,11 @@ export default function PortalRequestNewPage() {
       setSaving(true);
       const payload = {
         pickupLocation: form.pickupLocation.trim(),
+        pickupLatitude: form.pickupLatitude ?? null,
+        pickupLongitude: form.pickupLongitude ?? null,
         dropoffLocation: form.dropoffLocation.trim(),
+        dropoffLatitude: form.dropoffLatitude ?? null,
+        dropoffLongitude: form.dropoffLongitude ?? null,
         requestedPickupTime: fromLocalInput(form.requestedPickupTime),
         containerSize: form.containerSize,
         tripType: form.tripType,
@@ -213,6 +226,22 @@ export default function PortalRequestNewPage() {
               placeholder="Booking reference"
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Map Pins</Label>
+          <LocationPinPicker
+            value={{
+              pickupLatitude: form.pickupLatitude,
+              pickupLongitude: form.pickupLongitude,
+              dropoffLatitude: form.dropoffLatitude,
+              dropoffLongitude: form.dropoffLongitude
+            }}
+            onChange={(pins) => update(pins)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Pins are optional but help dispatchers see the shipment on the operations map.
+          </p>
         </div>
 
         <div className="space-y-2">

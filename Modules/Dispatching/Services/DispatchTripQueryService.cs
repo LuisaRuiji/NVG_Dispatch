@@ -29,6 +29,10 @@ public sealed record DispatchTripListItem(
     DateTime? UpdatedAt,
     string? PickupLocation,
     string? DropoffLocation,
+    double? PickupLatitude,
+    double? PickupLongitude,
+    double? DropoffLatitude,
+    double? DropoffLongitude,
     DateTime? PickupScheduledAt,
     DateTime? DropoffScheduledAt,
     DateTime? PlannedStart,
@@ -45,7 +49,8 @@ public sealed record DispatchTripListItem(
     byte[] RowVersion,
     TripStatus? HoldPreviousStatus,
     TripStatus? FailedAttemptFromStatus,
-    DateTime? LastEventAt);
+    DateTime? LastEventAt,
+    DispatchTripLatestDriverLocation? LatestDriverLocation);
 
 public sealed record DispatchTripDocumentChecklist(
     TripDocumentType Type,
@@ -58,6 +63,13 @@ public sealed record DispatchTripFinancialDetail(
     decimal? FuelAmount,
     decimal? FuelPricePerLiter,
     string? OfficialReceiptNumber);
+
+public sealed record DispatchTripLatestDriverLocation(
+    double Latitude,
+    double Longitude,
+    double? AccuracyMeters,
+    DateTime RecordedAt,
+    bool IsStale);
 
 public sealed record DispatchTripDetail(
     Guid Id,
@@ -81,6 +93,7 @@ public sealed record DispatchTripDetail(
     IReadOnlyCollection<TripDocument> Documents,
     IReadOnlyCollection<TripStatusHistory> History,
     DispatchTripFinancialDetail? Financials,
+    DispatchTripLatestDriverLocation? LatestDriverLocation,
     byte[] RowVersion);
 
 public sealed record DispatchTripSummary(
@@ -333,7 +346,8 @@ public sealed class DispatchTripQueryService
 
         EnsureTripAccess(trip, actor);
 
-        return MapTripDetail(trip, CanViewFinancials(actor));
+        var latestLocation = await GetLatestDriverLocationAsync(trip.Id, cancellationToken);
+        return MapTripDetail(trip, CanViewFinancials(actor), latestLocation);
     }
 
     public async Task<DispatchTripSummary> GetTripSummaryAsync(
@@ -473,6 +487,22 @@ public sealed class DispatchTripQueryService
                     .FirstOrDefault(),
                 _dbContext.DispatchTripStops
                     .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
+                    .Select(s => s.Latitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
+                    .Select(s => s.Longitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
+                    .Select(s => s.Latitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
+                    .Select(s => s.Longitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
                     .Select(s => s.ScheduledAt)
                     .FirstOrDefault(),
                 _dbContext.DispatchTripStops
@@ -501,10 +531,12 @@ public sealed class DispatchTripQueryService
                     .Where(h => h.TripId == t.Id)
                     .OrderByDescending(h => h.EventAt)
                     .Select(h => (DateTime?)h.EventAt)
-                    .FirstOrDefault()))
+                    .FirstOrDefault(),
+                null))
             .ToListAsync(cancellationToken);
 
         var enriched = await AttachDocumentChecklistAsync(results, requiredTypes, cancellationToken);
+        enriched = await AttachLatestDriverLocationsAsync(enriched, cancellationToken);
         enriched = AttachDocumentReadiness(enriched);
         enriched = AttachPlannedWindow(enriched);
         enriched = AttachOperationalIndicators(enriched);
@@ -537,7 +569,8 @@ public sealed class DispatchTripQueryService
             throw new NotFoundException("Trip not found.");
         }
 
-        return MapTripDetail(trip, includeFinancials: false);
+        var latestLocation = await GetLatestDriverLocationAsync(trip.Id, cancellationToken);
+        return MapTripDetail(trip, includeFinancials: false, latestLocation);
     }
 
     public async Task<IReadOnlyCollection<TripStatusHistory>> GetTripHistoryAsync(
@@ -716,7 +749,10 @@ public sealed class DispatchTripQueryService
         throw new ForbiddenDomainException("Trip access denied.");
     }
 
-    private DispatchTripDetail MapTripDetail(Trip trip, bool includeFinancials)
+    private DispatchTripDetail MapTripDetail(
+        Trip trip,
+        bool includeFinancials,
+        DispatchTripLatestDriverLocation? latestLocation)
     {
         var history = trip.StatusHistory
             .OrderBy(h => h.EventAt)
@@ -758,6 +794,7 @@ public sealed class DispatchTripQueryService
                     trip.FuelPricePerLiter,
                     trip.OfficialReceiptNumber)
                 : null,
+            latestLocation,
             trip.RowVersion);
     }
 
@@ -989,6 +1026,22 @@ public sealed class DispatchTripQueryService
                     .FirstOrDefault(),
                 _dbContext.DispatchTripStops
                     .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
+                    .Select(s => s.Latitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
+                    .Select(s => s.Longitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
+                    .Select(s => s.Latitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Dropoff)
+                    .Select(s => s.Longitude)
+                    .FirstOrDefault(),
+                _dbContext.DispatchTripStops
+                    .Where(s => s.TripId == t.Id && s.StopType == TripStopType.Pickup)
                     .Select(s => s.ScheduledAt)
                     .FirstOrDefault(),
                 _dbContext.DispatchTripStops
@@ -1017,14 +1070,95 @@ public sealed class DispatchTripQueryService
                     .Where(h => h.TripId == t.Id)
                     .OrderByDescending(h => h.EventAt)
                     .Select(h => (DateTime?)h.EventAt)
-                    .FirstOrDefault()))
+                    .FirstOrDefault(),
+                null))
             .ToListAsync(cancellationToken);
 
         var enriched = await AttachDocumentChecklistAsync(results, requiredTypes, cancellationToken);
+        enriched = await AttachLatestDriverLocationsAsync(enriched, cancellationToken);
         enriched = AttachDocumentReadiness(enriched);
         enriched = AttachPlannedWindow(enriched);
         enriched = AttachOperationalIndicators(enriched);
         return new PagedQueryResult<DispatchTripListItem>(enriched, total);
+    }
+
+    private async Task<List<DispatchTripListItem>> AttachLatestDriverLocationsAsync(
+        List<DispatchTripListItem> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return items;
+        }
+
+        var tripIds = items.Select(item => item.Id).ToArray();
+        var pings = await _dbContext.DispatchTripLocationPings
+            .AsNoTracking()
+            .Where(ping => tripIds.Contains(ping.TripId))
+            .OrderByDescending(ping => ping.RecordedAt)
+            .ThenByDescending(ping => ping.CreatedAt)
+            .Select(ping => new
+            {
+                ping.TripId,
+                ping.Latitude,
+                ping.Longitude,
+                ping.AccuracyMeters,
+                ping.RecordedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+        var lookup = pings
+            .GroupBy(ping => ping.TripId)
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                {
+                    var ping = group.First();
+                    return new DispatchTripLatestDriverLocation(
+                        ping.Latitude,
+                        ping.Longitude,
+                        ping.AccuracyMeters,
+                        ping.RecordedAt,
+                        now - ping.RecordedAt > TimeSpan.FromMinutes(5));
+                });
+
+        return items
+            .Select(item => lookup.TryGetValue(item.Id, out var latest)
+                ? item with { LatestDriverLocation = latest }
+                : item)
+            .ToList();
+    }
+
+    private async Task<DispatchTripLatestDriverLocation?> GetLatestDriverLocationAsync(
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var ping = await _dbContext.DispatchTripLocationPings
+            .AsNoTracking()
+            .Where(item => item.TripId == tripId)
+            .OrderByDescending(item => item.RecordedAt)
+            .ThenByDescending(item => item.CreatedAt)
+            .Select(item => new
+            {
+                item.Latitude,
+                item.Longitude,
+                item.AccuracyMeters,
+                item.RecordedAt
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (ping is null)
+        {
+            return null;
+        }
+
+        return new DispatchTripLatestDriverLocation(
+            ping.Latitude,
+            ping.Longitude,
+            ping.AccuracyMeters,
+            ping.RecordedAt,
+            DateTime.UtcNow - ping.RecordedAt > TimeSpan.FromMinutes(5));
     }
 
     private async Task<List<DispatchTripListItem>> AttachDocumentChecklistAsync(

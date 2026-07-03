@@ -58,7 +58,11 @@ public sealed class ShipmentRequestTripCreationService : IShipmentRequestTripCre
             request.BookingNumber,
             request.ShippingLine,
             request.ContainerSize,
-            request.TripType);
+            request.TripType,
+            request.PickupLatitude,
+            request.PickupLongitude,
+            request.DropoffLatitude,
+            request.DropoffLongitude);
 
         return await _tripDispatchGateway.CreateDraftTripAsync(draft, actor, cancellationToken);
     }

@@ -60,7 +60,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             item.DocumentsCount,
             item.CreatedAt,
             item.ApprovedAt,
-            item.ConvertedTripId)).ToList();
+            item.ConvertedTripId,
+            item.PickupLatitude,
+            item.PickupLongitude,
+            item.DropoffLatitude,
+            item.DropoffLongitude)).ToList();
 
         return Ok(new PagedResult<ShipmentRequestListItemResponse>(
             items,
@@ -88,7 +92,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             request.CargoDescription,
             request.CargoWeight,
             request.SpecialInstructions,
-            User.GetUserId());
+            User.GetUserId(),
+            request.PickupLatitude,
+            request.PickupLongitude,
+            request.DropoffLatitude,
+            request.DropoffLongitude);
 
         var created = await _service.CreateDraftAsync(command, cancellationToken);
         return Ok(new ShipmentRequestStatusResponse(created.Id, created.Status));
@@ -114,7 +122,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             request.CargoDescription,
             request.CargoWeight,
             request.SpecialInstructions,
-            User.GetUserId());
+            User.GetUserId(),
+            request.PickupLatitude,
+            request.PickupLongitude,
+            request.DropoffLatitude,
+            request.DropoffLongitude);
 
         var updated = await _service.UpdateDraftAsync(id, command, cancellationToken);
         return Ok(new ShipmentRequestStatusResponse(updated.Id, updated.Status));
@@ -163,7 +175,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             detail.CreatedAt,
             detail.ApprovedAt,
             detail.ConvertedTripId,
-            docs));
+            docs,
+            detail.PickupLatitude,
+            detail.PickupLongitude,
+            detail.DropoffLatitude,
+            detail.DropoffLongitude));
     }
 
     [HttpPost("{id:guid}/documents")]
@@ -262,9 +278,13 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             item.TripType,
             item.ContainerNumber,
             item.ShippingLine,
-            item.BookingNumber,
-            item.DocumentsCount,
-            item.CreatedAt)).ToList();
+                item.BookingNumber,
+                item.DocumentsCount,
+                item.CreatedAt,
+                item.PickupLatitude,
+                item.PickupLongitude,
+                item.DropoffLatitude,
+                item.DropoffLongitude)).ToList();
 
         return Ok(new PagedResult<DispatchShipmentRequestQueueItemResponse>(
             items,
@@ -402,7 +422,9 @@ public sealed class PortalShipmentsController : ControllerBase
             stop.StopType,
             stop.LocationText,
             stop.ScheduledAt,
-            stop.ActualAt)).ToList();
+            stop.ActualAt,
+            stop.Latitude,
+            stop.Longitude)).ToList();
 
         return Ok(new CustomerShipmentDetailResponse(
             detail.TripId,
@@ -416,7 +438,15 @@ public sealed class PortalShipmentsController : ControllerBase
             detail.PodState,
             detail.AtwState,
             detail.WaybillGenerated,
-            stops));
+            stops,
+            detail.LatestDriverLocation is null
+                ? null
+                : new DispatchTripLatestDriverLocationResponse(
+                    detail.LatestDriverLocation.Latitude,
+                    detail.LatestDriverLocation.Longitude,
+                    detail.LatestDriverLocation.AccuracyMeters,
+                    detail.LatestDriverLocation.RecordedAt,
+                    detail.LatestDriverLocation.IsStale)));
     }
 
     [HttpGet("{tripId:guid}/timeline")]

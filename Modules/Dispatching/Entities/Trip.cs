@@ -34,6 +34,7 @@ public sealed class Trip
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
     public List<TripStop> Stops { get; set; } = [];
+    public List<TripLocationPing> LocationPings { get; set; } = [];
     public List<TripStatusHistory> StatusHistory { get; set; } = [];
     public List<TripDocument> Documents { get; set; } = [];
     public List<GeneratedWaybill> GeneratedWaybills { get; set; } = [];

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import "leaflet/dist/leaflet.css";
 import "./index.css";
 import LandingPage from "@/features/landing/LandingPage";
 import AppLayout from "@/components/layout/AppLayout";
@@ -30,6 +31,7 @@ import AuthEventsPage from "@/features/admin/AuthEventsPage";
 import PurchaseOrdersPage from "@/features/purchase-orders/PurchaseOrdersPage";
 import PurchaseOrderDetailPage from "@/features/purchase-orders/PurchaseOrderDetailPage";
 import DispatchBoardPage from "@/features/dispatch/DispatchBoardPage";
+import DispatchMapPage from "@/features/dispatch/DispatchMapPage";
 import DispatchRequestsPage from "@/features/dispatch/DispatchRequestsPage";
 import DispatchDocumentsPage from "@/features/dispatch/DispatchDocumentsPage";
 import DispatchTripsPage from "@/features/dispatch/DispatchTripsPage";
@@ -180,6 +182,14 @@ function App() {
             element={
               <RoleGate roles={["Manager", "Dispatcher", "CEO"]}>
                 <DispatchBoardPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/map"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher"]}>
+                <DispatchMapPage />
               </RoleGate>
             }
           />

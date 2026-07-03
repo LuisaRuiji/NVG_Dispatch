@@ -43,12 +43,26 @@ export type ShipmentRequestSubmittedEvent = {
   submittedAt: string;
 };
 
+export type DriverLocationUpdatedEvent = {
+  tripId: string;
+  driverId: string;
+  driverName?: string | null;
+  truckId?: string | null;
+  truckPlate?: string | null;
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number | null;
+  recordedAt: string;
+  tripStatus: string;
+};
+
 interface DispatchHubHandlers {
   onTripStatusChanged?: (e: TripStatusChangedEvent) => void;
   onDocumentUploaded?: (e: DocumentUploadedEvent) => void;
   onDocumentVerified?: (e: DocumentVerifiedEvent) => void;
   onRecommendationGenerated?: (e: RecommendationGeneratedEvent) => void;
   onShipmentRequestSubmitted?: (e: ShipmentRequestSubmittedEvent) => void;
+  onDriverLocationUpdated?: (e: DriverLocationUpdatedEvent) => void;
 }
 
 export function useDispatchHub(handlers: DispatchHubHandlers): void {
@@ -67,12 +81,15 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
       handlersRef.current.onRecommendationGenerated?.(e);
     const shipmentRequestSubmitted = (e: ShipmentRequestSubmittedEvent) =>
       handlersRef.current.onShipmentRequestSubmitted?.(e);
+    const driverLocationUpdated = (e: DriverLocationUpdatedEvent) =>
+      handlersRef.current.onDriverLocationUpdated?.(e);
 
     hub.on("TripStatusChanged", tripStatusChanged);
     hub.on("DocumentUploaded", documentUploaded);
     hub.on("DocumentVerified", documentVerified);
     hub.on("RecommendationGenerated", recommendationGenerated);
     hub.on("ShipmentRequestSubmitted", shipmentRequestSubmitted);
+    hub.on("DriverLocationUpdated", driverLocationUpdated);
     void startDispatchHub().catch((error) => {
       console.warn("Dispatch hub connection failed.", error);
     });
@@ -83,6 +100,7 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
       hub.off("DocumentVerified", documentVerified);
       hub.off("RecommendationGenerated", recommendationGenerated);
       hub.off("ShipmentRequestSubmitted", shipmentRequestSubmitted);
+      hub.off("DriverLocationUpdated", driverLocationUpdated);
       void stopDispatchHub().catch(() => undefined);
     };
   }, []);

@@ -8,6 +8,16 @@ namespace NVGInventory.Modules.Dispatching.Services;
 
 public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
 {
+    private static readonly TripStatus[] CustomerVisibleLocationStatuses =
+    [
+        TripStatus.Dispatched,
+        TripStatus.EnroutePickup,
+        TripStatus.AtPickup,
+        TripStatus.Loaded,
+        TripStatus.EnrouteDropoff,
+        TripStatus.AtDropoff
+    ];
+
     private readonly InventoryDbContext _dbContext;
 
     public DispatchShipmentReadService(InventoryDbContext dbContext)
@@ -102,6 +112,10 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
         var waybillGenerated = await _dbContext.GeneratedWaybills
             .AsNoTracking()
             .AnyAsync(waybill => waybill.TripId == trip.Id && waybill.IsActive, cancellationToken);
+        var latestLocation = trip.DriverUserId.HasValue &&
+            Array.IndexOf(CustomerVisibleLocationStatuses, trip.Status) >= 0
+                ? await GetLatestDriverLocationAsync(trip.Id, cancellationToken)
+                : null;
 
         return new DispatchCustomerShipmentDetail(
             trip.Id,
@@ -115,13 +129,16 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
             podState,
             atwState,
             waybillGenerated,
+            latestLocation,
             trip.Stops
                 .OrderBy(stop => stop.StopType)
                 .Select(stop => new DispatchCustomerShipmentStop(
                     stop.StopType,
                     stop.LocationText,
                     stop.ScheduledAt,
-                    stop.ActualAt))
+                    stop.ActualAt,
+                    stop.Latitude,
+                    stop.Longitude))
                 .ToList());
     }
 
@@ -179,5 +196,36 @@ public sealed class DispatchShipmentReadService : IDispatchShipmentReadService
             .ToListAsync(cancellationToken);
 
         return docs;
+    }
+
+    private async Task<DispatchTripLatestDriverLocation?> GetLatestDriverLocationAsync(
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var ping = await _dbContext.DispatchTripLocationPings
+            .AsNoTracking()
+            .Where(item => item.TripId == tripId)
+            .OrderByDescending(item => item.RecordedAt)
+            .ThenByDescending(item => item.CreatedAt)
+            .Select(item => new
+            {
+                item.Latitude,
+                item.Longitude,
+                item.AccuracyMeters,
+                item.RecordedAt
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (ping is null)
+        {
+            return null;
+        }
+
+        return new DispatchTripLatestDriverLocation(
+            ping.Latitude,
+            ping.Longitude,
+            ping.AccuracyMeters,
+            ping.RecordedAt,
+            DateTime.UtcNow - ping.RecordedAt > TimeSpan.FromMinutes(5));
     }
 }

@@ -99,7 +99,12 @@ public sealed class DispatchMyTripsController : ControllerBase
                 item.LatePickup,
                 item.LateDelivery,
                 item.OnHoldMinutes,
-                Convert.ToBase64String(item.RowVersion)))
+                Convert.ToBase64String(item.RowVersion),
+                item.PickupLatitude,
+                item.PickupLongitude,
+                item.DropoffLatitude,
+                item.DropoffLongitude,
+                MapLatestLocation(item.LatestDriverLocation)))
             .ToList();
 
         return Ok(new PagedResult<DispatchTripListItemResponse>(
@@ -138,7 +143,9 @@ public sealed class DispatchMyTripsController : ControllerBase
                 stop.StopType,
                 stop.LocationText,
                 stop.ScheduledAt,
-                stop.ActualAt)).ToList(),
+                stop.ActualAt,
+                stop.Latitude,
+                stop.Longitude)).ToList(),
             detail.Documents.Select(doc => new DispatchTripDocumentResponse(
                 doc.Id,
                 doc.Type,
@@ -165,8 +172,21 @@ public sealed class DispatchMyTripsController : ControllerBase
                 entry.EventAt,
                 entry.RecordedAt)).ToList(),
             _options.DocVerificationEnabled,
-            Convert.ToBase64String(detail.RowVersion));
+            Convert.ToBase64String(detail.RowVersion),
+            LatestDriverLocation: MapLatestLocation(detail.LatestDriverLocation));
 
         return Ok(response);
+    }
+
+    private static DispatchTripLatestDriverLocationResponse? MapLatestLocation(DispatchTripLatestDriverLocation? location)
+    {
+        return location is null
+            ? null
+            : new DispatchTripLatestDriverLocationResponse(
+                location.Latitude,
+                location.Longitude,
+                location.AccuracyMeters,
+                location.RecordedAt,
+                location.IsStale);
     }
 }

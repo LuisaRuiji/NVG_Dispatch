@@ -1,15 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
 import StatusBadge from "@/components/StatusBadge";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
+import TripMap from "@/components/dispatch/TripMap";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api, apiOptional } from "@/lib/api";
 import { captureDocumentPhoto } from "@/lib/camera";
-import type { DispatchTripDetail, GeneratedWaybill, TripDocumentType, TripStatus } from "./types";
+import { getBrowserLocationFix } from "@/lib/geolocation";
+import type {
+  DispatchTripDetail,
+  DispatchTripLocationPingRequest,
+  DispatchTripLocationPingResponse,
+  GeneratedWaybill,
+  TripDocumentType,
+  TripStatus
+} from "./types";
 import { operationalFlow, statusLabels } from "./types";
 import {
   canDriverUploadDocument,
@@ -21,7 +30,7 @@ import {
   isDocumentAttentionState
 } from "./driverTripUi";
 import { Capacitor } from "@capacitor/core";
-import { AlertTriangle, Camera, FileUp } from "lucide-react";
+import { AlertTriangle, Camera, FileUp, MapPin } from "lucide-react";
 
 const uploadableDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD"];
 const visibleDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD", "WAYBILL"];
@@ -35,6 +44,14 @@ const driverHoldEligible: TripStatus[] = [
 const failedAttemptEligible: TripStatus[] = [
   "ENROUTE_PICKUP",
   "AT_PICKUP",
+  "ENROUTE_DROPOFF",
+  "AT_DROPOFF"
+];
+const locationSharingStatuses: TripStatus[] = [
+  "DISPATCHED",
+  "ENROUTE_PICKUP",
+  "AT_PICKUP",
+  "LOADED",
   "ENROUTE_DROPOFF",
   "AT_DROPOFF"
 ];
@@ -80,8 +97,11 @@ export default function MyTripDetailPage() {
   const [trip, setTrip] = useState<DispatchTripDetail | null>(null);
   const [generatedWaybill, setGeneratedWaybill] = useState<GeneratedWaybill | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [locationSending, setLocationSending] = useState(false);
+  const [liveLocationEnabled, setLiveLocationEnabled] = useState(false);
   const [modal, setModal] = useState<ActionModal>(null);
   const fileInputs = useRef<Partial<Record<TripDocumentType, HTMLInputElement | null>>>({});
+  const liveLocationManualOptOut = useRef(false);
   const isNative = Capacitor.isNativePlatform();
 
   const fetchTrip = async () => {
@@ -115,6 +135,99 @@ export default function MyTripDetailPage() {
     const dropoff = trip.stops.find((stop) => stop.stopType === "DROPOFF") ?? null;
     return { pickup, dropoff };
   }, [trip]);
+
+  const canShareLocation = trip ? locationSharingStatuses.includes(trip.status) : false;
+
+  useEffect(() => {
+    liveLocationManualOptOut.current = false;
+    setLiveLocationEnabled(false);
+  }, [id]);
+
+  useEffect(() => {
+    if (!canShareLocation || !trip?.id || liveLocationManualOptOut.current) {
+      return;
+    }
+
+    setLiveLocationEnabled(true);
+  }, [canShareLocation, trip?.id]);
+
+  const sendCurrentLocation = useCallback(
+    async (silent = false) => {
+      if (!trip?.id) return false;
+      if (!canShareLocation) {
+        setLiveLocationEnabled(false);
+        if (!silent) {
+          show("Location sharing is available only for active assigned trips.", "error");
+        }
+        return false;
+      }
+
+      try {
+        setLocationSending(true);
+        const fix = await getBrowserLocationFix();
+        const payload: DispatchTripLocationPingRequest = {
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          accuracyMeters: fix.accuracyMeters,
+          recordedAt: fix.recordedAt
+        };
+        const ping = await api<DispatchTripLocationPingResponse>(`/api/dispatch/trips/${trip.id}/location`, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        setTrip((current) =>
+          current?.id === ping.tripId
+            ? {
+                ...current,
+                latestDriverLocation: {
+                  latitude: ping.latitude,
+                  longitude: ping.longitude,
+                  accuracyMeters: ping.accuracyMeters,
+                  recordedAt: ping.recordedAt
+                }
+              }
+            : current
+        );
+        if (!silent) {
+          show("Location sent.", "success");
+        }
+        return true;
+      } catch (e: any) {
+        console.error(e);
+        setLiveLocationEnabled(false);
+        if (!silent) {
+          show(e?.message ?? "Failed to send current location.", "error");
+        }
+        return false;
+      } finally {
+        setLocationSending(false);
+      }
+    },
+    [canShareLocation, show, trip?.id]
+  );
+
+  useEffect(() => {
+    if (!liveLocationEnabled || !canShareLocation) return;
+    void sendCurrentLocation(true);
+    const interval = window.setInterval(() => {
+      void sendCurrentLocation(true);
+    }, 60000);
+    return () => window.clearInterval(interval);
+  }, [canShareLocation, liveLocationEnabled, sendCurrentLocation]);
+
+  useEffect(() => {
+    if (!canShareLocation) {
+      setLiveLocationEnabled(false);
+    }
+  }, [canShareLocation]);
+
+  const toggleLiveLocation = () => {
+    setLiveLocationEnabled((value) => {
+      const next = !value;
+      liveLocationManualOptOut.current = !next;
+      return next;
+    });
+  };
 
   const handleDriverAction = async (
     endpoint: string,
@@ -236,6 +349,7 @@ export default function MyTripDetailPage() {
   const primaryUploadHint = primaryUploadType
     ? documentHint(primaryUploadType) ?? "Capture a clear photo or upload the document file for this trip."
     : "Document capture unlocks as the trip reaches pickup, dropoff, or delivered status.";
+  const latestLocation = trip.latestDriverLocation;
 
   return (
     <div className="space-y-6 pb-6">
@@ -378,6 +492,71 @@ export default function MyTripDetailPage() {
               </span>
             ) : null}
           </div>
+        </div>
+      </div>
+
+      <div className="surface-card p-4 md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Trip Location</p>
+            <h3 className="mt-2 text-base font-semibold text-foreground">Map View</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Live sharing starts automatically while this trip page is open and the trip is active.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              className="h-11 gap-2"
+              disabled={!canShareLocation || locationSending}
+              onClick={() => void sendCurrentLocation(false)}
+            >
+              <MapPin className="h-4 w-4" />
+              {locationSending ? "Sending..." : "Send Current Location"}
+            </Button>
+            <Button
+              variant={liveLocationEnabled ? "default" : "outline"}
+              className="h-11"
+              disabled={!canShareLocation}
+              onClick={toggleLiveLocation}
+            >
+              {liveLocationEnabled ? "Live Sharing On" : "Share While Open"}
+            </Button>
+          </div>
+        </div>
+        <div className="mt-4">
+          <TripMap
+            pickup={{
+              latitude: plannedStops.pickup?.latitude,
+              longitude: plannedStops.pickup?.longitude,
+              label: plannedStops.pickup?.locationText ?? "Pickup",
+              detail: plannedStops.pickup?.scheduledAt
+                ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
+                : null
+            }}
+            dropoff={{
+              latitude: plannedStops.dropoff?.latitude,
+              longitude: plannedStops.dropoff?.longitude,
+              label: plannedStops.dropoff?.locationText ?? "Dropoff",
+              detail: plannedStops.dropoff?.scheduledAt
+                ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
+                : null
+            }}
+            driver={
+              latestLocation
+                ? {
+                    latitude: latestLocation.latitude,
+                    longitude: latestLocation.longitude,
+                    label: "My latest location",
+                    detail: trip.truckAssetCode ? `Truck ${trip.truckAssetCode}` : null
+                  }
+                : null
+            }
+            driverRecordedAt={latestLocation?.recordedAt}
+            driverAccuracyMeters={latestLocation?.accuracyMeters}
+            emptyTitle="No trip coordinates yet"
+            heightClassName="h-[20rem]"
+          />
         </div>
       </div>
 

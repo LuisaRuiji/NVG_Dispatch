@@ -11,7 +11,11 @@ public sealed record ShipmentRequestTripDraftData(
     string? BookingNumber,
     string? ShippingLine,
     string? ContainerSize,
-    string? TripType);
+    string? TripType,
+    double? PickupLatitude = null,
+    double? PickupLongitude = null,
+    double? DropoffLatitude = null,
+    double? DropoffLongitude = null);
 
 public interface IShipmentRequestTripDispatchGateway
 {

@@ -1,4 +1,9 @@
-import type { TripDocumentState, TripStatus, TripStopType } from "@/features/dispatch/types";
+import type {
+  DispatchTripLatestDriverLocation,
+  TripDocumentState,
+  TripStatus,
+  TripStopType
+} from "@/features/dispatch/types";
 
 export type ShipmentRequestStatus =
   | "DRAFT"
@@ -34,7 +39,11 @@ export type ShipmentRequestListItem = {
   id: string;
   status: ShipmentRequestStatus;
   pickupLocation: string;
+  pickupLatitude?: number | null;
+  pickupLongitude?: number | null;
   dropoffLocation: string;
+  dropoffLatitude?: number | null;
+  dropoffLongitude?: number | null;
   requestedPickupTime?: string | null;
   containerSize: ContainerSize;
   tripType: TripType;
@@ -60,7 +69,11 @@ export type ShipmentRequestDetail = {
   id: string;
   status: ShipmentRequestStatus;
   pickupLocation: string;
+  pickupLatitude?: number | null;
+  pickupLongitude?: number | null;
   dropoffLocation: string;
+  dropoffLatitude?: number | null;
+  dropoffLongitude?: number | null;
   requestedPickupTime?: string | null;
   containerSize: ContainerSize;
   tripType: TripType;
@@ -105,11 +118,14 @@ export type CustomerShipmentDetail = {
   atwState: TripDocumentState;
   waybillGenerated: boolean;
   stops: CustomerShipmentStop[];
+  latestDriverLocation?: DispatchTripLatestDriverLocation | null;
 };
 
 export type CustomerShipmentStop = {
   stopType: TripStopType;
   locationText: string;
+  latitude?: number | null;
+  longitude?: number | null;
   scheduledAt?: string | null;
   actualAt?: string | null;
 };

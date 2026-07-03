@@ -21,6 +21,7 @@ public sealed class DispatchTripsController : ControllerBase
     private readonly ITripLifecycleService _tripLifecycleService;
     private readonly IDispatchDocumentWorkflowService _documentWorkflowService;
     private readonly IGeneratedWaybillService _generatedWaybillService;
+    private readonly DispatchTripLocationService _locationService;
     private readonly DispatchTripQueryService _queryService;
     private readonly DispatchingOptions _options;
 
@@ -28,12 +29,14 @@ public sealed class DispatchTripsController : ControllerBase
         ITripLifecycleService tripLifecycleService,
         IDispatchDocumentWorkflowService documentWorkflowService,
         IGeneratedWaybillService generatedWaybillService,
+        DispatchTripLocationService locationService,
         DispatchTripQueryService queryService,
         IOptions<DispatchingOptions> options)
     {
         _tripLifecycleService = tripLifecycleService;
         _documentWorkflowService = documentWorkflowService;
         _generatedWaybillService = generatedWaybillService;
+        _locationService = locationService;
         _queryService = queryService;
         _options = options.Value ?? new DispatchingOptions();
     }
@@ -311,7 +314,12 @@ public sealed class DispatchTripsController : ControllerBase
             request.DriverUserId,
             request.TruckAssetId,
             request.Notes,
-            request.Stops?.Select(stop => new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt))
+            request.Stops?.Select(stop => new DispatchTripStopInput(
+                    stop.StopType,
+                    stop.LocationText,
+                    stop.ScheduledAt,
+                    stop.Latitude,
+                    stop.Longitude))
                 .ToList(),
             MapFinancials(request.Financials),
             request.ContainerNumber,
@@ -340,7 +348,12 @@ public sealed class DispatchTripsController : ControllerBase
             request.DriverUserId,
             request.TruckAssetId,
             request.Notes,
-            request.Stops?.Select(stop => new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt))
+            request.Stops?.Select(stop => new DispatchTripStopInput(
+                    stop.StopType,
+                    stop.LocationText,
+                    stop.ScheduledAt,
+                    stop.Latitude,
+                    stop.Longitude))
                 .ToList(),
             request.Remarks,
             rowVersion,
@@ -383,7 +396,9 @@ public sealed class DispatchTripsController : ControllerBase
                 stop.StopType,
                 stop.LocationText,
                 stop.ScheduledAt,
-                stop.ActualAt)).ToList(),
+                stop.ActualAt,
+                stop.Latitude,
+                stop.Longitude)).ToList(),
             detail.Documents.Select(doc => new DispatchTripDocumentResponse(
                 doc.Id,
                 doc.Type,
@@ -411,9 +426,38 @@ public sealed class DispatchTripsController : ControllerBase
                 entry.RecordedAt)).ToList(),
             _options.DocVerificationEnabled,
             Convert.ToBase64String(detail.RowVersion),
-            MapFinancialResponse(detail.Financials));
+            MapFinancialResponse(detail.Financials),
+            MapLatestLocation(detail.LatestDriverLocation));
 
         return Ok(response);
+    }
+
+    [HttpPost("{tripId:guid}/location")]
+    [Authorize(Roles = RoleNames.Driver)]
+    public async Task<ActionResult<DispatchTripLocationPingResponse>> RecordLocation(
+        Guid tripId,
+        DispatchTripLocationPingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var ping = await _locationService.RecordLocationAsync(
+            new RecordTripLocationPingCommand(
+                tripId,
+                request.Latitude,
+                request.Longitude,
+                request.AccuracyMeters,
+                request.RecordedAt),
+            BuildActor(),
+            cancellationToken);
+
+        return Ok(new DispatchTripLocationPingResponse(
+            ping.Id,
+            ping.TripId,
+            ping.DriverId,
+            ping.Latitude,
+            ping.Longitude,
+            ping.AccuracyMeters,
+            ping.RecordedAt,
+            ping.CreatedAt));
     }
 
     [HttpPost("{tripId:guid}/dispatch")]
@@ -858,6 +902,18 @@ public sealed class DispatchTripsController : ControllerBase
                 financials.OfficialReceiptNumber);
     }
 
+    private static DispatchTripLatestDriverLocationResponse? MapLatestLocation(DispatchTripLatestDriverLocation? location)
+    {
+        return location is null
+            ? null
+            : new DispatchTripLatestDriverLocationResponse(
+                location.Latitude,
+                location.Longitude,
+                location.AccuracyMeters,
+                location.RecordedAt,
+                location.IsStale);
+    }
+
     private static GeneratedWaybillResponse MapGeneratedWaybill(NVGInventory.Modules.Dispatching.Entities.GeneratedWaybill waybill)
     {
         return new GeneratedWaybillResponse(
@@ -961,7 +1017,12 @@ public sealed class DispatchTripsController : ControllerBase
                 item.LatePickup,
                 item.LateDelivery,
                 item.OnHoldMinutes,
-                Convert.ToBase64String(item.RowVersion)))
+                Convert.ToBase64String(item.RowVersion),
+                item.PickupLatitude,
+                item.PickupLongitude,
+                item.DropoffLatitude,
+                item.DropoffLongitude,
+                MapLatestLocation(item.LatestDriverLocation)))
             .ToList();
     }
 
