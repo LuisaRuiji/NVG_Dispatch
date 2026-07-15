@@ -53,7 +53,7 @@ import {
   refreshSession
 } from "@/features/auth/authStore";
 import ChangePasswordPage from "@/features/auth/ChangePasswordPage";
-import RoleGate from "@/components/RoleGate";
+import RoleGate, { getSafeReturnRoute } from "@/components/RoleGate";
 import { initTheme } from "@/lib/theme";
 
 setUnauthorizedHandler(async () => {
@@ -83,6 +83,13 @@ function MustChangePasswordGuard({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+function UnknownRouteFallback() {
+  const me = getMe();
+  const location = useLocation();
+
+  return <Navigate to={me ? getSafeReturnRoute(location.pathname) : "/login"} replace />;
 }
 
 function App() {
@@ -395,7 +402,7 @@ function App() {
             }
           />
         </Route>
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<UnknownRouteFallback />} />
         </Routes>
       </MustChangePasswordGuard>
     </BrowserRouter>
