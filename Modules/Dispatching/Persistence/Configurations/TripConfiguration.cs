@@ -93,6 +93,14 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
             .HasMaxLength(512);
         entity.Property(trip => trip.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
         entity.Property(trip => trip.UpdatedAt).HasColumnName("updated_at");
+        entity.Property(trip => trip.LastLatitude)
+            .HasColumnName("last_latitude")
+            .HasColumnType("decimal(9,6)");
+        entity.Property(trip => trip.LastLongitude)
+            .HasColumnName("last_longitude")
+            .HasColumnType("decimal(9,6)");
+        entity.Property(trip => trip.LastLocationAt)
+            .HasColumnName("last_location_at");
         entity.Property(trip => trip.RowVersion)
             .HasColumnName("row_version")
             .IsRowVersion();

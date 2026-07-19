@@ -6,6 +6,8 @@ import StatusBadge from "@/components/StatusBadge";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
+import { LocationMap } from "@/components/ui/LocationMap";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { ApiRequestError, api, apiOptional } from "@/lib/api";
@@ -33,8 +35,12 @@ type TruckOption = { id: string; assetCode: string };
 type ScheduleForm = {
   customerId: string;
   pickupLocation: string;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
   pickupScheduledAt: string;
   dropoffLocation: string;
+  dropoffLatitude?: number;
+  dropoffLongitude?: number;
   dropoffScheduledAt: string;
   driverUserId: string;
   truckAssetId: string;
@@ -219,8 +225,12 @@ export default function TripDetailPage() {
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
     pickupLocation: "",
+    pickupLatitude: undefined,
+    pickupLongitude: undefined,
     pickupScheduledAt: "",
     dropoffLocation: "",
+    dropoffLatitude: undefined,
+    dropoffLongitude: undefined,
     dropoffScheduledAt: "",
     driverUserId: "",
     truckAssetId: "",
@@ -388,8 +398,12 @@ export default function TripDetailPage() {
     setScheduleForm({
       customerId: summary.customer.id,
       pickupLocation: plannedStops.pickup?.locationText ?? "",
+      pickupLatitude: plannedStops.pickup?.latitude ?? undefined,
+      pickupLongitude: plannedStops.pickup?.longitude ?? undefined,
       pickupScheduledAt: toLocalInput(plannedStops.pickup?.scheduledAt),
       dropoffLocation: plannedStops.dropoff?.locationText ?? "",
+      dropoffLatitude: plannedStops.dropoff?.latitude ?? undefined,
+      dropoffLongitude: plannedStops.dropoff?.longitude ?? undefined,
       dropoffScheduledAt: toLocalInput(plannedStops.dropoff?.scheduledAt),
       driverUserId: summary.driverUserId ?? "",
       truckAssetId: summary.truckAssetId ?? "",
@@ -436,11 +450,15 @@ export default function TripDetailPage() {
       {
         stopType: "PICKUP",
         locationText: scheduleForm.pickupLocation,
+        latitude: scheduleForm.pickupLatitude,
+        longitude: scheduleForm.pickupLongitude,
         scheduledAt: new Date(scheduleForm.pickupScheduledAt).toISOString()
       },
       {
         stopType: "DROPOFF",
         locationText: scheduleForm.dropoffLocation,
+        latitude: scheduleForm.dropoffLatitude,
+        longitude: scheduleForm.dropoffLongitude,
         scheduledAt: new Date(scheduleForm.dropoffScheduledAt).toISOString()
       }
     ];
@@ -499,8 +517,9 @@ export default function TripDetailPage() {
       if (!silent) {
         show("Schedule updated.", "success");
       }
+      const newSummary = await api<DispatchTripSummary>(`/api/dispatch/trips/${tripId}/summary`, { method: "GET" });
       await fetchTrip();
-      return true;
+      return newSummary.rowVersion;
     } catch (e: any) {
       console.error(e);
       const conflict = parseAssignmentConflict(e);
@@ -534,8 +553,8 @@ export default function TripDetailPage() {
       show(isManager ? "Assign a truck or add override remarks before dispatching." : "Assign a truck before dispatching.", "error");
       return;
     }
-    const saved = await handleSaveSchedule(true);
-    if (!saved) return;
+    const savedRowVersion = await handleSaveSchedule(true);
+    if (!savedRowVersion) return;
     try {
       setAssignmentConflict(null);
       setDispatching(true);
@@ -545,7 +564,7 @@ export default function TripDetailPage() {
           driverUserId: scheduleForm.driverUserId,
           truckAssetId: scheduleForm.truckAssetId || null,
           remarks: scheduleForm.changeRemarks || null,
-          rowVersion: currentRowVersion
+          rowVersion: typeof savedRowVersion === "string" ? savedRowVersion : currentRowVersion
         })
       });
       show("Trip dispatched.", "success");
@@ -1086,14 +1105,40 @@ export default function TripDetailPage() {
               </div>
             </div>
 
+            {(plannedStops.pickup?.latitude && plannedStops.pickup?.longitude) || 
+             (plannedStops.dropoff?.latitude && plannedStops.dropoff?.longitude) ? (
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {plannedStops.pickup?.latitude && plannedStops.pickup?.longitude && (
+                  <div>
+                    <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Pickup Map</h4>
+                    <LocationMap 
+                      latitude={plannedStops.pickup.latitude} 
+                      longitude={plannedStops.pickup.longitude} 
+                      label="Pickup Location" 
+                    />
+                  </div>
+                )}
+                {plannedStops.dropoff?.latitude && plannedStops.dropoff?.longitude && (
+                  <div>
+                    <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Dropoff Map</h4>
+                    <LocationMap 
+                      latitude={plannedStops.dropoff.latitude} 
+                      longitude={plannedStops.dropoff.longitude} 
+                      label="Dropoff Location" 
+                    />
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             {canEditSchedule ? (
               <div className="mt-5 grid gap-4 text-sm md:grid-cols-2">
                 <div>
                   <label className="text-xs uppercase text-muted-foreground">Pickup Location</label>
-                  <input
+                  <AddressAutocomplete
                     value={scheduleForm.pickupLocation}
-                    onChange={(e) => setScheduleForm((prev) => ({ ...prev, pickupLocation: e.target.value }))}
-                    className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                    onChange={(val, lat, lon) => setScheduleForm((prev) => ({ ...prev, pickupLocation: val, pickupLatitude: lat, pickupLongitude: lon }))}
+                    className="mt-2 h-9 w-full rounded-lg text-sm"
                     disabled={!canEditLocations}
                   />
                 </div>
@@ -1108,10 +1153,10 @@ export default function TripDetailPage() {
                 </div>
                 <div>
                   <label className="text-xs uppercase text-muted-foreground">Dropoff Location</label>
-                  <input
+                  <AddressAutocomplete
                     value={scheduleForm.dropoffLocation}
-                    onChange={(e) => setScheduleForm((prev) => ({ ...prev, dropoffLocation: e.target.value }))}
-                    className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                    onChange={(val, lat, lon) => setScheduleForm((prev) => ({ ...prev, dropoffLocation: val, dropoffLatitude: lat, dropoffLongitude: lon }))}
+                    className="mt-2 h-9 w-full rounded-lg text-sm"
                     disabled={!canEditLocations}
                   />
                 </div>

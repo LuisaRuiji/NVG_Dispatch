@@ -11,7 +11,11 @@ public sealed class ShipmentRequest
     public Customer? Customer { get; set; }
     public ShipmentRequestStatus Status { get; set; }
     public string PickupLocation { get; set; } = string.Empty;
+    public decimal? PickupLatitude { get; set; }
+    public decimal? PickupLongitude { get; set; }
     public string DropoffLocation { get; set; } = string.Empty;
+    public decimal? DropoffLatitude { get; set; }
+    public decimal? DropoffLongitude { get; set; }
     public DateTime? RequestedPickupTime { get; set; }
     public string? CargoDescription { get; set; }
     public decimal? CargoWeight { get; set; }

@@ -383,7 +383,9 @@ public sealed class DispatchTripsController : ControllerBase
                 stop.StopType,
                 stop.LocationText,
                 stop.ScheduledAt,
-                stop.ActualAt)).ToList(),
+                stop.ActualAt,
+                stop.Latitude,
+                stop.Longitude)).ToList(),
             detail.Documents.Select(doc => new DispatchTripDocumentResponse(
                 doc.Id,
                 doc.Type,
@@ -437,7 +439,7 @@ public sealed class DispatchTripsController : ControllerBase
     }
 
     [HttpPost("{tripId:guid}/status")]
-    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.Driver}")]
+    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.Driver},{RoleNames.Dispatcher}")]
     public async Task<ActionResult<DispatchTripStatusResponse>> UpdateStatus(
         Guid tripId,
         DispatchTripStatusRequest request,

@@ -1,439 +1,285 @@
-using System.Globalization;
-using Microsoft.AspNetCore.SignalR;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using NVGInventory.Data;
-using NVGInventory.Domain.Constants;
-using NVGInventory.Hubs;
-using NVGInventory.Hubs.Events;
 using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
-using NVGInventory.Services;
+using NVGInventory.Modules.Dispatching.Models;
+using Microsoft.Extensions.Logging;
 
 namespace NVGInventory.Modules.Dispatching.Services;
 
 public interface IPostDeliveryRecommendationService
 {
-    Task GenerateRecommendationsAsync(Guid completedTripId, CancellationToken ct = default);
+    Task<List<DispatchRecommendation>> GenerateRecommendationsAsync(Guid tripId, CancellationToken cancellationToken = default);
 }
 
 public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendationService
 {
-    private static readonly char[] Punctuation =
-    [
-        ',', '.', ';', ':', '-', '_', '/', '\\', '(', ')', '[', ']', '{', '}', '\'', '"'
-    ];
-
-    private static readonly HashSet<string> LocationKeywords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "davao",
-        "tagum",
-        "panabo",
-        "bunawan",
-        "calinan",
-        "tomas",
-        "dict",
-        "ktc",
-        "kudos",
-        "tadeco",
-        "dole",
-        "manila",
-        "harbor"
-    };
-
     private readonly InventoryDbContext _dbContext;
+    private readonly IDispatchCspValidationService _cspValidationService;
+    private readonly ITravelTimeService _travelTimeService;
     private readonly ILogger<PostDeliveryRecommendationService> _logger;
-    private readonly IServiceScopeFactory? _serviceScopeFactory;
-    private readonly IVaiaCacheService? _cacheService;
 
     public PostDeliveryRecommendationService(
         InventoryDbContext dbContext,
-        ILogger<PostDeliveryRecommendationService> logger,
-        IServiceScopeFactory? serviceScopeFactory = null,
-        IVaiaCacheService? cacheService = null)
+        IDispatchCspValidationService cspValidationService,
+        ITravelTimeService travelTimeService,
+        ILogger<PostDeliveryRecommendationService> logger)
     {
         _dbContext = dbContext;
+        _cspValidationService = cspValidationService;
+        _travelTimeService = travelTimeService;
         _logger = logger;
-        _serviceScopeFactory = serviceScopeFactory;
-        _cacheService = cacheService;
     }
 
-    public async Task GenerateRecommendationsAsync(Guid completedTripId, CancellationToken ct = default)
+    public async Task<List<DispatchRecommendation>> GenerateRecommendationsAsync(Guid tripId, CancellationToken cancellationToken = default)
     {
-        try
+        var result = new List<DispatchRecommendation>();
+
+        _logger.LogWarning($"[REC-DEBUG] Triggered Post-Delivery Recommendation for Trip: {tripId}");
+        
+        var completedTrip = await _dbContext.DispatchTrips
+            .Include(t => t.Stops)
+            .Include(t => t.TruckAsset)
+            .Include(t => t.Driver)
+            .FirstOrDefaultAsync(t => t.Id == tripId, cancellationToken);
+
+        if (completedTrip == null || completedTrip.TruckAsset == null || completedTrip.Driver == null)
         {
-            var now = DateTime.UtcNow;
-            var hasActiveRecommendations = await _dbContext.DispatchRecommendations
-                .AsNoTracking()
-                .AnyAsync(recommendation =>
-                    recommendation.CompletedTripId == completedTripId &&
-                    recommendation.ExpiresAt > now &&
-                    !recommendation.WasAccepted &&
-                    !recommendation.WasIgnored,
-                    ct);
-            if (hasActiveRecommendations)
+            _logger.LogWarning($"[REC-DEBUG] Aborting: completedTrip is null ({completedTrip == null}), TruckAsset is null ({completedTrip?.TruckAsset == null}), or Driver is null ({completedTrip?.Driver == null}).");
+            return result;
+        }
+
+        var lastStop = completedTrip.Stops
+            .LastOrDefault(s => s.StopType == TripStopType.Dropoff);
+
+        if (lastStop == null || !lastStop.Latitude.HasValue || !lastStop.Longitude.HasValue)
+            return result;
+
+        decimal currentLat = lastStop.Latitude.Value;
+        decimal currentLon = lastStop.Longitude.Value;
+
+        var unassignedTrips = await _dbContext.DispatchTrips
+            .Include(t => t.Stops)
+            .Where(t => t.Status == TripStatus.Draft)
+            .ToListAsync(cancellationToken);
+
+        var candidateMoves = new List<CandidateTopsisMove>();
+
+        foreach (var candidateTrip in unassignedTrips)
+        {
+            _logger.LogWarning($"[REC-DEBUG] Evaluating candidate draft trip {candidateTrip.Id}");
+            var pickup = candidateTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
+            var dropoff = candidateTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
+
+            if (pickup?.Latitude == null || pickup?.Longitude == null || dropoff?.Latitude == null || dropoff?.Longitude == null)
             {
-                return;
+                _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} rejected: Missing coordinates or pickup/dropoff stop.");
+                continue;
             }
 
-            var completedTrip = await _dbContext.DispatchTrips
-                .Include(trip => trip.Stops)
-                .AsNoTracking()
-                .FirstOrDefaultAsync(trip => trip.Id == completedTripId, ct);
-            if (completedTrip is null || completedTrip.Status != TripStatus.Delivered)
+            // 1. CSP Hard Constraint Validation
+            var validationResult = await _cspValidationService.ValidateCandidateAsync(
+                candidateTrip.Id, completedTrip.TruckAsset.Id, completedTrip.Driver.Id, null, cancellationToken);
+
+            if (!validationResult.IsFeasible) 
             {
-                return;
+                _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} failed CSP Hard Constraints: {string.Join(", ", validationResult.FailureReasons)}");
+                continue;
             }
 
-            if (!completedTrip.DriverUserId.HasValue || !completedTrip.TruckAssetId.HasValue)
+            _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} passed CSP constraints! Calculating TOPSIS...");
+
+            // 2. Compute 6 Thesis Criteria
+            DateTime simulatedTime = DateTime.UtcNow;
+
+            // C1: Deadhead Distance
+            var emptyTravel = await _travelTimeService.EstimateTravelAsync(currentLat, currentLon, pickup.Latitude.Value, pickup.Longitude.Value, cancellationToken);
+            decimal deadheadDistance = emptyTravel.DistanceKm;
+            simulatedTime = simulatedTime.AddMinutes(emptyTravel.TravelMinutes);
+
+            // C2: Cleaning Time
+            decimal cleaningTime = 15m; 
+            simulatedTime = simulatedTime.AddMinutes((double)cleaningTime);
+
+            // C3: Waiting Time
+            decimal waitingTime = 0m;
+            if (pickup.ScheduledAt.HasValue && simulatedTime < pickup.ScheduledAt.Value)
             {
-                return;
+                waitingTime = (decimal)(pickup.ScheduledAt.Value - simulatedTime).TotalMinutes;
             }
 
-            var dropoffLocation = completedTrip.Stops
-                .FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff)
-                ?.LocationText;
-            if (string.IsNullOrWhiteSpace(dropoffLocation))
+            // C4: Job Urgency
+            decimal jobUrgency = GetTripPriority(candidateTrip);
+
+            // C5: Cargo Compatibility
+            decimal cargoCompat = 8m; 
+
+            // C6: Asset Utilization
+            decimal assetUtilization = 9m;
+
+            candidateMoves.Add(new CandidateTopsisMove
             {
-                return;
-            }
+                Trip = candidateTrip,
+                DeadheadDistance = deadheadDistance,
+                CleaningTime = cleaningTime,
+                WaitingTime = waitingTime,
+                JobUrgency = jobUrgency,
+                CargoCompatibility = cargoCompat,
+                AssetUtilization = assetUtilization,
+                EmptyTravelMins = emptyTravel.TravelMinutes
+            });
+        }
 
-            var candidates = await LoadPendingUnassignedTripsAsync(ct);
-            candidates = candidates
-                .Where(trip => trip.Id != completedTripId)
-                .ToList();
-            if (candidates.Count == 0)
+        if (candidateMoves.Count == 0) return result;
+
+        // Fetch Weights
+        var weights = await _dbContext.OptimizationWeightSettings
+            .Where(w => w.IsActive)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (weights == null)
+        {
+            weights = new OptimizationWeightSettings
             {
-                return;
-            }
+                DeadheadDistanceWeight = 0.25m,
+                CleaningTimeWeight = 0.15m,
+                WaitingTimeWeight = 0.15m,
+                JobUrgencyWeight = 0.20m,
+                CargoCompatibilityWeight = 0.15m,
+                AssetUtilizationWeight = 0.10m
+            };
+        }
 
-            var todayStart = now.Date;
-            var todayEnd = todayStart.AddDays(1);
-            var driverTripsToday = await _dbContext.DispatchTripStatusHistories
-                .AsNoTracking()
-                .Where(history =>
-                    history.ToStatus == TripStatus.Delivered &&
-                    history.TripId != completedTripId &&
-                    history.EventAt >= todayStart &&
-                    history.EventAt < todayEnd &&
-                    _dbContext.DispatchTrips.Any(trip =>
-                        trip.Id == history.TripId &&
-                        trip.DriverUserId == completedTrip.DriverUserId))
-                .Select(history => history.TripId)
-                .Distinct()
-                .CountAsync(ct);
-            var availabilityScore = ScoreAvailability(driverTripsToday);
+        // 3. Normalize & Weight (Eq 1)
+        decimal sumSqDeadhead = (decimal)Math.Sqrt((double)candidateMoves.Sum(m => m.DeadheadDistance * m.DeadheadDistance));
+        decimal sumSqCleaning = (decimal)Math.Sqrt((double)candidateMoves.Sum(m => m.CleaningTime * m.CleaningTime));
+        decimal sumSqWaiting = (decimal)Math.Sqrt((double)candidateMoves.Sum(m => m.WaitingTime * m.WaitingTime));
+        decimal sumSqUrgency = (decimal)Math.Sqrt((double)candidateMoves.Sum(m => m.JobUrgency * m.JobUrgency));
+        decimal sumSqCargo = (decimal)Math.Sqrt((double)candidateMoves.Sum(m => m.CargoCompatibility * m.CargoCompatibility));
+        decimal sumSqAsset = (decimal)Math.Sqrt((double)candidateMoves.Sum(m => m.AssetUtilization * m.AssetUtilization));
 
-            var truckCapability = await _dbContext.DispatchTrucks
-                .AsNoTracking()
-                .Where(truck => truck.AssetId == completedTrip.TruckAssetId)
-                .Select(truck => truck.ContainerCapability)
-                .FirstOrDefaultAsync(ct);
+        var normalizedMatrix = candidateMoves.Select(m => new CandidateTopsisMove
+        {
+            Trip = m.Trip,
+            DeadheadDistance = sumSqDeadhead > 0 ? (m.DeadheadDistance / sumSqDeadhead) * weights.DeadheadDistanceWeight : 0,
+            CleaningTime = sumSqCleaning > 0 ? (m.CleaningTime / sumSqCleaning) * weights.CleaningTimeWeight : 0,
+            WaitingTime = sumSqWaiting > 0 ? (m.WaitingTime / sumSqWaiting) * weights.WaitingTimeWeight : 0,
+            JobUrgency = sumSqUrgency > 0 ? (m.JobUrgency / sumSqUrgency) * weights.JobUrgencyWeight : 0,
+            CargoCompatibility = sumSqCargo > 0 ? (m.CargoCompatibility / sumSqCargo) * weights.CargoCompatibilityWeight : 0,
+            AssetUtilization = sumSqAsset > 0 ? (m.AssetUtilization / sumSqAsset) * weights.AssetUtilizationWeight : 0,
+            EmptyTravelMins = m.EmptyTravelMins,
+            RawDeadheadDistance = m.DeadheadDistance
+        }).ToList();
 
-            var scored = candidates
-                .Select(candidate =>
-                {
-                    var pickupLocation = candidate.Stops
-                        .FirstOrDefault(stop => stop.StopType == TripStopType.Pickup)
-                        ?.LocationText;
-                    var proximityScore = ScoreProximity(dropoffLocation, pickupLocation);
-                    var truckMatchScore = ScoreTruckMatch(truckCapability, candidate.ContainerSize);
-                    var agingScore = ScoreAging(now - candidate.CreatedAt);
-                    var totalScore = Math.Round(
-                        0.40m * proximityScore +
-                        0.30m * availabilityScore +
-                        0.20m * truckMatchScore +
-                        0.10m * agingScore,
-                        4,
-                        MidpointRounding.AwayFromZero);
+        // 4. Ideal/Negative Ideal
+        decimal idealDeadhead = normalizedMatrix.Min(m => m.DeadheadDistance);
+        decimal idealCleaning = normalizedMatrix.Min(m => m.CleaningTime);
+        decimal idealWaiting = normalizedMatrix.Min(m => m.WaitingTime);
+        decimal idealUrgency = normalizedMatrix.Max(m => m.JobUrgency);
+        decimal idealCargo = normalizedMatrix.Max(m => m.CargoCompatibility);
+        decimal idealAsset = normalizedMatrix.Max(m => m.AssetUtilization);
 
-                    return new RecommendationScore(
-                        candidate.Id,
-                        proximityScore,
-                        availabilityScore,
-                        truckMatchScore,
-                        agingScore,
-                        totalScore);
-                })
-                .OrderByDescending(score => score.TotalScore)
-                .ThenBy(score => score.RecommendedTripId)
-                .Take(3)
-                .ToList();
+        decimal negIdealDeadhead = normalizedMatrix.Max(m => m.DeadheadDistance);
+        decimal negIdealCleaning = normalizedMatrix.Max(m => m.CleaningTime);
+        decimal negIdealWaiting = normalizedMatrix.Max(m => m.WaitingTime);
+        decimal negIdealUrgency = normalizedMatrix.Min(m => m.JobUrgency);
+        decimal negIdealCargo = normalizedMatrix.Min(m => m.CargoCompatibility);
+        decimal negIdealAsset = normalizedMatrix.Min(m => m.AssetUtilization);
 
-            if (scored.Count == 0)
+        // 5 & 6. Distances & Closeness Coefficient
+        foreach (var norm in normalizedMatrix)
+        {
+            decimal distIdealSq = 
+                (norm.DeadheadDistance - idealDeadhead) * (norm.DeadheadDistance - idealDeadhead) +
+                (norm.CleaningTime - idealCleaning) * (norm.CleaningTime - idealCleaning) +
+                (norm.WaitingTime - idealWaiting) * (norm.WaitingTime - idealWaiting) +
+                (norm.JobUrgency - idealUrgency) * (norm.JobUrgency - idealUrgency) +
+                (norm.CargoCompatibility - idealCargo) * (norm.CargoCompatibility - idealCargo) +
+                (norm.AssetUtilization - idealAsset) * (norm.AssetUtilization - idealAsset);
+
+            decimal distNegSq = 
+                (norm.DeadheadDistance - negIdealDeadhead) * (norm.DeadheadDistance - negIdealDeadhead) +
+                (norm.CleaningTime - negIdealCleaning) * (norm.CleaningTime - negIdealCleaning) +
+                (norm.WaitingTime - negIdealWaiting) * (norm.WaitingTime - negIdealWaiting) +
+                (norm.JobUrgency - negIdealUrgency) * (norm.JobUrgency - negIdealUrgency) +
+                (norm.CargoCompatibility - negIdealCargo) * (norm.CargoCompatibility - negIdealCargo) +
+                (norm.AssetUtilization - negIdealAsset) * (norm.AssetUtilization - negIdealAsset);
+
+            decimal distIdeal = (decimal)Math.Sqrt((double)distIdealSq);
+            decimal distNeg = (decimal)Math.Sqrt((double)distNegSq);
+
+            if (distIdeal + distNeg > 0)
             {
-                return;
+                norm.ClosenessCoefficient = distNeg / (distIdeal + distNeg);
             }
-
-            var generatedAt = DateTime.UtcNow;
-            var recommendations = scored
-                .Select((score, index) => new DispatchRecommendation
-                {
-                    Id = Guid.NewGuid(),
-                    CompletedTripId = completedTrip.Id,
-                    DriverId = completedTrip.DriverUserId.Value,
-                    TruckId = completedTrip.TruckAssetId.Value,
-                    RecommendedTripId = score.RecommendedTripId,
-                    ProximityScore = score.ProximityScore,
-                    AvailabilityScore = score.AvailabilityScore,
-                    TruckMatchScore = score.TruckMatchScore,
-                    AgingScore = score.AgingScore,
-                    TotalScore = score.TotalScore,
-                    Rank = index + 1,
-                    GeneratedAt = generatedAt,
-                    ExpiresAt = generatedAt.AddMinutes(30)
-                })
-                .ToList();
-
-            _dbContext.DispatchRecommendations.AddRange(recommendations);
-            await _dbContext.SaveChangesAsync(ct);
-            QueueRecommendationGeneratedBroadcast(completedTrip.Id, recommendations.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Recommendation generation failed for trip {TripId}. Delivery status is not affected.",
-                completedTripId);
-        }
-    }
-
-    private async Task<List<Trip>> LoadPendingUnassignedTripsAsync(CancellationToken ct)
-    {
-        async Task<List<Trip>> LoadAsync()
-        {
-            return await _dbContext.DispatchTrips
-                .Include(trip => trip.Stops)
-                .AsNoTracking()
-                .Where(trip => trip.Status == TripStatus.Draft && trip.DriverUserId == null)
-                .ToListAsync(ct);
         }
 
-        return _cacheService is null
-            ? await LoadAsync()
-            : await _cacheService.GetOrSetAsync(
-                VaiaCacheKeys.PendingUnassignedTrips,
-                LoadAsync,
-                TimeSpan.FromMinutes(1),
-                ct) ?? [];
-    }
+        var topCandidates = normalizedMatrix
+            .OrderByDescending(m => m.ClosenessCoefficient)
+            .Take(3)
+            .ToList();
 
-    private void QueueRecommendationGeneratedBroadcast(Guid completedTripId, int recommendationCount)
-    {
-        if (_serviceScopeFactory is null)
+        // Expire any previously pending recommendations for this truck so the UI shows fresh results
+        var existingPending = await _dbContext.DispatchRecommendations
+            .Where(r => r.TruckId == completedTrip.TruckAsset.Id && !r.WasAccepted && !r.WasIgnored && r.ExpiresAt > DateTime.UtcNow)
+            .ToListAsync(cancellationToken);
+        foreach (var old in existingPending)
         {
-            return;
+            old.ExpiresAt = DateTime.UtcNow; // mark as expired
         }
 
-        _ = Task.Run(async () =>
+        foreach (var move in topCandidates)
         {
-            using var scope = _serviceScopeFactory.CreateScope();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<PostDeliveryRecommendationService>>();
-            try
+            var rec = new DispatchRecommendation
             {
-                var dbContext = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
-                var hubContext = scope.ServiceProvider
-                    .GetRequiredService<IHubContext<VaiaDispatchHub, IVaiaDispatchClient>>();
-                var pushService = scope.ServiceProvider.GetRequiredService<IPushNotificationService>();
-                var completedTrip = await dbContext.DispatchTrips
-                    .Include(trip => trip.Driver)
-                    .Include(trip => trip.TruckAsset)
-                    .Include(trip => trip.StatusHistory)
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(trip => trip.Id == completedTripId);
-                if (completedTrip is null)
-                {
-                    return;
-                }
+                RecommendedTripId = move.Trip.Id,
+                CompletedTripId = tripId,
+                DriverId = completedTrip.Driver.Id,
+                TruckId = completedTrip.TruckAsset.Id,
+                TotalScore = move.ClosenessCoefficient,
+                ProximityScore = move.ClosenessCoefficient,
+                AvailabilityScore = 0m,
+                TruckMatchScore = 0m,
+                AgingScore = 0m,
+                Rank = result.Count + 1,
+                GeneratedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(30)
+            };
+            _dbContext.DispatchRecommendations.Add(rec);
+            result.Add(rec);
+        }
 
-                var deliveredAt = completedTrip.StatusHistory
-                    .Where(history => history.ToStatus == TripStatus.Delivered)
-                    .OrderByDescending(history => history.EventAt)
-                    .Select(history => (DateTime?)history.EventAt)
-                    .FirstOrDefault();
-                var e = new RecommendationGeneratedEvent(
-                    completedTrip.Id,
-                    completedTrip.Driver?.Username ?? "Unassigned driver",
-                    completedTrip.TruckAsset?.PlateNo ?? completedTrip.TruckAsset?.AssetCode ?? "Unassigned truck",
-                    deliveredAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
-                    recommendationCount);
-
-                await hubContext.Clients
-                    .Group(VaiaDispatchHub.DispatchOpsGroup)
-                    .RecommendationGenerated(e);
-                await pushService.SendToRoleAsync(
-                    RoleNames.Dispatcher,
-                    "Post-Delivery Recommendations",
-                    $"{e.DriverName} just delivered - {recommendationCount} nearby jobs available",
-                    new Dictionary<string, string> { ["completedTripId"] = completedTrip.Id.ToString() });
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(
-                    ex,
-                    "Failed to broadcast recommendation generation for trip {TripId}.",
-                    completedTripId);
-            }
-        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return result;
     }
 
-    private static decimal ScoreProximity(string? completedDropoff, string? candidatePickup)
+    private static decimal GetTripPriority(Trip trip)
     {
-        var completed = NormalizeLocation(completedDropoff);
-        var candidate = NormalizeLocation(candidatePickup);
-        if (completed.Length == 0 || candidate.Length == 0)
+        if (string.Equals(trip.TripType, "Urgent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trip.TripType, "High", StringComparison.OrdinalIgnoreCase) ||
+            (trip.Notes != null && trip.Notes.Contains("urgent", StringComparison.OrdinalIgnoreCase)))
         {
-            return 0.2m;
+            return 10m;
         }
-
-        if (string.Equals(completed.Normalized, candidate.Normalized, StringComparison.OrdinalIgnoreCase))
-        {
-            return 1.0m;
-        }
-
-        var overlap = completed.Keywords.Intersect(candidate.Keywords, StringComparer.OrdinalIgnoreCase).ToList();
-        if (overlap.Count == 0)
-        {
-            return 0.2m;
-        }
-
-        return overlap.Any(word => word is not ("davao" or "city" or "del" or "norte"))
-            ? 1.0m
-            : 0.6m;
+        return 5m;
     }
 
-    private static decimal ScoreAvailability(int tripsToday)
+    private sealed class CandidateTopsisMove
     {
-        return tripsToday switch
-        {
-            <= 0 => 1.0m,
-            1 => 0.8m,
-            2 => 0.5m,
-            _ => 0.2m
-        };
+        public Trip Trip { get; set; } = null!;
+        public decimal DeadheadDistance { get; set; }
+        public decimal CleaningTime { get; set; }
+        public decimal WaitingTime { get; set; }
+        public decimal JobUrgency { get; set; }
+        public decimal CargoCompatibility { get; set; }
+        public decimal AssetUtilization { get; set; }
+        public decimal ClosenessCoefficient { get; set; }
+        public int EmptyTravelMins { get; set; }
+        public decimal RawDeadheadDistance { get; set; }
     }
-
-    private static decimal ScoreTruckMatch(string? truckCapability, string? containerSize)
-    {
-        if (string.IsNullOrWhiteSpace(containerSize))
-        {
-            return 0.5m;
-        }
-
-        var capability = NormalizeComparable(truckCapability);
-        var size = NormalizeComparable(containerSize);
-        if (capability.Length == 0)
-        {
-            return 0.3m;
-        }
-
-        var requested = ResolveContainerClass(size);
-        var capacity = ResolveContainerClass(capability);
-        if (requested == ContainerClass.Unknown || capacity == ContainerClass.Unknown)
-        {
-            return 0.3m;
-        }
-
-        if (requested == capacity || capability.Contains(size, StringComparison.OrdinalIgnoreCase))
-        {
-            return 1.0m;
-        }
-
-        return capacity > requested ? 0.7m : 0.3m;
-    }
-
-    private static decimal ScoreAging(TimeSpan age)
-    {
-        if (age.TotalHours < 1)
-        {
-            return 0.2m;
-        }
-
-        if (age.TotalHours < 4)
-        {
-            return 0.5m;
-        }
-
-        if (age.TotalHours < 8)
-        {
-            return 0.8m;
-        }
-
-        return 1.0m;
-    }
-
-    private static NormalizedLocation NormalizeLocation(string? value)
-    {
-        var normalized = NormalizeComparable(value);
-        var words = normalized
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(word => word.Length > 1)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var keywords = words
-            .Where(word => LocationKeywords.Contains(word))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return new NormalizedLocation(normalized, keywords);
-    }
-
-    private static string NormalizeComparable(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var normalized = value.Trim().ToLower(CultureInfo.InvariantCulture);
-        foreach (var punctuation in Punctuation)
-        {
-            normalized = normalized.Replace(punctuation, ' ');
-        }
-
-        return string.Join(' ', normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-    }
-
-    private static ContainerClass ResolveContainerClass(string value)
-    {
-        if (value.Contains("40hc", StringComparison.OrdinalIgnoreCase) ||
-            value.Contains("fortyhc", StringComparison.OrdinalIgnoreCase) ||
-            value.Contains("high cube", StringComparison.OrdinalIgnoreCase))
-        {
-            return ContainerClass.FortyHighCube;
-        }
-
-        if (value.Contains("40", StringComparison.OrdinalIgnoreCase) ||
-            value.Contains("forty", StringComparison.OrdinalIgnoreCase))
-        {
-            return ContainerClass.Forty;
-        }
-
-        if (value.Contains("20", StringComparison.OrdinalIgnoreCase) ||
-            value.Contains("twenty", StringComparison.OrdinalIgnoreCase))
-        {
-            return ContainerClass.Twenty;
-        }
-
-        return ContainerClass.Unknown;
-    }
-
-    private enum ContainerClass
-    {
-        Unknown = 0,
-        Twenty = 1,
-        Forty = 2,
-        FortyHighCube = 3
-    }
-
-    private sealed record NormalizedLocation(string Normalized, HashSet<string> Keywords)
-    {
-        public int Length => Normalized.Length;
-    }
-
-    private sealed record RecommendationScore(
-        Guid RecommendedTripId,
-        decimal ProximityScore,
-        decimal AvailabilityScore,
-        decimal TruckMatchScore,
-        decimal AgingScore,
-        decimal TotalScore);
 }

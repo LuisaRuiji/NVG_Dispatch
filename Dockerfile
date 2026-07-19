@@ -2,11 +2,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
+ENV SYSTEM_NET_HTTP_SOCKETS_HTTP2_SUPPORT=false
+ENV NUGET_NET_TIMEOUT=300
+
 COPY NVGInventory.csproj ./
-RUN dotnet restore
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore --disable-parallel /nodeReuse:false
 
 COPY . ./
-RUN dotnet publish NVGInventory.csproj -c Release -o /out /p:UseAppHost=false
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish NVGInventory.csproj -c Release -o /out /p:UseAppHost=false /nodeReuse:false -p:UseSharedCompilation=false
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0

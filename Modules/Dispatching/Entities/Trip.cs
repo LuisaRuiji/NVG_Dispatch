@@ -29,6 +29,9 @@ public sealed class Trip
     public decimal? FuelAmount { get; set; }
     public decimal? FuelPricePerLiter { get; set; }
     public string? OfficialReceiptNumber { get; set; }
+    public decimal? LastLatitude { get; set; }
+    public decimal? LastLongitude { get; set; }
+    public DateTime? LastLocationAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();

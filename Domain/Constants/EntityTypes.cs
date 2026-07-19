@@ -17,4 +17,7 @@ public static class EntityTypes
     public const string DispatchCustomer = "dispatch_customer";
     public const string DispatchTripStatus = "dispatch_trip_status";
     public const string ModuleSetting = "module_setting";
+    public const string OptimizationWeightSettings = "optimization_weight_settings";
+    public const string DispatchOptimizationPlan = "dispatch_optimization_plan";
+    public const string LocationTrackingSession = "location_tracking_session";
 }

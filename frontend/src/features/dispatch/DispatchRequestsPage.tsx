@@ -70,7 +70,7 @@ export default function DispatchRequestsPage() {
         `/api/dispatch/requests?${params.toString()}`,
         { method: "GET" }
       );
-      const items = (result.items ?? []).map((item) => ({ ...item, status: "SUBMITTED" as RequestStatus }));
+      const items = result.items ?? [];
       setRequests(items);
       setTotalCount(result.totalCount ?? 0);
     } catch (e: any) {

@@ -24,6 +24,8 @@ public sealed class TripStopConfiguration : IEntityTypeConfiguration<TripStop>
             .HasMaxLength(20)
             .IsRequired();
         entity.Property(stop => stop.LocationText).HasColumnName("location_text").HasMaxLength(300).IsRequired();
+        entity.Property(stop => stop.Latitude).HasColumnName("latitude").HasColumnType("decimal(9,6)");
+        entity.Property(stop => stop.Longitude).HasColumnName("longitude").HasColumnType("decimal(9,6)");
         entity.Property(stop => stop.ScheduledAt).HasColumnName("scheduled_at");
         entity.Property(stop => stop.ActualAt).HasColumnName("actual_at");
         entity.Property(stop => stop.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");

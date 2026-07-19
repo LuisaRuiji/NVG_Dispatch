@@ -138,7 +138,9 @@ public sealed class DispatchMyTripsController : ControllerBase
                 stop.StopType,
                 stop.LocationText,
                 stop.ScheduledAt,
-                stop.ActualAt)).ToList(),
+                stop.ActualAt,
+                stop.Latitude,
+                stop.Longitude)).ToList(),
             detail.Documents.Select(doc => new DispatchTripDocumentResponse(
                 doc.Id,
                 doc.Type,

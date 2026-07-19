@@ -114,7 +114,8 @@ public sealed class SqlServerIntegrationFixture : IAsyncLifetime
             RoleNames.Ceo,
             RoleNames.Driver,
             RoleNames.Dispatcher,
-            RoleNames.Customer
+            RoleNames.Customer,
+            RoleNames.Owner
         };
 
         var existingRoles = await context.Roles.Select(role => role.Name).ToListAsync();

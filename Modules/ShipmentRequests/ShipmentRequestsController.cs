@@ -78,7 +78,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
         var command = new CreateShipmentRequestCommand(
             customerId,
             request.PickupLocation,
+            request.PickupLatitude,
+            request.PickupLongitude,
             request.DropoffLocation,
+            request.DropoffLatitude,
+            request.DropoffLongitude,
             request.RequestedPickupTime,
             request.ContainerSize,
             request.TripType,
@@ -104,7 +108,11 @@ public sealed class PortalShipmentRequestsController : ControllerBase
         var command = new UpdateShipmentRequestCommand(
             customerId,
             request.PickupLocation,
+            request.PickupLatitude,
+            request.PickupLongitude,
             request.DropoffLocation,
+            request.DropoffLatitude,
+            request.DropoffLongitude,
             request.RequestedPickupTime,
             request.ContainerSize,
             request.TripType,
@@ -264,7 +272,8 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             item.ShippingLine,
             item.BookingNumber,
             item.DocumentsCount,
-            item.CreatedAt)).ToList();
+            item.CreatedAt,
+            item.Status.ToString().ToUpperInvariant())).ToList();
 
         return Ok(new PagedResult<DispatchShipmentRequestQueueItemResponse>(
             items,

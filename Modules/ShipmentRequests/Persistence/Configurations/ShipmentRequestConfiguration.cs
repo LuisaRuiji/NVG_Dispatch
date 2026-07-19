@@ -34,7 +34,11 @@ public sealed class ShipmentRequestConfiguration : IEntityTypeConfiguration<Ship
             .HasMaxLength(30)
             .IsRequired();
         entity.Property(request => request.PickupLocation).HasColumnName("pickup_location").HasMaxLength(300).IsRequired();
+        entity.Property(request => request.PickupLatitude).HasColumnName("pickup_latitude").HasColumnType("decimal(9,6)");
+        entity.Property(request => request.PickupLongitude).HasColumnName("pickup_longitude").HasColumnType("decimal(9,6)");
         entity.Property(request => request.DropoffLocation).HasColumnName("dropoff_location").HasMaxLength(300).IsRequired();
+        entity.Property(request => request.DropoffLatitude).HasColumnName("dropoff_latitude").HasColumnType("decimal(9,6)");
+        entity.Property(request => request.DropoffLongitude).HasColumnName("dropoff_longitude").HasColumnType("decimal(9,6)");
         entity.Property(request => request.RequestedPickupTime).HasColumnName("requested_pickup_time");
         entity.Property(request => request.CargoDescription).HasColumnName("cargo_description").HasMaxLength(500);
         entity.Property(request => request.CargoWeight).HasColumnName("cargo_weight").HasColumnType("decimal(18,3)");

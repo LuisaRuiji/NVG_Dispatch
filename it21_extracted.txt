@@ -1,0 +1,666 @@
+Note: 
+This is only a sample. Please use the exact cover page used by the University of Mindanao.
+THE UNIVERSITY OF MINDANAO
+College of Computing Education
+IT21 — Information Assurance and Security
+Second Term, First 
+Semester  SY
+ 2026–2027
+Edu Track — Student Enrollment & Records System
+Security Project 
+Documentation  •
+  v1.0
+Submitted by:
+Juan D. 
+Cruz  —
+  Developer / Security Analyst
+Maria S. 
+Santos  —
+  Developer / Documentation Lead
+Submitted to:
+[ Instructor
+ 
+Name ]
+March 2026
+1. Project Overview
+System Purpose
+EduTrack
+ is a web-based Student Enrollment & Records System for a college. It lets the registrar manage subjects and schedules, students enroll in and drop subjects online, faculty encode grades, and finance staff record payments — all behind role-based logins. Because the system stores personal data, academic records, and payment information, security is a primary design concern rather than an afterthought.
+Target Users
+Admin / 
+Registrar:
+ 
+manages users, subjects, schedules, and oversees enrollment and records.
+Faculty: 
+views class lists and encodes or edits grades for assigned subjects.
+Students: 
+enroll in or drop subjects, view their own schedule, grades, and balance.
+Cashier / Finance: 
+records payments and generates assessment and collection reports.
+IT Administrator: 
+configures system and security settings and reviews audit logs.
+Key Features
+Role-based login with JWT authentication and optional MFA (TOTP).
+Online enrollment: add and drop subjects with real-time slot checking.
+Grade encoding and editing by faculty, with change history.
+Student record and profile management (registrar).
+Subject, section, and schedule management.
+Payment recording and assessment view (finance).
+Reports and exports (enrollment, grades, collections) to PDF / Excel / CSV.
+Audit logging of logins and critical actions.
+Password policies, account lockout, and rate limiting.
+In-Scope
+Enrollment, records, grades, scheduling, and payment recording.
+Authentication, roles, and permission management.
+Reporting, analytics, and data export.
+Security and compliance features (audit logs, password policies, MFA).
+Out-of-Scope
+Learning-management features (course content, quizzes, submissions).
+Native mobile applications.
+Online payment gateway / card processing (payments are recorded, not charged).
+Government reporting integrations (e.g., CHED) unless custom-built.
+2. User Roles & Permissions
+Admin / Registrar
+Can: 
+manage users (except IT Admin security settings), subjects, schedules, enrollment, and records; view all reports. 
+Cannot: 
+change system-level security settings (JWT secret, MFA policy) or view raw audit configuration.
+Faculty
+Can: 
+view assigned class lists and encode/edit grades for their own subjects; view their profile. 
+Cannot
+: 
+manage users, enroll students, access payments, or edit other faculty’s grades.
+Student
+Can: 
+enroll/drop subjects, view own schedule, grades, and balance. 
+Cannot: 
+view other students’ records, encode grades, or access admin/finance modules.
+Cashier / Finance
+Can: 
+record payments, view assessments, and generate collection reports. 
+Cannot: 
+manage enrollment, grades, users, or system settings.
+IT Administrator
+Can: 
+configure system and security settings, manage roles, and review audit logs. 
+Cannot: 
+(operationally) encode grades or process enrollment — separation of duties.
+Permission Matrix
+Feature / Module
+Admin/Registrar
+Faculty
+Student
+Cashier
+IT Admin
+Manage Users & Roles
+✓
+✕
+✕
+✕
+✓
+Manage Subjects / Schedule
+✓
+✕
+✕
+✕
+✕
+Enroll
+ / Drop Subjects
+✓
+✕
+✓
+✕
+✕
+Encode / Edit Grades
+✓
+✓
+✕
+✕
+✕
+View Own Grades / Record
+✓
+✓
+✓
+✕
+✕
+Process Payments
+✓
+✕
+✕
+✓
+✕
+Generate / Export Reports
+✓
+✕
+✕
+✓
+✓
+System & Security Settings
+✕
+✕
+✕
+✕
+✓
+View Audit Logs
+✓
+✕
+✕
+✕
+✓
+📷
+  [
+ Screenshot: role-based sidebar / denied-access page — insert your evidence 
+here ]
+3. Functional Requirements
+The system shall allow students to enroll in and drop subjects, validating available slots and prerequisites.
+The system shall allow the registrar to create, edit, and archive subjects, sections, and schedules.
+The 
+system shall
+ allow faculty to encode and edit grades only for subjects assigned to them.
+The system shall store and manage student profiles, including contact details and academic records.
+The system shall allow finance staff to record payments and generate assessment and collection reports.
+The system 
+shall
+ provide role-based access control, restricting features and data by user role.
+The system shall authenticate users via JWT and support multi-factor authentication for staff accounts.
+The system shall log all authentication attempts and critical actions (grade edits, enrollment changes) with user, timestamp, and IP.
+The system shall allow authorized users to export enrollment, grade, and payment data to PDF, Excel, and CSV.
+The system shall enforce password policies and lock an account after five consecutive failed logins.
+The system shall allow the IT administrator to configure system settings (terms, MFA policy, lockout thresholds).
+The system shall display clear validation messages for all invalid user input.
+4. Non-Functional Requirements
+Security
+The system shall require JWT authentication for all protected resources.
+The system shall enforce strong passwords (min 8 chars, mixed case, digit, special character) and store them only as salted hashes.
+The system shall support MFA (TOTP) for all staff accounts.
+The system 
+shall
+ use HTTPS/TLS for all communication.
+The system shall lock accounts for at least 15 minutes after 5 failed login attempts.
+The system shall restrict data access based on role and resource ownership.
+Performance
+The system shall respond to user actions within 2 seconds for 95% of requests under normal load.
+The system shall support at least 50 concurrent users without performance degradation.
+The system shall complete exports of up to 10,000 records within 30 seconds.
+Usability
+The system 
+shall
+ provide a responsive interface for 
+desktop
+, 
+tablet
+, and 
+mobile
+.
+The system shall let a student complete enrollment in no more than 5 steps.
+The system 
+shall
+ provide meaningful error messages for all input errors.
+Reliability
+The system 
+shall
+ be available 99.5% of the time, excluding scheduled maintenance.
+The system shall back up critical data at least once every 24 hours.
+The system shall recover from restarts without data loss and handle network errors gracefully.
+5. System Architecture
+Explanation
+Users interact with a React single-page frontend, which 
+calls
+ the ASP.NET Core 8 Web API over HTTPS.
+The API handles business logic, authentication, and authorization, and reads/writes SQL Server through Entity Framework Core.
+An external email/SMS service delivers one-time passwords and alerts.
+Security is enforced at the API layer: JWT validation, role and ownership checks, rate limiting, and MFA.
+All requests cross a single trust boundary at the API — the frontend never talks to the database directly.
+Tech Stack
+Frontend: 
+React (Vite), Bootstrap 5.  
+Backend: 
+ASP.NET Core 8 Web API, EF Core 8.  
+Database: 
+SQL Server (
+LocalDB
+ in dev).  
+Auth: 
+JWT + TOTP MFA.  
+Exports: 
+QuestPDF
+, 
+ClosedXML
+, CSV.
+6. Database / Data Model
+Core tables, their keys, and relationships are listed below. Fields holding personal, academic, financial, or credential data are flagged as sensitive and receive extra protection (hashing, access control, and audit logging).
+Table
+Key fields (PK / FK)
+Sensitive?
+Relationship
+Roles
+RoleId
+ (PK), Name
+No
+1 – many to Users
+Users
+UserId
+ (PK), 
+RoleId
+ (FK), Username, 
+PasswordHash
+, 
+MfaSecret
+Yes (creds)
+Many – 1 to Roles; 1 – 1 to Student/Faculty
+Students
+StudentId (PK), 
+UserId
+ (FK), 
+FullName
+, Email, Address, 
+BirthDate
+Yes (PII)
+1 – many to Enrollments
+Faculty
+FacultyId
+ (PK), 
+UserId
+ (FK), 
+FullName
+, Department
+Yes (PII)
+1 – many to Grades
+Subjects
+SubjectId
+ (PK), Code, Title, Units, Schedule
+No
+1 – many to Enrollments
+Enrollments
+EnrollmentId
+ (PK), StudentId (FK), 
+SubjectId
+ (FK), Term, Status
+No
+Bridges Students & Subjects
+Grades
+GradeId
+ (PK), 
+EnrollmentId
+ (FK), 
+FacultyId
+ (FK), Score, Remarks
+Yes (academic)
+Many – 1 to Enrollments
+Payments
+PaymentId
+ (PK), StudentId (FK), Amount, Method, Date
+Yes (financial)
+Many – 1 to Students
+AuditLogs
+LogId
+ (PK), 
+UserId
+ (FK), Action, 
+IpAddress
+, 
+CreatedAt
+Yes
+Many – 1 to Users
+PasswordHistory
+Id (PK), 
+UserId
+ (FK), 
+PasswordHash
+, 
+CreatedAt
+Yes
+Many – 1 to Users
+📷
+  [
+ Screenshot: ERD export from SQL Server / 
+dbdiagram
+ — insert your evidence 
+here ]
+7. UI/UX Design
+Wireframes and final screenshots are provided for the five core screens below. (In your own submission, place the wireframe and the matching final UI screenshot side by side for each screen.)
+Login (with MFA prompt)
+📷
+  [
+ Screenshot: Login (with MFA 
+prompt) —
+ wireframe + final UI — insert your evidence 
+here ]
+Student Dashboard
+📷
+  [
+ Screenshot: Student Dashboard — wireframe + final UI — insert your evidence 
+here ]
+Enrollment (add/drop subjects)
+📷
+  [
+ Screenshot: Enrollment (add/drop 
+subjects) —
+ wireframe + final UI — insert your evidence 
+here ]
+Grade Encoding (faculty)
+📷
+  [
+ Screenshot: Grade Encoding (
+faculty) —
+ wireframe + final UI — insert your evidence 
+here ]
+Admin – User & Role Management
+📷
+  [
+ Screenshot: Admin – User & Role Management — wireframe + final UI — insert your evidence 
+here ]
+8. Security Threat Analysis (Core)
+Two modules were analyzed using the same six-step loop: asset → threats → vulnerability → risk rating → mitigation → test cases. Threats are mapped to the OWASP Top 10 and STRIDE. Risk is rated as Likelihood × Impact.
+Module 1 — Authentication & Access Control
+Asset: 
+the login system, user credentials, JWT session tokens, and the role/ownership gates that protect every record. Primary CIA concern: 
+Confidentiality.
+Threats & Vulnerabilities Found
+Threat (STRIDE / OWASP)
+Where in 
+EduTrack
+ (vulnerability)
+Risk (L×I)
+Level
+Spoofing / A07 – Auth failures
+Login query built by string concatenation: SELECT * FROM Users WHERE Username='"+u+"'… — allows SQLi auth bypass.
+H × H
+Critical
+Elevation / A01 – Broken access control
+GET /
+api
+/
+students/{
+id} returned any record; a student could change the id (IDOR) to read another’s data.
+M × H
+High
+Cryptographic failure / A02
+Passwords stored as unsalted MD5 — trivially cracked if the DB leaks.
+M × H
+High
+Brute force / A07
+No lockout or rate limit on the login endpoint.
+M × M
+Medium
+📷
+  [
+ Screenshot: BEFORE – SQLi payload bypassing login / plaintext-
+ish
+ hash in DB — insert your evidence 
+here ]
+Mitigations Applied
+Replaced raw SQL with EF Core parameterized queries (and ASP.NET Core Identity for credential handling), eliminating SQLi.
+Re-hashed all passwords with PBKDF2 (salted) and added a 
+SecurityStamp
+; MD5 removed.
+Added server-side role checks ([
+Authorize(
+Roles=...)]) and a resource-ownership check so a student can only fetch their own record (IDOR closed; returns 403).
+Added account lockout after 5 failed attempts (15-min) plus per-IP rate limiting on the login endpoint.
+Enabled TOTP MFA for staff accounts.
+📷
+  [
+ Screenshot: AFTER – lockout message, 403 on cross-account access, hashed passwords — insert your evidence 
+here ]
+Linked Test Cases
+SC-01 (SQLi), SC-02 (IDOR/access control), SC-03 (lockout), SC-04 (password hashing). See Section 10.
+Module 2 — Input Handling & Data Protection
+Asset: 
+all user-supplied input (profile, remarks, enrollment and grade forms), the content rendered back to users, and data in transit and at rest. Primary CIA concern: 
+Integrity (with Confidentiality).
+Threats & Vulnerabilities Found
+Threat (STRIDE / OWASP)
+Where in 
+EduTrack
+ (vulnerability)
+Risk (L×I)
+Level
+Injection / A03 – Stored XSS
+Student “remarks” / bio field rendered with 
+innerHTML
+; a stored <script> ran for anyone viewing it.
+H × H
+High
+CSRF
+Grade-change and drop-subject POSTs accepted without an anti-forgery token.
+M × H
+High
+Cryptographic failure / A02
+App reachable over plain HTTP; PII and grades sent unencrypted in dev/prod.
+M × H
+High
+Security 
+misconfig
+ / A05
+Verbose error pages exposed stack traces and the DB connection string.
+H × L
+Medium
+📷
+  [
+ Screenshot: BEFORE – 
+alert(
+) firing from stored bio / stack trace on error page — insert your evidence 
+here ]
+Mitigations Applied
+Removed 
+innerHTML
+ rendering; output is framework-encoded by default, and any rich text is sanitized with 
+DOMPurify
+. Stored XSS no longer executes.
+Enabled ASP.NET Core anti-forgery tokens and required them on all POST/PUT/DELETE requests.
+Enforced HTTPS with redirection + HSTS; TLS now protects data in transit.
+Added server-side validation (data annotations: required, length, range, email) in addition to client-side checks.
+Replaced verbose errors with a generic error page; secrets moved to environment variables / user-secrets, and the DB account given least privilege.
+📷
+  [
+ Screenshot: AFTER – payload shown as text, CSRF request rejected, HTTPS lock, generic error page — insert your evidence 
+here ]
+Linked Test Cases
+SC-05 (stored XSS), SC-06 (CSRF), SC-07 (HTTPS redirect), SC-08 (input validation), SC-09 (error handling). See Section 10.
+9. Security Documentation
+Authentication
+JWT bearer authentication; a signed token is issued on successful login and sent in the Authorization header.
+MFA via TOTP for staff; tokens expire and can be refreshed; accounts lock after repeated failures.
+Authorization (Roles & Permissions)
+Role-based access control enforced at the API with [
+Authorize(
+Roles=...)] and custom policies.
+Resource-ownership checks ensure users access only their own records (no IDOR).
+Input Validation
+Server-side validation via data annotations (required fields, length, numeric ranges, email format), mirrored by client-side checks.
+Data Protection (Hashing / Encryption)
+Passwords stored as salted PBKDF2 hashes (never plaintext).
+HTTPS/TLS in transit; secrets (JWT key, connection string) kept out of source control.
+Preventing SQLi / XSS / CSRF
+SQL Injection: 
+all data access goes through EF Core parameterized queries; no string-concatenated SQL.
+XSS: 
+output is encoded by default; rich text sanitized before render.
+CSRF: 
+anti-forgery tokens required and validated on all state-changing requests.
+Additional Measures
+Rate limiting on auth endpoints, audit logging of critical actions, a strict CORS allow-list, and HTTPS-only deployment.
+📷
+  [
+ Screenshot: MFA setup, recovery codes, rate-limit message, hashed-password column — insert your evidence 
+here ]
+10. Testing & QA
+Nine security test cases (four for Module 1, five for Module 2) plus functional checks. A security test passes when the attack FAILS. Attach a screenshot for each, especially the before/after of fixed vulnerabilities.
+ID
+Threat / case
+Attack steps
+Expected (secure)
+Actual
+P/F
+SC-01
+SQLi login bypass
+Enter ' OR '1'='1 as username, any password.
+Login rejected; no bypass; no SQL error leaked.
+As 
+expected
+P
+SC-02
+Broken access control (IDOR)
+As a student, request /
+api
+/
+students/{
+otherId
+}.
+403 Forbidden; no other record returned.
+As 
+expected
+P
+SC-03
+Brute-force lockout
+Submit 5 wrong passwords for one account.
+Account locked 15 min; lockout message shown.
+As 
+expected
+P
+SC-04
+Password hashing
+Inspect Users table after registration.
+Only salted hash + stamp stored, never plaintext.
+As 
+expected
+P
+SC-05
+Stored XSS
+Save <script>alert(
+1)<
+/script> in bio, reload.
+Stored as text/encoded; no script executes.
+As 
+expected
+P
+SC-06
+CSRF
+POST a grade change without anti-forgery token.
+Request rejected (400); no change saved.
+As 
+expected
+P
+SC-07
+Transport security
+Open the site over http://
+Redirected to https:// (HSTS).
+As 
+expected
+P
+SC-08
+Input validation
+Submit empty/invalid email and negative units.
+Rejected with clear field messages.
+As 
+expected
+P
+SC-09
+Error handling
+Trigger a server error.
+Generic error page; no stack trace / secrets.
+As 
+expected
+P
+📷
+  [
+ Screenshot: Key test evidence — especially SC-01, SC-05, SC-06 before/after — insert your evidence 
+here ]
+11. Deployment / Installation
+Requirements
+.NET 8 SDK
+Node.js 18+ and 
+npm
+SQL Server (or 
+LocalDB
+)
+Git
+Steps
+Clone the repository
+:  git
+ clone <repo-
+url
+>  then
+  cd 
+EduTrack
+Set environment variables / user-secrets
+:  
+ConnectionStrings
+__
+Default,  
+Jwt
+__
+Secret,  
+Mfa
+__Issuer.
+Apply the database:  dotnet 
+ef
+ database 
+update  (
+or import the 
+provided .
+bacpac
+).
+Seed the admin account:  dotnet run --seed-
+admin  (
+creates the first IT Admin).
+Backend:  cd 
+api
+ && dotnet run.   Frontend
+:  cd
+ web &
+& 
+npm
+ install &
+& 
+npm
+ run dev.
+Open the printed localhost URL and log in with the demo credentials.
+Demo Credentials (sample)
+Admin: admin / Admin#2026   •   Faculty: faculty / Faculty#2026   •   Student: student / Student#2026
+(Change all demo passwords before any real deployment.)
+12. User Manual
+Student
+Log in and complete the MFA prompt if enabled.
+Open Enrollment, search a subject, and click Add (or 
+Drop
+ to remove).
+Open Grades to view scores; open Assessment to view balance.
+📷
+  [
+ Screenshot: Student enrollment screen — insert your evidence 
+here ]
+Faculty
+Log in and open My Classes.
+Select a subject to see the class list.
+Enter or edit scores and click Save — changes are logged.
+📷
+  [
+ Screenshot: Grade encoding screen — insert your evidence 
+here ]
+Admin / Registrar
+Open Users to add accounts and assign roles.
+Open Subjects to create sections and schedules.
+Open Reports to generate and export enrollment or grade reports.
+📷
+  [
+ Screenshot: Admin user & role management screen — insert your evidence 
+here ]
+13. Maintenance & Future Work
+Known Limitations
+Permissions are role-level only; no per-record delegation yet.
+Reports offer limited filtering and no interactive charts.
+No automated security scanning runs in 
+the build
+ pipeline.
+Backups are scheduled but not yet tested with a full restore drill.
+Planned Improvements
+Single Sign-On (OAuth/OpenID Connect) so the school can use existing accounts.
+Add automated SAST/dependency scanning (e.g., in CI) to catch new vulnerabilities early.
+Finer-grained, attribute-based access control for special cases.
+Performance: query optimization and caching of read-heavy pages (schedules, dashboards).
+Accessibility and responsive-design pass (WCAG) for all core screens.
+Security dashboard summarizing audit logs, failed logins, and lockouts.
+Note: this is a sample/model document. Replace the bracketed instructor name, the sample student names, and every [Screenshot: …] placeholder with your own real evidence.

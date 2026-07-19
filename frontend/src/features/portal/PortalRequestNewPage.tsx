@@ -1,4 +1,5 @@
 import { useState } from "react";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { Link, useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
@@ -28,6 +29,10 @@ type FormState = {
   cargoDescription: string;
   cargoWeight: string;
   specialInstructions: string;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
+  dropoffLatitude?: number;
+  dropoffLongitude?: number;
 };
 
 const containerSizeOptions = Object.entries(containerSizeLabels) as [ContainerSize, string][];
@@ -69,7 +74,11 @@ export default function PortalRequestNewPage() {
       setSaving(true);
       const payload = {
         pickupLocation: form.pickupLocation.trim(),
+        pickupLatitude: form.pickupLatitude,
+        pickupLongitude: form.pickupLongitude,
         dropoffLocation: form.dropoffLocation.trim(),
+        dropoffLatitude: form.dropoffLatitude,
+        dropoffLongitude: form.dropoffLongitude,
         requestedPickupTime: fromLocalInput(form.requestedPickupTime),
         containerSize: form.containerSize,
         tripType: form.tripType,
@@ -128,18 +137,18 @@ export default function PortalRequestNewPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Pickup Location</Label>
-            <Input
+            <AddressAutocomplete
               value={form.pickupLocation}
-              onChange={(e) => update({ pickupLocation: e.target.value })}
-              placeholder="Warehouse A"
+              onChange={(val, lat, lon) => update({ pickupLocation: val, pickupLatitude: lat, pickupLongitude: lon })}
+              placeholder="Search pickup address..."
             />
           </div>
           <div className="space-y-2">
             <Label>Dropoff Location</Label>
-            <Input
+            <AddressAutocomplete
               value={form.dropoffLocation}
-              onChange={(e) => update({ dropoffLocation: e.target.value })}
-              placeholder="Client DC"
+              onChange={(val, lat, lon) => update({ dropoffLocation: val, dropoffLatitude: lat, dropoffLongitude: lon })}
+              placeholder="Search dropoff address..."
             />
           </div>
           <div className="space-y-2">

@@ -29,7 +29,7 @@ public sealed class UsersController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    [Authorize(Roles = $"{RoleNames.Admin},{RoleNames.SuperAdmin},{RoleNames.Dispatcher},{RoleNames.Manager}")]
     public async Task<ActionResult<IReadOnlyCollection<UserSummaryResponse>>> GetUsers(CancellationToken cancellationToken)
     {
         var isSuperAdmin = User.IsInRole(RoleNames.SuperAdmin);

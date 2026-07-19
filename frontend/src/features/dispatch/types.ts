@@ -130,6 +130,8 @@ export type DispatchTripStop = {
   locationText: string;
   scheduledAt?: string | null;
   actualAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type DispatchTripFinancials = {

@@ -21,8 +21,11 @@ import {
   ClipboardCheck,
   User,
   Settings,
-  Bell
+  Bell,
+  Sliders,
+  Map as MapIcon
 } from "lucide-react";
+import { TrackingProvider } from "@/features/dispatch/TrackingContext";
 
 type NavItem = {
   label: string;
@@ -53,17 +56,21 @@ const navSections: { title: string; items: NavItem[] }[] = [
     title: "Operations",
     items: [
       { label: "Loans", to: "/loans", roles: ["InventoryOfficer", "Manager"], icon: Truck, moduleKey: "loans" },
-      { label: "Purchase Orders", to: "/purchase-orders", roles: ["InventoryOfficer", "Manager", "HeadOfFinance", "CEO"], icon: ShoppingCart, moduleKey: "purchase-orders" }
+      { label: "Purchase Orders", to: "/purchase-orders", roles: ["InventoryOfficer", "Manager", "HeadOfFinance", "CEO"], icon: ShoppingCart, moduleKey: "purchase-orders" },
+      { label: "Live Operations Map", to: "/operations/live-map", roles: ["Owner"], icon: MapIcon, moduleKey: "dispatch" }
     ]
   },
   {
     title: "Dispatch",
     items: [
       { label: "Dispatch Board", to: "/dispatch/board", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Live Operations Map", to: "/dispatch/live-map", roles: ["Manager", "Dispatcher"], icon: MapIcon, moduleKey: "dispatch" },
       { label: "Requests", to: "/dispatch/requests", roles: ["Manager", "Dispatcher"], icon: ClipboardList, moduleKey: "dispatch" },
       { label: "Trips", to: "/dispatch/trips", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Optimization Settings", to: "/dispatch/optimization-settings", roles: ["Manager", "Owner"], icon: Sliders, moduleKey: "dispatch" },
       { label: "Documents", to: "/dispatch/documents", roles: ["Manager", "HeadOfFinance"], icon: FileText, moduleKey: "dispatch" },
-      { label: "My Trips", to: "/dispatch/my-trips", roles: ["Driver"], icon: Truck, moduleKey: "dispatch" }
+      { label: "My Trips", to: "/dispatch/my-trips", roles: ["Driver"], icon: Truck, moduleKey: "dispatch" },
+      { label: "My Route Map", to: "/dispatch/my-route-map", roles: ["Driver"], icon: MapIcon, moduleKey: "dispatch" }
     ]
   },
   {
@@ -302,8 +309,9 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 text-slate-900">
-      <ToastHost toasts={toasts} />
+    <TrackingProvider>
+      <div className="flex h-screen w-full bg-slate-50 text-slate-900">
+        <ToastHost toasts={toasts} />
       <aside className="group hidden h-full w-16 flex-col overflow-hidden border-r border-border bg-white/80 backdrop-blur-xl transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:w-64 md:flex dark:bg-black/60 shadow-sm z-10">
         <div className="px-2 py-6">
           <div className="flex items-center justify-center group-hover:justify-start">
@@ -660,5 +668,6 @@ export default function AppLayout() {
         />
       ) : null}
     </div>
+    </TrackingProvider>
   );
 }

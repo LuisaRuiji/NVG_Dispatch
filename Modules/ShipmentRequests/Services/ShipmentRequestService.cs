@@ -18,7 +18,11 @@ namespace NVGInventory.Modules.ShipmentRequests.Services;
 public sealed record CreateShipmentRequestCommand(
     Guid CustomerId,
     string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
     string DropoffLocation,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
     DateTime? RequestedPickupTime,
     ContainerSize ContainerSize,
     TripType TripType,
@@ -33,7 +37,11 @@ public sealed record CreateShipmentRequestCommand(
 public sealed record UpdateShipmentRequestCommand(
     Guid CustomerId,
     string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
     string DropoffLocation,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
     DateTime? RequestedPickupTime,
     ContainerSize ContainerSize,
     TripType TripType,
@@ -91,7 +99,11 @@ public sealed class ShipmentRequestService
             CustomerId = command.CustomerId,
             Status = ShipmentRequestStatus.Draft,
             PickupLocation = command.PickupLocation.Trim(),
+            PickupLatitude = command.PickupLatitude,
+            PickupLongitude = command.PickupLongitude,
             DropoffLocation = command.DropoffLocation.Trim(),
+            DropoffLatitude = command.DropoffLatitude,
+            DropoffLongitude = command.DropoffLongitude,
             RequestedPickupTime = command.RequestedPickupTime,
             ContainerSize = ToStorageValue(command.ContainerSize),
             TripType = ToStorageValue(command.TripType),
@@ -143,7 +155,11 @@ public sealed class ShipmentRequestService
         EnsureLocations(command.PickupLocation, command.DropoffLocation);
 
         request.PickupLocation = command.PickupLocation.Trim();
+        request.PickupLatitude = command.PickupLatitude;
+        request.PickupLongitude = command.PickupLongitude;
         request.DropoffLocation = command.DropoffLocation.Trim();
+        request.DropoffLatitude = command.DropoffLatitude;
+        request.DropoffLongitude = command.DropoffLongitude;
         request.RequestedPickupTime = command.RequestedPickupTime;
         request.ContainerSize = ToStorageValue(command.ContainerSize);
         request.TripType = ToStorageValue(command.TripType);

@@ -127,6 +127,11 @@ builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IPostDelive
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripDispatchGateway, NVGInventory.Modules.Dispatching.Services.DispatchShipmentRequestTripDispatchGateway>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchShipmentReadService, NVGInventory.Modules.Dispatching.Services.DispatchShipmentReadService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchCspValidationService, NVGInventory.Modules.Dispatching.Services.DispatchCspValidationService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ITravelTimeService, NVGInventory.Modules.Dispatching.Services.TravelTimeService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IOptimizationScoringService, NVGInventory.Modules.Dispatching.Services.OptimizationScoringService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ICspTopsisDispatchOptimizationService, NVGInventory.Modules.Dispatching.Services.CspTopsisDispatchOptimizationService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.LocationTrackingService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripCreationService, NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestTripCreationService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IPortalCustomerAccessService, NVGInventory.Modules.ShipmentRequests.Services.PortalCustomerAccessService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestService>();
@@ -555,6 +560,7 @@ app.UseMiddleware<ModuleMaintenanceMiddleware>();
 
 app.MapControllers();
 app.MapHub<VaiaDispatchHub>("/hubs/dispatch");
+app.MapHub<NVGInventory.Hubs.DispatchLocationHub>("/hubs/dispatch-location");
 app.MapGet("/health", async (InventoryDbContext dbContext, CancellationToken cancellationToken) =>
 {
     try

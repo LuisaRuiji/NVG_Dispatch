@@ -57,7 +57,8 @@ public sealed record DispatchShipmentRequestQueueItem(
     string? ShippingLine,
     string? BookingNumber,
     int DocumentsCount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    ShipmentRequestStatus Status);
 
 public sealed record CustomerShipmentListItem(
     Guid TripId,
@@ -193,7 +194,7 @@ public sealed class ShipmentRequestQueryService
         var query = _dbContext.ShipmentRequests
             .AsNoTracking()
             .Include(request => request.Customer)
-            .Where(request => request.Status == ShipmentRequestStatus.Submitted);
+            .Where(request => request.Status == ShipmentRequestStatus.Submitted || request.Status == ShipmentRequestStatus.Approved);
 
         var total = await query.CountAsync(cancellationToken);
 
@@ -214,7 +215,8 @@ public sealed class ShipmentRequestQueryService
                 request.ShippingLine,
                 request.BookingNumber,
                 _dbContext.ShipmentRequestDocuments.Count(doc => doc.RequestId == request.Id),
-                request.CreatedAt))
+                request.CreatedAt,
+                request.Status))
             .ToListAsync(cancellationToken);
 
         return new PagedQueryResult<DispatchShipmentRequestQueueItem>(items, total);
