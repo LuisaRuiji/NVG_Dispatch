@@ -53,4 +53,10 @@ public static class AuditActions
     public const string FinancialFieldAccessed = "FINANCIAL_FIELD_ACCESSED";
 
     public const string ModuleSettingUpdated = "MODULE_SETTING_UPDATED";
+    public const string OptimizationWeightSettingsUpdated = "OPTIMIZATION_WEIGHT_SETTINGS_UPDATED";
+    public const string OptimizationPlanApproved = "OPTIMIZATION_PLAN_APPROVED";
+    public const string OptimizationPlanDispatched = "OPTIMIZATION_PLAN_DISPATCHED";
+    public const string OptimizationPlanOverridden = "OPTIMIZATION_PLAN_OVERRIDDEN";
+    public const string LocationTrackingStarted = "LOCATION_TRACKING_STARTED";
+    public const string LocationTrackingStopped = "LOCATION_TRACKING_STOPPED";
 }

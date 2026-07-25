@@ -44,25 +44,22 @@ public sealed class ShipmentRequestTripCreationService : IShipmentRequestTripCre
         }
 
         var pickupTime = command.ScheduledPickupTimeOverride ?? request.RequestedPickupTime;
-        if (!pickupTime.HasValue)
-        {
-            throw new BusinessRuleViolationException("Requested pickup time is required to convert.");
-        }
+    
 
         var draft = new ShipmentRequestTripDraftData(
             request.CustomerId,
             request.PickupLocation,
+            request.PickupLatitude,
+            request.PickupLongitude,
             request.DropoffLocation,
-            pickupTime.Value,
+            request.DropoffLatitude,
+            request.DropoffLongitude,
+            pickupTime,
             request.ContainerNumber,
             request.BookingNumber,
             request.ShippingLine,
             request.ContainerSize,
-            request.TripType,
-            request.PickupLatitude,
-            request.PickupLongitude,
-            request.DropoffLatitude,
-            request.DropoffLongitude);
+            request.TripType);
 
         return await _tripDispatchGateway.CreateDraftTripAsync(draft, actor, cancellationToken);
     }

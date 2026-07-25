@@ -37,13 +37,17 @@ import DispatchDocumentsPage from "@/features/dispatch/DispatchDocumentsPage";
 import DispatchTripsPage from "@/features/dispatch/DispatchTripsPage";
 import MyTripsPage from "@/features/dispatch/MyTripsPage";
 import MyTripDetailPage from "@/features/dispatch/MyTripDetailPage";
+import MyRouteMapPage from "@/features/dispatch/MyRouteMapPage";
 import TripDetailPage from "@/features/dispatch/TripDetailPage";
+import OptimizationSettingsPage from "@/features/dispatch/OptimizationSettingsPage";
 import PortalDashboardPage from "@/features/portal/PortalDashboardPage";
 import PortalRequestsPage from "@/features/portal/PortalRequestsPage";
 import PortalRequestNewPage from "@/features/portal/PortalRequestNewPage";
 import PortalRequestDetailPage from "@/features/portal/PortalRequestDetailPage";
 import PortalShipmentsPage from "@/features/portal/PortalShipmentsPage";
 import PortalShipmentDetailPage from "@/features/portal/PortalShipmentDetailPage";
+import LiveMapPage from "@/features/dispatch/LiveMapPage";
+import OperationsMapPage from "@/features/dispatch/OperationsMapPage";
 import { setUnauthorizedHandler } from "@/lib/api";
 import {
   clearInvalidSession,
@@ -116,6 +120,22 @@ function App() {
             element={
               <RoleGate roles={["Manager", "Dispatcher", "HeadOfFinance", "CEO"]}>
                 <Navigate to="/dispatch/board" replace />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/live-map"
+            element={
+              <RoleGate roles={["Dispatcher", "Manager"]}>
+                <LiveMapPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/operations/live-map"
+            element={
+              <RoleGate roles={["Owner"]}>
+                <OperationsMapPage />
               </RoleGate>
             }
           />
@@ -241,6 +261,14 @@ function App() {
             }
           />
           <Route
+            path="/dispatch/my-route-map"
+            element={
+              <RoleGate roles={["Driver"]}>
+                <MyRouteMapPage />
+              </RoleGate>
+            }
+          />
+          <Route
             path="/portal/dashboard"
             element={
               <RoleGate roles={["Customer"]}>
@@ -285,6 +313,15 @@ function App() {
             element={
               <RoleGate roles={["Customer"]}>
                 <PortalShipmentDetailPage />
+              </RoleGate>
+            }
+          />
+
+          <Route
+            path="/dispatch/optimization-settings"
+            element={
+              <RoleGate roles={["Manager", "Owner"]}>
+                <OptimizationSettingsPage />
               </RoleGate>
             }
           />

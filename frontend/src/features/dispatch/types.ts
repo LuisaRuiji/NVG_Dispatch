@@ -137,6 +137,8 @@ export type DispatchTripStop = {
   longitude?: number | null;
   scheduledAt?: string | null;
   actualAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type DispatchTripLatestDriverLocation = {

@@ -266,10 +266,10 @@ public sealed class DashboardController : ControllerBase
                 return new DriverDashboardKpisResponse(
                     activeTrip,
                     await _dbContext.DispatchTrips.AsNoTracking().CountAsync(
-                        trip => trip.DriverUserId == userId && trip.CreatedAt >= today && trip.CreatedAt < tomorrow,
+                        trip => trip.DriverUserId == userId && ((trip.CreatedAt >= today && trip.CreatedAt < tomorrow) || ActiveOperationalStatuses.Contains(trip.Status)),
                         cancellationToken),
                     await _dbContext.DispatchTrips.AsNoTracking().CountAsync(
-                        trip => trip.DriverUserId == userId && trip.CreatedAt >= weekStart,
+                        trip => trip.DriverUserId == userId && (trip.CreatedAt >= weekStart || ActiveOperationalStatuses.Contains(trip.Status)),
                         cancellationToken),
                     await CountMissingRequiredDocumentsAsync(activeTripIds, cancellationToken),
                     Enumerable.Range(0, 7)

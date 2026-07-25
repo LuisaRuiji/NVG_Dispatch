@@ -11,4 +11,5 @@ public static class RoleNames
     public const string Customer = "Customer";
     public const string Admin = "Admin";
     public const string SuperAdmin = "SuperAdmin";
+    public const string Owner = "Owner";
 }

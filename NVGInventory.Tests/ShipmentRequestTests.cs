@@ -112,7 +112,11 @@ public class ShipmentRequestTests : SqlServerIntegrationTestBase
             service.UpdateDraftAsync(request.Id, new UpdateShipmentRequestCommand(
                 customer.Id,
                 "Dock A1",
+                null,
+                null,
                 "Dock B1",
+                null,
+                null,
                 now.AddDays(2),
                 ContainerSize.TwentyFt,
                 TripType.PortPickup,

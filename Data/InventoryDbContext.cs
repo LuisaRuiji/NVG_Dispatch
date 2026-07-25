@@ -60,8 +60,14 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<TripDocument> DispatchTripDocuments => Set<TripDocument>();
     public DbSet<GeneratedWaybill> GeneratedWaybills => Set<GeneratedWaybill>();
     public DbSet<DispatchRecommendation> DispatchRecommendations => Set<DispatchRecommendation>();
+    public DbSet<OptimizationWeightSettings> OptimizationWeightSettings => Set<OptimizationWeightSettings>();
+    public DbSet<DispatchOptimizationPlan> DispatchOptimizationPlans => Set<DispatchOptimizationPlan>();
+    public DbSet<DispatchOptimizationRoute> DispatchOptimizationRoutes => Set<DispatchOptimizationRoute>();
+    public DbSet<DispatchOptimizationRouteStop> DispatchOptimizationRouteStops => Set<DispatchOptimizationRouteStop>();
     public DbSet<ShipmentRequest> ShipmentRequests => Set<ShipmentRequest>();
     public DbSet<ShipmentRequestDocument> ShipmentRequestDocuments => Set<ShipmentRequestDocument>();
+    public DbSet<LocationTrackingSession> LocationTrackingSessions => Set<LocationTrackingSession>();
+    public DbSet<DriverLocationUpdate> DriverLocationUpdates => Set<DriverLocationUpdate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -103,8 +109,14 @@ public sealed class InventoryDbContext : DbContext
         modelBuilder.ApplyConfiguration(new TripStopConfiguration());
         modelBuilder.ApplyConfiguration(new TripLocationPingConfiguration());
         modelBuilder.ApplyConfiguration(new TripStatusHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new OptimizationWeightSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new DispatchOptimizationPlanConfiguration());
+        modelBuilder.ApplyConfiguration(new DispatchOptimizationRouteConfiguration());
+        modelBuilder.ApplyConfiguration(new DispatchOptimizationRouteStopConfiguration());
         modelBuilder.ApplyConfiguration(new ShipmentRequestConfiguration());
         modelBuilder.ApplyConfiguration(new ShipmentRequestDocumentConfiguration());
+        modelBuilder.ApplyConfiguration(new LocationTrackingSessionConfiguration());
+        modelBuilder.ApplyConfiguration(new DriverLocationUpdateConfiguration());
         modelBuilder.ApplyConfiguration(new AuditLogConfiguration());
 
         modelBuilder.Entity<Role>().HasData(SeedData.Roles);
@@ -1211,6 +1223,14 @@ public sealed class InventoryDbContext : DbContext
                 .HasColumnName("status")
                 .HasMaxLength(20)
                 .IsRequired();
+            entity.Property(truck => truck.LastLatitude)
+                .HasColumnName("last_latitude")
+                .HasColumnType("decimal(9,6)");
+            entity.Property(truck => truck.LastLongitude)
+                .HasColumnName("last_longitude")
+                .HasColumnType("decimal(9,6)");
+            entity.Property(truck => truck.LastLocationAt)
+                .HasColumnName("last_location_at");
             entity.Property(truck => truck.CreatedAt)
                 .HasColumnName("created_at")
                 .HasDefaultValueSql("SYSUTCDATETIME()");

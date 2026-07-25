@@ -1,8 +1,8 @@
 import { useState } from "react";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { Link, useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
-import LocationPinPicker from "@/components/dispatch/LocationPinPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,11 +19,7 @@ import {
 
 type FormState = {
   pickupLocation: string;
-  pickupLatitude?: number | null;
-  pickupLongitude?: number | null;
   dropoffLocation: string;
-  dropoffLatitude?: number | null;
-  dropoffLongitude?: number | null;
   requestedPickupTime: string;
   containerSize: ContainerSize;
   tripType: TripType;
@@ -33,6 +29,10 @@ type FormState = {
   cargoDescription: string;
   cargoWeight: string;
   specialInstructions: string;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
+  dropoffLatitude?: number;
+  dropoffLongitude?: number;
 };
 
 const containerSizeOptions = Object.entries(containerSizeLabels) as [ContainerSize, string][];
@@ -51,11 +51,7 @@ export default function PortalRequestNewPage() {
   const [atwFile, setAtwFile] = useState<File | null>(null);
   const [form, setForm] = useState<FormState>({
     pickupLocation: "",
-    pickupLatitude: null,
-    pickupLongitude: null,
     dropoffLocation: "",
-    dropoffLatitude: null,
-    dropoffLongitude: null,
     requestedPickupTime: "",
     containerSize: "TWENTY_FT",
     tripType: "PORT_PICKUP",
@@ -78,11 +74,11 @@ export default function PortalRequestNewPage() {
       setSaving(true);
       const payload = {
         pickupLocation: form.pickupLocation.trim(),
-        pickupLatitude: form.pickupLatitude ?? null,
-        pickupLongitude: form.pickupLongitude ?? null,
+        pickupLatitude: form.pickupLatitude,
+        pickupLongitude: form.pickupLongitude,
         dropoffLocation: form.dropoffLocation.trim(),
-        dropoffLatitude: form.dropoffLatitude ?? null,
-        dropoffLongitude: form.dropoffLongitude ?? null,
+        dropoffLatitude: form.dropoffLatitude,
+        dropoffLongitude: form.dropoffLongitude,
         requestedPickupTime: fromLocalInput(form.requestedPickupTime),
         containerSize: form.containerSize,
         tripType: form.tripType,
@@ -141,18 +137,18 @@ export default function PortalRequestNewPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Pickup Location</Label>
-            <Input
+            <AddressAutocomplete
               value={form.pickupLocation}
-              onChange={(e) => update({ pickupLocation: e.target.value })}
-              placeholder="Warehouse A"
+              onChange={(val, lat, lon) => update({ pickupLocation: val, pickupLatitude: lat, pickupLongitude: lon })}
+              placeholder="Search pickup address..."
             />
           </div>
           <div className="space-y-2">
             <Label>Dropoff Location</Label>
-            <Input
+            <AddressAutocomplete
               value={form.dropoffLocation}
-              onChange={(e) => update({ dropoffLocation: e.target.value })}
-              placeholder="Client DC"
+              onChange={(val, lat, lon) => update({ dropoffLocation: val, dropoffLatitude: lat, dropoffLongitude: lon })}
+              placeholder="Search dropoff address..."
             />
           </div>
           <div className="space-y-2">
@@ -226,22 +222,6 @@ export default function PortalRequestNewPage() {
               placeholder="Booking reference"
             />
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label>Map Pins</Label>
-          <LocationPinPicker
-            value={{
-              pickupLatitude: form.pickupLatitude,
-              pickupLongitude: form.pickupLongitude,
-              dropoffLatitude: form.dropoffLatitude,
-              dropoffLongitude: form.dropoffLongitude
-            }}
-            onChange={(pins) => update(pins)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Pins are optional but help dispatchers see the shipment on the operations map.
-          </p>
         </div>
 
         <div className="space-y-2">

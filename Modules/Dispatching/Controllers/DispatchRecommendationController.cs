@@ -21,15 +21,18 @@ public sealed class DispatchRecommendationController : ControllerBase
     private readonly InventoryDbContext _dbContext;
     private readonly IPostDeliveryRecommendationService _recommendationService;
     private readonly IAuditService _auditService;
+    private readonly ITripLifecycleService _tripLifecycleService;
 
     public DispatchRecommendationController(
         InventoryDbContext dbContext,
         IPostDeliveryRecommendationService recommendationService,
-        IAuditService auditService)
+        IAuditService auditService,
+        ITripLifecycleService tripLifecycleService)
     {
         _dbContext = dbContext;
         _recommendationService = recommendationService;
         _auditService = auditService;
+        _tripLifecycleService = tripLifecycleService;
     }
 
     [HttpPost("trips/{tripId:guid}/recommendations")]
@@ -89,6 +92,13 @@ public sealed class DispatchRecommendationController : ControllerBase
         recommendation.ReviewedByUserId = actorUserId;
         recommendation.ReviewedAt = now;
 
+        var recommendedTrip = await _dbContext.DispatchTrips
+            .FirstOrDefaultAsync(t => t.Id == recommendation.RecommendedTripId, cancellationToken);
+        if (recommendedTrip is null)
+        {
+            return NotFound("Recommended trip not found.");
+        }
+
         var siblingRecommendations = await _dbContext.DispatchRecommendations
             .Where(item =>
                 item.CompletedTripId == recommendation.CompletedTripId &&
@@ -117,7 +127,16 @@ public sealed class DispatchRecommendationController : ControllerBase
             },
             tripId: recommendation.RecommendedTripId);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var dispatchCommand = new DispatchTripCommand(
+            recommendation.RecommendedTripId,
+            recommendation.DriverId,
+            recommendation.TruckId,
+            "Accepted via Post-Delivery Recommendation",
+            recommendedTrip.RowVersion);
+
+        var actorContext = BuildActor();
+
+        await _tripLifecycleService.DispatchAsync(dispatchCommand, actorContext, cancellationToken);
 
         var loaded = await LoadRecommendationById(id, cancellationToken);
         return Ok(MapRecommendation(loaded!));
@@ -266,9 +285,11 @@ public sealed class DispatchRecommendationController : ControllerBase
         return new DispatchRecommendationResponse(
             recommendation.Id,
             recommendation.Rank,
-            recommendation.TotalScore,
+            recommendation.TotalScore * 100m,
             new CompletedTripRecommendationResponse(
                 completedTrip.Id,
+                recommendation.DriverId,
+                recommendation.TruckId,
                 completedTrip.Driver?.Username ?? "Unassigned driver",
                 completedTrip.TruckAsset?.AssetCode ?? completedTrip.TruckAsset?.PlateNo ?? "Unassigned truck",
                 completedDropoff ?? string.Empty,
@@ -291,6 +312,18 @@ public sealed class DispatchRecommendationController : ControllerBase
             recommendation.WasIgnored,
             recommendation.ReviewedByUser?.Username,
             recommendation.ReviewedAt);
+    }
+
+    private DispatchActorContext BuildActor()
+    {
+        return new DispatchActorContext(
+            User.GetUserId(),
+            User.IsInRole(RoleNames.Manager),
+            User.IsInRole(RoleNames.Dispatcher),
+            User.IsInRole(RoleNames.Driver),
+            User.IsInRole(RoleNames.HeadOfFinance),
+            User.IsInRole(RoleNames.Ceo),
+            User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.SuperAdmin));
     }
 
     private static bool TryResolveDateRange(
@@ -385,6 +418,8 @@ public sealed record DispatchRecommendationResponse(
 
 public sealed record CompletedTripRecommendationResponse(
     Guid TripId,
+    Guid DriverId,
+    Guid TruckId,
     string DriverName,
     string TruckPlate,
     string DropoffLocation,

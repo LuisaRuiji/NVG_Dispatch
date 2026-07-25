@@ -775,8 +775,8 @@ public sealed record DispatchTripStopRequest(
     TripStopType StopType,
     string LocationText,
     DateTime? ScheduledAt,
-    double? Latitude = null,
-    double? Longitude = null);
+    decimal? Latitude = null,
+    decimal? Longitude = null);
 
 public sealed record DispatchTripFinancialRequest(
     decimal? Rate,
@@ -844,22 +844,6 @@ public sealed record DispatchTripStatusRequest(
 
 public sealed record DispatchTripStatusResponse(Guid TripId, TripStatus Status);
 
-public sealed record DispatchTripLocationPingRequest(
-    double Latitude,
-    double Longitude,
-    double? AccuracyMeters,
-    DateTime? RecordedAt);
-
-public sealed record DispatchTripLocationPingResponse(
-    Guid Id,
-    Guid TripId,
-    Guid DriverId,
-    double Latitude,
-    double Longitude,
-    double? AccuracyMeters,
-    DateTime RecordedAt,
-    DateTime CreatedAt);
-
 public sealed record DispatchTripCorrectStatusRequest(
     TripStatus ToStatus,
     DateTime EventAt,
@@ -874,8 +858,8 @@ public sealed record DispatchTripStopResponse(
     string LocationText,
     DateTime? ScheduledAt,
     DateTime? ActualAt,
-    double? Latitude = null,
-    double? Longitude = null);
+    decimal? Latitude,
+    decimal? Longitude);
 
 public sealed record DispatchTripDocumentUploadRequest(
     TripDocumentType Type,
@@ -943,6 +927,22 @@ public sealed record DispatchTripHistoryResponse(
     DateTime EventAt,
     DateTime RecordedAt);
 
+public sealed record DispatchTripLocationPingRequest(
+    double Latitude,
+    double Longitude,
+    double? AccuracyMeters,
+    DateTime? RecordedAt);
+
+public sealed record DispatchTripLocationPingResponse(
+    Guid Id,
+    Guid TripId,
+    Guid DriverId,
+    double Latitude,
+    double Longitude,
+    double? AccuracyMeters,
+    DateTime RecordedAt,
+    DateTime CreatedAt);
+
 public sealed record DispatchTripLatestDriverLocationResponse(
     double Latitude,
     double Longitude,
@@ -981,10 +981,10 @@ public sealed record DispatchTripListItemResponse(
     bool LateDelivery,
     int? OnHoldMinutes,
     string RowVersion,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null,
+    decimal? PickupLatitude = null,
+    decimal? PickupLongitude = null,
+    decimal? DropoffLatitude = null,
+    decimal? DropoffLongitude = null,
     DispatchTripLatestDriverLocationResponse? LatestDriverLocation = null);
 
 public sealed record DispatchTripSummaryResponse(
@@ -1016,7 +1016,8 @@ public sealed record DispatchTripSummaryResponse(
     bool LatePickup,
     bool LateDelivery,
     int? OnHoldMinutes,
-    string RowVersion);
+    string RowVersion,
+    DispatchTripLatestDriverLocationResponse? LatestDriverLocation = null);
 
 public sealed record DispatchTripDetailResponse(
     Guid Id,
@@ -1055,7 +1056,8 @@ public sealed record DispatchAssignmentDayTripItemResponse(
     DateTime PlannedStart,
     DateTime PlannedEnd,
     int PlannedDurationMinutes,
-    bool HasOverlap);
+    bool HasOverlap,
+    DispatchTripLatestDriverLocationResponse? LatestDriverLocation = null);
 
 public sealed record DispatchAssignmentDayGroupResponse(
     string GroupKey,
@@ -1070,7 +1072,11 @@ public sealed record DispatchAssignmentDayViewResponse(
 
 public sealed record CreateShipmentRequestRequest(
     string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
     string DropoffLocation,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
     DateTime? RequestedPickupTime,
     [Required] ContainerSize ContainerSize,
     [Required] TripType TripType,
@@ -1079,15 +1085,15 @@ public sealed record CreateShipmentRequestRequest(
     string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
-    string? SpecialInstructions,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null);
+    string? SpecialInstructions);
 
 public sealed record UpdateShipmentRequestRequest(
     string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
     string DropoffLocation,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
     DateTime? RequestedPickupTime,
     [Required] ContainerSize ContainerSize,
     [Required] TripType TripType,
@@ -1096,11 +1102,7 @@ public sealed record UpdateShipmentRequestRequest(
     string? BookingNumber,
     string? CargoDescription,
     decimal? CargoWeight,
-    string? SpecialInstructions,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null);
+    string? SpecialInstructions);
 
 public sealed record ShipmentRequestStatusResponse(Guid Id, ShipmentRequestStatus Status);
 
@@ -1118,11 +1120,7 @@ public sealed record ShipmentRequestListItemResponse(
     int DocumentsCount,
     DateTime CreatedAt,
     DateTime? ApprovedAt,
-    Guid? ConvertedTripId,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null);
+    Guid? ConvertedTripId);
 
 public sealed record ShipmentRequestDetailResponse(
     Guid Id,
@@ -1141,11 +1139,7 @@ public sealed record ShipmentRequestDetailResponse(
     DateTime CreatedAt,
     DateTime? ApprovedAt,
     Guid? ConvertedTripId,
-    IReadOnlyCollection<ShipmentRequestDocumentResponse> Documents,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null);
+    IReadOnlyCollection<ShipmentRequestDocumentResponse> Documents);
 
 public sealed record ShipmentRequestDocumentResponse(
     Guid Id,
@@ -1175,10 +1169,7 @@ public sealed record DispatchShipmentRequestQueueItemResponse(
     string? BookingNumber,
     int DocumentsCount,
     DateTime CreatedAt,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null);
+    string Status);
 
 public sealed record ShipmentRequestConversionResponse(
     Guid RequestId,
@@ -1207,16 +1198,13 @@ public sealed record CustomerShipmentDetailResponse(
     TripDocumentState PodState,
     TripDocumentState AtwState,
     bool WaybillGenerated,
-    IReadOnlyCollection<CustomerShipmentStopResponse> Stops,
-    DispatchTripLatestDriverLocationResponse? LatestDriverLocation = null);
+    IReadOnlyCollection<CustomerShipmentStopResponse> Stops);
 
 public sealed record CustomerShipmentStopResponse(
     TripStopType StopType,
     string LocationText,
     DateTime? ScheduledAt,
-    DateTime? ActualAt,
-    double? Latitude = null,
-    double? Longitude = null);
+    DateTime? ActualAt);
 
 public sealed record CustomerShipmentTimelineEntryResponse(
     TripStatus FromStatus,

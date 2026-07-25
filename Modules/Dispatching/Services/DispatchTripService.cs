@@ -19,8 +19,8 @@ public sealed record DispatchTripStopInput(
     TripStopType StopType,
     string LocationText,
     DateTime? ScheduledAt,
-    double? Latitude = null,
-    double? Longitude = null);
+    decimal? Latitude = null,
+    decimal? Longitude = null);
 
 public sealed record DispatchTripFinancialInput(
     decimal? Rate,
@@ -384,8 +384,6 @@ public sealed class DispatchTripService : ITripLifecycleService
                         TripId = trip.Id,
                         StopType = stop.StopType,
                         LocationText = stop.LocationText,
-                        Latitude = stop.Latitude,
-                        Longitude = stop.Longitude,
                         ScheduledAt = stop.ScheduledAt,
                         CreatedAt = now
                     });
@@ -402,9 +400,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             EnsureScheduledStops(trip.Stops.Select(stop => new DispatchTripStopInput(
                 stop.StopType,
                 stop.LocationText,
-                stop.ScheduledAt,
-                stop.Latitude,
-                stop.Longitude)).ToList());
+                stop.ScheduledAt)).ToList());
         }
 
         if (!isDraft && assignmentChanged)
@@ -555,9 +551,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         EnsureScheduledStops(trip.Stops.Select(stop => new DispatchTripStopInput(
             stop.StopType,
             stop.LocationText,
-            stop.ScheduledAt,
-            stop.Latitude,
-            stop.Longitude)).ToList());
+            stop.ScheduledAt)).ToList());
 
         await _userService.EnsureUserHasRoleAsync(command.DriverUserId, RoleNames.Driver, cancellationToken);
 
@@ -652,9 +646,9 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new ConflictDomainException("Closed or cancelled trips cannot transition.");
         }
 
-        if (!actor.IsManager && !actor.IsDriver)
+        if (!actor.IsManager && !actor.IsDriver && !actor.IsDispatcher)
         {
-            throw new ForbiddenDomainException("Only drivers or managers can change trip status.");
+            throw new ForbiddenDomainException("Only drivers, dispatchers, or managers can change trip status.");
         }
 
         var remarks = string.IsNullOrWhiteSpace(command.Remarks) ? null : command.Remarks.Trim();
@@ -663,7 +657,10 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (fromStatus == TripStatus.FailedAttempt)
         {
-            EnsureManager(actor);
+            if (!actor.IsManager && !actor.IsDispatcher)
+            {
+                throw new ForbiddenDomainException("Only dispatchers or managers can resolve failed attempts.");
+            }
             var previous = await GetFailedAttemptResumeStatusAsync(trip.Id, cancellationToken);
             if (previous is null)
             {
@@ -706,7 +703,7 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (fromStatus == TripStatus.OnHold)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             if (trip.HoldPreviousStatus is null)
             {
                 throw new ConflictDomainException("Hold resume status is missing.");
@@ -745,7 +742,7 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (toStatus == TripStatus.Cancelled)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             trip.Status = TripStatus.Cancelled;
             trip.UpdatedAt = DateTime.UtcNow;
             AddHistory(trip.Id, fromStatus, trip.Status, actor.UserId, remarks, command.EventAt);
@@ -756,7 +753,7 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (toStatus == TripStatus.Closed)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             if (fromStatus != TripStatus.Delivered)
             {
                 throw new ConflictDomainException("Trip must be delivered before closing.");
@@ -774,7 +771,7 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (command.PodPendingOverride.HasValue)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             RequirePodPendingRemarks(command.PodPendingOverride.Value, remarks);
             trip.PodPending = command.PodPendingOverride.Value;
         }
@@ -895,6 +892,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: trip.Id);
 
         await SaveChangesAsync(cancellationToken);
+        TriggerPostDeliveryRecommendations(trip.Id, trip.Status);
         return trip;
     }
 
@@ -934,17 +932,12 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new BusinessRuleViolationException("Stop locations are required.");
         }
 
-        EnsureStopCoordinates(pickup);
-        EnsureStopCoordinates(dropoff);
-
-        if (!pickup.ScheduledAt.HasValue || !dropoff.ScheduledAt.HasValue)
+        if (pickup.ScheduledAt.HasValue && dropoff.ScheduledAt.HasValue)
         {
-            throw new BusinessRuleViolationException("Scheduled pickup and dropoff times are required.");
-        }
-
-        if (pickup.ScheduledAt.Value >= dropoff.ScheduledAt.Value)
-        {
-            throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
+            if (pickup.ScheduledAt.Value >= dropoff.ScheduledAt.Value)
+            {
+                throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
+            }
         }
     }
 
@@ -971,9 +964,6 @@ public sealed class DispatchTripService : ITripLifecycleService
         {
             throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
         }
-
-        EnsureStopCoordinates(pickupInput);
-        EnsureStopCoordinates(dropoffInput);
 
         var pickupStop = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
         var dropoffStop = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
@@ -1016,38 +1006,6 @@ public sealed class DispatchTripService : ITripLifecycleService
             scheduleChanged = true;
             dropoffStop.ScheduledAt = dropoffInput.ScheduledAt;
         }
-
-        if (pickupInput.Latitude != pickupStop.Latitude || pickupInput.Longitude != pickupStop.Longitude)
-        {
-            scheduleChanged = true;
-            pickupStop.Latitude = pickupInput.Latitude;
-            pickupStop.Longitude = pickupInput.Longitude;
-        }
-
-        if (dropoffInput.Latitude != dropoffStop.Latitude || dropoffInput.Longitude != dropoffStop.Longitude)
-        {
-            scheduleChanged = true;
-            dropoffStop.Latitude = dropoffInput.Latitude;
-            dropoffStop.Longitude = dropoffInput.Longitude;
-        }
-    }
-
-    private static void EnsureStopCoordinates(DispatchTripStopInput stop)
-    {
-        if (stop.Latitude.HasValue != stop.Longitude.HasValue)
-        {
-            throw new BusinessRuleViolationException("Both latitude and longitude are required when setting stop coordinates.");
-        }
-
-        if (stop.Latitude is < -90 or > 90)
-        {
-            throw new BusinessRuleViolationException("Latitude must be between -90 and 90.");
-        }
-
-        if (stop.Longitude is < -180 or > 180)
-        {
-            throw new BusinessRuleViolationException("Longitude must be between -180 and 180.");
-        }
     }
 
     private static void EnsureTripAccess(Trip trip, DispatchActorContext actor)
@@ -1067,9 +1025,9 @@ public sealed class DispatchTripService : ITripLifecycleService
 
     private static void ApplyHold(Trip trip, DispatchActorContext actor, string? remarks)
     {
-        if (!actor.IsManager && !actor.IsDriver)
+        if (!actor.IsManager && !actor.IsDriver && !actor.IsDispatcher)
         {
-            throw new ForbiddenDomainException("Only drivers or managers can put trips on hold.");
+            throw new ForbiddenDomainException("Only drivers, dispatchers, or managers can put trips on hold.");
         }
 
         if (trip.Status is TripStatus.Closed or TripStatus.Cancelled)
@@ -1089,9 +1047,9 @@ public sealed class DispatchTripService : ITripLifecycleService
 
     private static void ApplyFailedAttempt(Trip trip, DispatchActorContext actor, string? remarks)
     {
-        if (!actor.IsManager && !actor.IsDriver)
+        if (!actor.IsManager && !actor.IsDriver && !actor.IsDispatcher)
         {
-            throw new ForbiddenDomainException("Only drivers or managers can mark failed attempts.");
+            throw new ForbiddenDomainException("Only drivers, dispatchers, or managers can mark failed attempts.");
         }
 
         if (string.IsNullOrWhiteSpace(remarks))
@@ -1138,13 +1096,13 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (toStatus == TripStatus.Cancelled)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             return;
         }
 
         if (fromStatus == TripStatus.OnHold)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             if (trip.HoldPreviousStatus is null)
             {
                 throw new ConflictDomainException("Hold resume status is missing.");
@@ -1160,7 +1118,10 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (fromStatus == TripStatus.FailedAttempt)
         {
-            EnsureManager(actor);
+            if (!actor.IsManager && !actor.IsDispatcher)
+            {
+                throw new ForbiddenDomainException("Only dispatchers or managers can resolve failed attempts.");
+            }
             var previous = await GetFailedAttemptResumeStatusAsync(trip.Id, cancellationToken);
             if (previous is null)
             {
@@ -1187,9 +1148,9 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (toStatus == TripStatus.OnHold)
         {
-            if (!actor.IsManager && !actor.IsDriver)
+            if (!actor.IsManager && !actor.IsDriver && !actor.IsDispatcher)
             {
-                throw new ForbiddenDomainException("Only drivers or managers can put trips on hold.");
+                throw new ForbiddenDomainException("Only drivers, dispatchers, or managers can put trips on hold.");
             }
 
             if (actor.IsDriver && !_options.AllowDriverOnHold)
@@ -1220,9 +1181,9 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (toStatus == TripStatus.FailedAttempt)
         {
-            if (!actor.IsManager && !actor.IsDriver)
+            if (!actor.IsManager && !actor.IsDriver && !actor.IsDispatcher)
             {
-                throw new ForbiddenDomainException("Only drivers or managers can mark failed attempts.");
+                throw new ForbiddenDomainException("Only drivers, dispatchers, or managers can mark failed attempts.");
             }
 
             if (string.IsNullOrWhiteSpace(remarks))
@@ -1240,7 +1201,7 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         if (toStatus == TripStatus.Closed)
         {
-            EnsureManager(actor);
+            EnsureDispatcherOrManager(actor);
             if (fromStatus != TripStatus.Delivered)
             {
                 throw new ConflictDomainException("Trip must be delivered before closing.");
@@ -1608,6 +1569,63 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: tripId);
     }
 
+    private async Task EnforceDeliverDocumentReadinessAsync(
+        Guid tripId,
+        DispatchActorContext actor,
+        string? remarks,
+        CancellationToken cancellationToken)
+    {
+        var missing = new List<string>();
+        var requiredBeforeDelivery = new[]
+        {
+            TripDocumentType.Atw,
+            TripDocumentType.Eir,
+            TripDocumentType.GatePass,
+            TripDocumentType.Dr
+        };
+
+        foreach (var documentType in requiredBeforeDelivery)
+        {
+            var hasUploaded = await _dbContext.DispatchTripDocuments
+                .AsNoTracking()
+                .AnyAsync(
+                    d => d.TripId == tripId
+                         && d.IsActive
+                         && d.Type == documentType
+                         && (d.State == TripDocumentState.Uploaded || d.State == TripDocumentState.Verified),
+                    cancellationToken);
+
+            if (!hasUploaded)
+            {
+                missing.Add($"{GetDocumentLabel(documentType)} must be uploaded.");
+            }
+        }
+
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(remarks))
+        {
+            throw new BusinessRuleViolationException("Remarks are required to override incomplete delivery documents.");
+        }
+
+        _auditService?.AddEntry(
+            actor.UserId,
+            AuditActions.DispatchTripConflictOverride,
+            EntityTypes.DispatchTrip,
+            tripId,
+            null,
+            new
+            {
+                Reason = "DELIVERY_DOCUMENTS_INCOMPLETE",
+                MissingDocuments = missing,
+                Remarks = remarks.Trim()
+            },
+            tripId: tripId);
+    }
+
     private static object BuildConflictDetails(
         string summary,
         IReadOnlyCollection<AssignmentConflictDetail> conflicts)
@@ -1853,7 +1871,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         var stop = trip.Stops.FirstOrDefault(s => s.StopType == stopType);
         return stop is null
             ? null
-            : new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt, stop.Latitude, stop.Longitude);
+            : new DispatchTripStopInput(stop.StopType, stop.LocationText, stop.ScheduledAt);
     }
 
     private static string? BuildScheduleChangeSummary(

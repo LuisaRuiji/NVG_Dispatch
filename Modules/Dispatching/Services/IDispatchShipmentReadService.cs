@@ -18,8 +18,8 @@ public sealed record DispatchCustomerShipmentStop(
     string LocationText,
     DateTime? ScheduledAt,
     DateTime? ActualAt,
-    double? Latitude,
-    double? Longitude);
+    decimal? Latitude,
+    decimal? Longitude);
 
 public sealed record DispatchCustomerShipmentDetail(
     Guid TripId,

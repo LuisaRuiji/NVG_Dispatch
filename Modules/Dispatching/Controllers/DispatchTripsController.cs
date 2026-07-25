@@ -481,7 +481,7 @@ public sealed class DispatchTripsController : ControllerBase
     }
 
     [HttpPost("{tripId:guid}/status")]
-    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.Driver}")]
+    [Authorize(Roles = $"{RoleNames.Manager},{RoleNames.Driver},{RoleNames.Dispatcher}")]
     public async Task<ActionResult<DispatchTripStatusResponse>> UpdateStatus(
         Guid tripId,
         DispatchTripStatusRequest request,

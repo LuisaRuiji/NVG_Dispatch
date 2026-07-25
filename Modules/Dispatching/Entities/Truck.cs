@@ -10,5 +10,8 @@ public sealed class Truck
     public string PlateNumber { get; set; } = string.Empty;
     public string ContainerCapability { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
+    public decimal? LastLatitude { get; set; }
+    public decimal? LastLongitude { get; set; }
+    public DateTime? LastLocationAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }

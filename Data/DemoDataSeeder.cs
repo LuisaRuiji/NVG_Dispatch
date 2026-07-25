@@ -46,6 +46,7 @@ public sealed class DemoDataSeeder
         SupplierService supplierService,
         IHostEnvironment environment,
         IPasswordHashService passwordHashService,
+        NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService recommendationService,
         ILogger<DemoDataSeeder> logger)
     {
         _dbContext = dbContext;
@@ -60,8 +61,11 @@ public sealed class DemoDataSeeder
         _supplierService = supplierService;
         _environment = environment;
         _passwordHashService = passwordHashService;
+        _recommendationService = recommendationService;
         _logger = logger;
     }
+
+    private readonly NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService _recommendationService;
 
     public async Task SeedAsync(bool resetDatabase = true, CancellationToken cancellationToken = default)
     {
@@ -284,11 +288,13 @@ public sealed class DemoDataSeeder
         _dbContext.DispatchTripStatusHistories.AddRange(trips.SelectMany(trip => trip.StatusHistory));
         _dbContext.DispatchTripDocuments.AddRange(NewTripDocuments(trips, dispatcher, manager));
         _dbContext.GeneratedWaybills.AddRange(NewGeneratedWaybills(trips, dispatcher));
-        _dbContext.DispatchRecommendations.AddRange(NewDispatchRecommendations(trips, dispatcher, now));
-
         _dbContext.ShipmentRequests.AddRange(GenerateShipmentRequests(customers, customerUsers, trips, manager.Id, now));
 
+        // Save first so trips are in DB for the algorithm
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Generate ACTUAL recommendations using the CSP-TOPSIS algorithm!
+        await GenerateActualDemoRecommendationsAsync(dispatcher.Id, now, cancellationToken);
     }
 
     private async Task SeedInventoryDemoAsync(CancellationToken cancellationToken)
@@ -579,6 +585,8 @@ public sealed class DemoDataSeeder
             TripId = trip.Id,
             StopType = TripStopType.Pickup,
             LocationText = spec.Pickup,
+            Latitude = 7.1000m + (spec.Pickup.GetHashCode() % 100) * 0.0005m,
+            Longitude = 125.6000m + (spec.Pickup.GetHashCode() % 100) * 0.0005m,
             ScheduledAt = spec.ScheduledPickupAt,
             ActualAt = HasReachedPickup(spec.Status) ? spec.ActualPickupAt : null,
             CreatedAt = spec.ScheduledPickupAt.AddHours(-3)
@@ -589,6 +597,8 @@ public sealed class DemoDataSeeder
             TripId = trip.Id,
             StopType = TripStopType.Dropoff,
             LocationText = spec.Dropoff,
+            Latitude = 7.0500m + (spec.Dropoff.GetHashCode() % 100) * 0.0005m,
+            Longitude = 125.5500m + (spec.Dropoff.GetHashCode() % 100) * 0.0005m,
             ScheduledAt = spec.ScheduledDropoffAt,
             ActualAt = spec.Status == TripStatus.Delivered ? spec.ActualDropoffAt : null,
             CreatedAt = spec.ScheduledPickupAt.AddHours(-3)
@@ -834,67 +844,45 @@ public sealed class DemoDataSeeder
         }
     }
 
-    private static IEnumerable<DispatchRecommendation> NewDispatchRecommendations(
-        IReadOnlyList<Trip> trips,
-        User dispatcher,
-        DateTime now)
+    private async Task GenerateActualDemoRecommendationsAsync(
+        Guid dispatcherId,
+        DateTime now,
+        CancellationToken cancellationToken)
     {
-        var completedTrips = trips
-            .Where(trip => trip.Status == TripStatus.Delivered && trip.DriverUserId.HasValue && trip.TruckAssetId.HasValue)
+        // Find 5 most recently delivered trips that have truck and driver assigned
+        var completedTrips = await _dbContext.DispatchTrips
+            .Where(t => t.Status == TripStatus.Delivered && t.DriverUserId.HasValue && t.TruckAssetId.HasValue)
+            .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
             .Take(5)
-            .ToList();
-        var candidateTrips = trips
-            .Where(trip => trip.Status == TripStatus.Draft)
-            .Take(3)
-            .ToList();
-        if (completedTrips.Count < 5 || candidateTrips.Count < 3)
-        {
-            yield break;
-        }
-
-        var scoreSets = new[]
-        {
-            new[] { 0.88m, 0.74m, 0.61m },
-            new[] { 0.83m, 0.69m, 0.55m },
-            new[] { 0.79m, 0.64m, 0.47m },
-            new[] { 0.72m, 0.58m, 0.44m },
-            new[] { 0.68m, 0.53m, 0.41m }
-        };
+            .ToListAsync(cancellationToken);
 
         for (var groupIndex = 0; groupIndex < completedTrips.Count; groupIndex++)
         {
             var completedTrip = completedTrips[groupIndex];
+            
+            // Generate real recommendations using CSP-TOPSIS
+            var recs = await _recommendationService.GenerateRecommendationsAsync(completedTrip.Id, cancellationToken);
+            if (recs == null || recs.Count == 0) continue;
+
             var generatedAt = now.AddDays(-7 * (groupIndex % 4)).AddHours(-groupIndex - 2);
             var groupAccepted = groupIndex < 2;
 
-            for (var rank = 1; rank <= 3; rank++)
+            foreach (var rec in recs)
             {
-                var totalScore = scoreSets[groupIndex][rank - 1];
-                var wasAccepted = groupAccepted && rank == 1;
-                var wasIgnored = !wasAccepted;
+                rec.GeneratedAt = generatedAt;
+                rec.ExpiresAt = generatedAt.AddMinutes(30);
 
-                yield return new DispatchRecommendation
-                {
-                    Id = Guid.NewGuid(),
-                    CompletedTripId = completedTrip.Id,
-                    DriverId = completedTrip.DriverUserId!.Value,
-                    TruckId = completedTrip.TruckAssetId!.Value,
-                    RecommendedTripId = candidateTrips[rank - 1].Id,
-                    ProximityScore = Math.Min(1m, totalScore + 0.06m),
-                    AvailabilityScore = Math.Max(0.2m, totalScore - 0.04m),
-                    TruckMatchScore = rank == 1 ? 1.0m : 0.7m,
-                    AgingScore = rank == 3 ? 0.8m : 0.5m,
-                    TotalScore = totalScore,
-                    Rank = rank,
-                    GeneratedAt = generatedAt,
-                    ExpiresAt = generatedAt.AddMinutes(30),
-                    WasAccepted = wasAccepted,
-                    WasIgnored = wasIgnored,
-                    ReviewedByUserId = dispatcher.Id,
-                    ReviewedAt = generatedAt.AddMinutes(12 + rank)
-                };
+                // Add demo user interactions
+                rec.WasAccepted = groupAccepted && rec.Rank == 1;
+                rec.WasIgnored = !rec.WasAccepted;
+                rec.ReviewedByUserId = dispatcherId;
+                rec.ReviewedAt = generatedAt.AddMinutes(12 + rec.Rank);
+                
+                _dbContext.DispatchRecommendations.Add(rec);
             }
         }
+        
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static IReadOnlyCollection<ShipmentRequest> GenerateShipmentRequests(

@@ -5,17 +5,17 @@ namespace NVGInventory.Modules.ShipmentRequests.Services;
 public sealed record ShipmentRequestTripDraftData(
     Guid CustomerId,
     string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
     string DropoffLocation,
-    DateTime PickupTime,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
+    DateTime? ScheduledPickupTime,
     string? ContainerNumber,
     string? BookingNumber,
     string? ShippingLine,
     string? ContainerSize,
-    string? TripType,
-    double? PickupLatitude = null,
-    double? PickupLongitude = null,
-    double? DropoffLatitude = null,
-    double? DropoffLongitude = null);
+    string? TripType);
 
 public interface IShipmentRequestTripDispatchGateway
 {

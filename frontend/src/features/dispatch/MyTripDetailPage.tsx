@@ -1,24 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
 import StatusBadge from "@/components/StatusBadge";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
-import TripMap from "@/components/dispatch/TripMap";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api, apiOptional } from "@/lib/api";
 import { captureDocumentPhoto } from "@/lib/camera";
-import { getBrowserLocationFix } from "@/lib/geolocation";
-import type {
-  DispatchTripDetail,
-  DispatchTripLocationPingRequest,
-  DispatchTripLocationPingResponse,
-  GeneratedWaybill,
-  TripDocumentType,
-  TripStatus
-} from "./types";
+import type { DispatchTripDetail, GeneratedWaybill, TripDocumentType, TripStatus } from "./types";
 import { operationalFlow, statusLabels } from "./types";
 import {
   canDriverUploadDocument,
@@ -26,11 +17,22 @@ import {
   formatDocumentStateLabel,
   getDocumentState,
   getDriverTripNextAction,
-  getPrimaryDriverUploadType,
   isDocumentAttentionState
 } from "./driverTripUi";
 import { Capacitor } from "@capacitor/core";
-import { AlertTriangle, Camera, FileUp, MapPin } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertTriangle,
+  Camera,
+  FileUp,
+  MapPin,
+  Clock,
+  ArrowLeft,
+  Navigation,
+  Eye,
+  CheckCircle,
+  AlertCircle
+} from "lucide-react";
 
 const uploadableDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD"];
 const visibleDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD", "WAYBILL"];
@@ -44,14 +46,6 @@ const driverHoldEligible: TripStatus[] = [
 const failedAttemptEligible: TripStatus[] = [
   "ENROUTE_PICKUP",
   "AT_PICKUP",
-  "ENROUTE_DROPOFF",
-  "AT_DROPOFF"
-];
-const locationSharingStatuses: TripStatus[] = [
-  "DISPATCHED",
-  "ENROUTE_PICKUP",
-  "AT_PICKUP",
-  "LOADED",
   "ENROUTE_DROPOFF",
   "AT_DROPOFF"
 ];
@@ -97,11 +91,10 @@ export default function MyTripDetailPage() {
   const [trip, setTrip] = useState<DispatchTripDetail | null>(null);
   const [generatedWaybill, setGeneratedWaybill] = useState<GeneratedWaybill | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [locationSending, setLocationSending] = useState(false);
-  const [liveLocationEnabled, setLiveLocationEnabled] = useState(false);
   const [modal, setModal] = useState<ActionModal>(null);
+  const [mapOpen, setMapOpen] = useState(false);
+  
   const fileInputs = useRef<Partial<Record<TripDocumentType, HTMLInputElement | null>>>({});
-  const liveLocationManualOptOut = useRef(false);
   const isNative = Capacitor.isNativePlatform();
 
   const fetchTrip = async () => {
@@ -136,99 +129,6 @@ export default function MyTripDetailPage() {
     return { pickup, dropoff };
   }, [trip]);
 
-  const canShareLocation = trip ? locationSharingStatuses.includes(trip.status) : false;
-
-  useEffect(() => {
-    liveLocationManualOptOut.current = false;
-    setLiveLocationEnabled(false);
-  }, [id]);
-
-  useEffect(() => {
-    if (!canShareLocation || !trip?.id || liveLocationManualOptOut.current) {
-      return;
-    }
-
-    setLiveLocationEnabled(true);
-  }, [canShareLocation, trip?.id]);
-
-  const sendCurrentLocation = useCallback(
-    async (silent = false) => {
-      if (!trip?.id) return false;
-      if (!canShareLocation) {
-        setLiveLocationEnabled(false);
-        if (!silent) {
-          show("Location sharing is available only for active assigned trips.", "error");
-        }
-        return false;
-      }
-
-      try {
-        setLocationSending(true);
-        const fix = await getBrowserLocationFix();
-        const payload: DispatchTripLocationPingRequest = {
-          latitude: fix.latitude,
-          longitude: fix.longitude,
-          accuracyMeters: fix.accuracyMeters,
-          recordedAt: fix.recordedAt
-        };
-        const ping = await api<DispatchTripLocationPingResponse>(`/api/dispatch/trips/${trip.id}/location`, {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        setTrip((current) =>
-          current?.id === ping.tripId
-            ? {
-                ...current,
-                latestDriverLocation: {
-                  latitude: ping.latitude,
-                  longitude: ping.longitude,
-                  accuracyMeters: ping.accuracyMeters,
-                  recordedAt: ping.recordedAt
-                }
-              }
-            : current
-        );
-        if (!silent) {
-          show("Location sent.", "success");
-        }
-        return true;
-      } catch (e: any) {
-        console.error(e);
-        setLiveLocationEnabled(false);
-        if (!silent) {
-          show(e?.message ?? "Failed to send current location.", "error");
-        }
-        return false;
-      } finally {
-        setLocationSending(false);
-      }
-    },
-    [canShareLocation, show, trip?.id]
-  );
-
-  useEffect(() => {
-    if (!liveLocationEnabled || !canShareLocation) return;
-    void sendCurrentLocation(true);
-    const interval = window.setInterval(() => {
-      void sendCurrentLocation(true);
-    }, 60000);
-    return () => window.clearInterval(interval);
-  }, [canShareLocation, liveLocationEnabled, sendCurrentLocation]);
-
-  useEffect(() => {
-    if (!canShareLocation) {
-      setLiveLocationEnabled(false);
-    }
-  }, [canShareLocation]);
-
-  const toggleLiveLocation = () => {
-    setLiveLocationEnabled((value) => {
-      const next = !value;
-      liveLocationManualOptOut.current = !next;
-      return next;
-    });
-  };
-
   const handleDriverAction = async (
     endpoint: string,
     remarks?: string | null,
@@ -251,6 +151,7 @@ export default function MyTripDetailPage() {
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to update trip.", "error");
+      void fetchTrip(); // Automatically pull down latest database state and rowVersion
     } finally {
       setActionLoading(false);
     }
@@ -264,7 +165,7 @@ export default function MyTripDetailPage() {
         method: "POST",
         body: JSON.stringify({ type: docType, storageKey })
       });
-      show("Document uploaded.", "success");
+      show("Document uploaded successfully.", "success");
       await fetchTrip();
     } catch (e: any) {
       console.error(e);
@@ -326,7 +227,7 @@ export default function MyTripDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 max-w-4xl mx-auto">
         <PageHeader title="My Trip" description="Loading trip detail..." />
         <LoadingSkeleton rows={8} />
       </div>
@@ -341,375 +242,358 @@ export default function MyTripDetailPage() {
   const atwState = getDocumentState(trip.documents, "ATW");
   const showAtwWarning = isDocumentAttentionState(atwState);
   const canUploadAtw = canUploadDocument("ATW");
-  const primaryUploadType = getPrimaryDriverUploadType(trip);
-  const showDocumentCaptureCard = !isFailedAttempt && !(showAtwWarning && canUploadAtw);
-  const primaryUploadDoc = primaryUploadType
-    ? trip.documents.find((doc) => doc.type === primaryUploadType)
-    : null;
-  const primaryUploadHint = primaryUploadType
-    ? documentHint(primaryUploadType) ?? "Capture a clear photo or upload the document file for this trip."
-    : "Document capture unlocks as the trip reaches pickup, dropoff, or delivered status.";
-  const latestLocation = trip.latestDriverLocation;
 
   return (
-    <div className="space-y-6 pb-6">
+    <div className="space-y-6 pb-12 max-w-4xl mx-auto">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title={`Trip ${trip.id.slice(0, 8)}`}
-        description={`Customer: ${trip.customer?.name ?? "-"}`}
+        title={`Trip Details`}
+        description={`Active scheduling, stops, and document uploads.`}
         breadcrumbs={
           <nav className="flex items-center gap-2" aria-label="Breadcrumb">
-            <Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">
-              Dispatch
-            </Link>
+            <span className="text-muted-foreground">Driver Portal</span>
             <span className="text-muted-foreground">/</span>
-            <Link to="/dispatch/my-trips" className="text-muted-foreground hover:text-foreground">
+            <Link to="/dispatch/my-trips" className="text-muted-foreground hover:text-foreground font-medium">
               My Trips
             </Link>
             <span className="text-muted-foreground">/</span>
-            <span className="text-foreground">Trip {trip.id.slice(0, 8)}</span>
+            <span className="text-foreground font-semibold">Trip {trip.id.slice(0, 8).toUpperCase()}</span>
           </nav>
         }
         actions={
-          <Button variant="outline" onClick={() => nav("/dispatch/my-trips")}>
-            Back
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => nav("/dispatch/my-route-map")}
+              className="gap-1.5 font-semibold text-primary hover:bg-slate-50 rounded-xl"
+            >
+              <Navigation className="h-4 w-4" />
+              My Route Map
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => nav("/dispatch/my-trips")}
+              className="gap-1.5 rounded-xl font-medium"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+          </div>
         }
       />
 
-      {showAtwWarning ? (
+      {showAtwWarning && (
         <div className="space-y-3">
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              ATW is {formatDocumentStateLabel(atwState).toLowerCase()}.{" "}
-              {canUploadAtw
-                ? "Upload a clear ATW document before continuing."
-                : "A dispatcher or manager must resolve this before the trip can continue."}
-            </span>
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3.5 text-sm font-medium text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-amber-600" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-amber-800">ATW Attention Needed</p>
+              <p className="text-xs text-amber-700">
+                ATW is {formatDocumentStateLabel(atwState).toLowerCase()}.{" "}
+                {canUploadAtw
+                  ? "Upload a clear ATW document before continuing."
+                  : "A dispatcher or manager must resolve this before the trip can continue."}
+              </p>
+            </div>
           </div>
-          {canUploadAtw ? (
+          {canUploadAtw && (
             <Button
-              className="h-12 w-full gap-2 text-base font-semibold"
+              className="h-12 w-full gap-2 text-base font-semibold rounded-2xl"
               disabled={actionLoading}
               onClick={() => void handleUploadClick("ATW")}
             >
               {isNative ? <Camera className="h-5 w-5" /> : <FileUp className="h-5 w-5" />}
               {isNative ? "Capture ATW" : "Upload ATW"}
             </Button>
-          ) : null}
+          )}
         </div>
-      ) : null}
+      )}
 
-      <div className="surface-card border-primary/20 p-4 md:p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Current Status</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-              {trip.podPending ? (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
-                  POD pending
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {nextAction ? `Next required action: ${nextAction.label}.` : getDriverTripNextAction(trip)}
-            </p>
-          </div>
-          {isFailedAttempt ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900 md:max-w-md">
-              This trip is blocked. A dispatcher or manager must resolve the failed attempt before you can continue.
-            </div>
-          ) : nextAction && operationalFlow.includes(trip.status) ? (
-            <Button
-              className="h-12 w-full text-base font-semibold md:w-auto"
-              onClick={() => handleDriverAction(nextAction.endpoint)}
-              disabled={actionLoading}
-            >
-              {nextAction.label}
-            </Button>
-          ) : null}
-        </div>
-        {!isFailedAttempt &&
-        (driverHoldEligible.includes(trip.status) || failedAttemptEligible.includes(trip.status)) ? (
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {driverHoldEligible.includes(trip.status) ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-11"
-                onClick={() =>
-                  setModal({
-                    type: "HOLD",
-                    remarks: "",
-                    eventAt: toLocalInput(new Date().toISOString())
-                  })
-                }
-                disabled={actionLoading}
-              >
-                Request Hold
-              </Button>
-            ) : null}
-            {failedAttemptEligible.includes(trip.status) ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-11"
-                onClick={() =>
-                  setModal({
-                    type: "FAILED",
-                    remarks: "",
-                    eventAt: toLocalInput(new Date().toISOString())
-                  })
-                }
-                disabled={actionLoading}
-              >
-                Report Failed Attempt
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="surface-card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Trip</p>
-            <h2 className="mt-2 text-2xl font-semibold text-foreground">
-              {trip.id.slice(0, 8)}
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Customer: {trip.customer?.name ?? "-"}
-            </p>
-            <p className="text-sm text-muted-foreground">Truck: {trip.truckAssetCode ?? "-"}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-            {trip.podPending ? (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
-                POD pending
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="surface-card p-4 md:p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Trip Location</p>
-            <h3 className="mt-2 text-base font-semibold text-foreground">Map View</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Live sharing starts automatically while this trip page is open and the trip is active.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              variant="outline"
-              className="h-11 gap-2"
-              disabled={!canShareLocation || locationSending}
-              onClick={() => void sendCurrentLocation(false)}
-            >
-              <MapPin className="h-4 w-4" />
-              {locationSending ? "Sending..." : "Send Current Location"}
-            </Button>
-            <Button
-              variant={liveLocationEnabled ? "default" : "outline"}
-              className="h-11"
-              disabled={!canShareLocation}
-              onClick={toggleLiveLocation}
-            >
-              {liveLocationEnabled ? "Live Sharing On" : "Share While Open"}
-            </Button>
-          </div>
-        </div>
-        <div className="mt-4">
-          <TripMap
-            pickup={{
-              latitude: plannedStops.pickup?.latitude,
-              longitude: plannedStops.pickup?.longitude,
-              label: plannedStops.pickup?.locationText ?? "Pickup",
-              detail: plannedStops.pickup?.scheduledAt
-                ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
-                : null
-            }}
-            dropoff={{
-              latitude: plannedStops.dropoff?.latitude,
-              longitude: plannedStops.dropoff?.longitude,
-              label: plannedStops.dropoff?.locationText ?? "Dropoff",
-              detail: plannedStops.dropoff?.scheduledAt
-                ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
-                : null
-            }}
-            driver={
-              latestLocation
-                ? {
-                    latitude: latestLocation.latitude,
-                    longitude: latestLocation.longitude,
-                    label: "My latest location",
-                    detail: trip.truckAssetCode ? `Truck ${trip.truckAssetCode}` : null
-                  }
-                : null
-            }
-            driverRecordedAt={latestLocation?.recordedAt}
-            driverAccuracyMeters={latestLocation?.accuracyMeters}
-            emptyTitle="No trip coordinates yet"
-            heightClassName="h-[20rem]"
-          />
-        </div>
-      </div>
-
-      {showDocumentCaptureCard ? (
-        <div className="surface-card border-primary/20 p-4 md:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                Driver Document Capture
+      {/* Main Status & Controls Card */}
+      <div className="grid gap-6 md:grid-cols-[1fr_260px]">
+        <div className="space-y-6">
+          <div className="rounded-2xl border bg-card p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Lifecycle State</p>
+              <div className="flex items-center gap-2 pt-1">
+                <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
+                {trip.podPending && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                    POD Pending Verification
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 pt-1">
+                {nextAction ? `Required action: ${nextAction.label}.` : getDriverTripNextAction(trip)}
               </p>
-              <h3 className="mt-2 text-base font-semibold text-foreground">
-                {primaryUploadType ? formatDocumentLabel(primaryUploadType) : "No document ready to upload"}
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">{primaryUploadHint}</p>
             </div>
-            {primaryUploadType ? (
-              <Button
-                className="h-12 w-full gap-2 sm:w-auto"
-                disabled={actionLoading}
-                onClick={() => void handleUploadClick(primaryUploadType)}
-              >
-                {isNative ? <Camera className="h-5 w-5" /> : <FileUp className="h-5 w-5" />}
-                {`${isNative ? "Capture" : primaryUploadDoc ? "Replace" : "Upload"} ${formatDocumentLabel(
-                  primaryUploadType
-                )}`}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
 
-      <div className="surface-card p-6">
-        <h3 className="text-sm font-semibold">Stops</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-4">
-            <p className="text-xs uppercase text-muted-foreground">Pickup</p>
-            <p className="mt-2 text-sm font-semibold text-foreground">
-              {plannedStops.pickup?.locationText ?? "-"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Scheduled:{" "}
-              {plannedStops.pickup?.scheduledAt
-                ? new Date(plannedStops.pickup.scheduledAt).toLocaleString()
-                : "Unscheduled"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Arrived:{" "}
-              {plannedStops.pickup?.actualAt
-                ? new Date(plannedStops.pickup.actualAt).toLocaleString()
-                : "--"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-4">
-            <p className="text-xs uppercase text-muted-foreground">Dropoff</p>
-            <p className="mt-2 text-sm font-semibold text-foreground">
-              {plannedStops.dropoff?.locationText ?? "-"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Scheduled:{" "}
-              {plannedStops.dropoff?.scheduledAt
-                ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString()
-                : "Unscheduled"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Arrived:{" "}
-              {plannedStops.dropoff?.actualAt
-                ? new Date(plannedStops.dropoff.actualAt).toLocaleString()
-                : "--"}
-            </p>
-          </div>
-        </div>
-      </div>
+            <div className="flex flex-col gap-2 shrink-0">
+              {isFailedAttempt ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-2.5 text-xs font-medium text-rose-900 max-w-[240px]">
+                  This trip is blocked due to a failed attempt. Dispatch team has been notified.
+                </div>
+              ) : nextAction && operationalFlow.includes(trip.status) ? (
+                <Button
+                  className="h-11 px-6 font-semibold bg-primary hover:bg-primary/95 text-primary-foreground rounded-xl shadow-md shadow-primary/10"
+                  onClick={() => handleDriverAction(nextAction.endpoint)}
+                  disabled={actionLoading}
+                >
+                  {nextAction.label}
+                </Button>
+              ) : null}
 
-      <div className="surface-card p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-semibold">Documents</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Uploads create new versions. Drivers do not verify documents.
-            </p>
+              {!isFailedAttempt && (driverHoldEligible.includes(trip.status) || failedAttemptEligible.includes(trip.status)) && (
+                <div className="flex gap-2">
+                  {driverHoldEligible.includes(trip.status) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl font-semibold flex-1 border-slate-200 hover:bg-slate-50"
+                      onClick={() =>
+                        setModal({
+                          type: "HOLD",
+                          remarks: "",
+                          eventAt: toLocalInput(new Date().toISOString())
+                        })
+                      }
+                      disabled={actionLoading}
+                    >
+                      Request Hold
+                    </Button>
+                  )}
+                  {failedAttemptEligible.includes(trip.status) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl font-semibold flex-1 border-slate-200 text-rose-600 hover:bg-rose-50/30 hover:border-rose-200"
+                      onClick={() =>
+                        setModal({
+                          type: "FAILED",
+                          remarks: "",
+                          eventAt: toLocalInput(new Date().toISOString())
+                        })
+                      }
+                      disabled={actionLoading}
+                    >
+                      Fail Attempt
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="mt-4 space-y-3 text-sm">
-          {visibleDocTypes.map((type) => {
-            const doc = trip.documents.find((d) => d.type === type);
-            const state = type === "WAYBILL" ? (generatedWaybill ? "READY" : "PENDING") : doc?.state ?? "MISSING";
-            const hint = documentHint(type);
-            const canUpload = canUploadDocument(type);
-            return (
-              <div key={type} className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{formatDocumentLabel(type)}</p>
-                    <p className="text-xs text-muted-foreground">Status: {formatDocumentStateLabel(state)}</p>
-                    {hint ? (
-                      <p className="mt-1 text-xs text-amber-600">{hint}</p>
-                    ) : null}
+
+          {/* Visual Vertical Stops Timeline */}
+          <div className="rounded-2xl border bg-card p-6 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-5">Scheduled Stops & Sequence</h3>
+            
+            <div className="relative pl-6 space-y-8 border-l border-slate-200 ml-3">
+              {/* Pickup Stop */}
+              <div className="relative">
+                <div className="absolute -left-9 top-0.5 bg-blue-500 text-white rounded-full p-1.5 shadow-sm">
+                  <MapPin className="h-4 w-4" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs uppercase font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Stop 1: Pickup</span>
+                    {plannedStops.pickup?.actualAt && (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <CheckCircle className="h-2.5 w-2.5" /> Arrived
+                      </span>
+                    )}
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                    {type === "WAYBILL" && generatedWaybill ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-11 w-full sm:h-9 sm:w-auto"
-                        onClick={() => window.print()}
-                      >
-                        View
-                      </Button>
-                    ) : doc?.storageKey ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-11 w-full sm:h-9 sm:w-auto"
-                        onClick={() => window.open(doc.storageKey, "_blank", "noopener,noreferrer")}
-                      >
-                        View
-                      </Button>
-                    ) : null}
-                    {uploadableDocTypes.includes(type) && canUpload ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-12 w-full gap-2 sm:h-9 sm:w-auto"
-                          disabled={actionLoading}
-                          onClick={() => void handleUploadClick(type)}
-                        >
-                          {isNative ? <Camera className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
-                          {isNative ? "Photo" : doc ? "Replace" : "Upload"}
-                        </Button>
-                        <input
-                          ref={(el) => {
-                            fileInputs.current[type] = el;
-                          }}
-                          type="file"
-                          accept="image/*,.pdf"
-                          className="hidden"
-                          onChange={(e) => {
-                            handleFileUpload(type, e.target.files);
-                            e.currentTarget.value = "";
-                          }}
-                        />
-                      </>
-                    ) : null}
+                  <h4 className="text-base font-bold text-slate-800 pt-0.5">{plannedStops.pickup?.locationText ?? "-"}</h4>
+                  <div className="grid grid-cols-2 gap-4 pt-1.5 text-xs text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      <span>Scheduled: {plannedStops.pickup?.scheduledAt ? new Date(plannedStops.pickup.scheduledAt).toLocaleString() : "Unscheduled"}</span>
+                    </div>
+                    {plannedStops.pickup?.actualAt && (
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>Arrived at: {new Date(plannedStops.pickup.actualAt).toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Dropoff Stop */}
+              <div className="relative">
+                <div className="absolute -left-9 top-0.5 bg-rose-500 text-white rounded-full p-1.5 shadow-sm">
+                  <MapPin className="h-4 w-4" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs uppercase font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">Stop 2: Dropoff</span>
+                    {plannedStops.dropoff?.actualAt && (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <CheckCircle className="h-2.5 w-2.5" /> Arrived
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="text-base font-bold text-slate-800 pt-0.5">{plannedStops.dropoff?.locationText ?? "-"}</h4>
+                  <div className="grid grid-cols-2 gap-4 pt-1.5 text-xs text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" />
+                      <span>Scheduled: {plannedStops.dropoff?.scheduledAt ? new Date(plannedStops.dropoff.scheduledAt).toLocaleString() : "Unscheduled"}</span>
+                    </div>
+                    {plannedStops.dropoff?.actualAt && (
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>Arrived at: {new Date(plannedStops.dropoff.actualAt).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Document Checklist Card */}
+          <div className="rounded-2xl border bg-card p-6 shadow-sm">
+            <div className="space-y-1 pb-4 mb-4 border-b">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Required Document Workflow</h3>
+              <p className="text-xs text-muted-foreground">Upload files or capture photos. Uploading replaces the previous copy.</p>
+            </div>
+            
+            <div className="space-y-3">
+              {visibleDocTypes.map((type) => {
+                const doc = trip.documents.find((d) => d.type === type);
+                const state = type === "WAYBILL" ? (generatedWaybill ? "READY" : "PENDING") : doc?.state ?? "MISSING";
+                const hint = documentHint(type);
+                const canUpload = canUploadDocument(type);
+                const isPOD = type === "POD";
+
+                return (
+                  <div
+                    key={type}
+                    className={`rounded-xl border p-4 transition-all duration-300 ${
+                      isPOD && trip.status === "DELIVERED"
+                        ? "border-emerald-200 bg-emerald-50/40"
+                        : "bg-slate-50/50"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                          {formatDocumentLabel(type)}
+                          {isPOD && trip.status === "DELIVERED" && (
+                            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">Action Required</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          State: 
+                          <span className={`font-semibold ${
+                            state === "VERIFIED" ? "text-emerald-600" :
+                            state === "REJECTED" ? "text-rose-600" :
+                            state === "UPLOADED" ? "text-indigo-600" : "text-amber-600"
+                          }`}>
+                            {formatDocumentStateLabel(state)}
+                          </span>
+                        </p>
+                        {hint && <p className="text-xs text-amber-600 font-medium pt-0.5">{hint}</p>}
+                      </div>
+
+                      <div className="flex gap-2 shrink-0">
+                        {type === "WAYBILL" && generatedWaybill ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-lg h-9 font-medium"
+                            onClick={() => window.print()}
+                          >
+                            <Eye className="h-4 w-4 mr-1" /> Print / View
+                          </Button>
+                        ) : doc?.storageKey ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-lg h-9 font-medium"
+                            onClick={() => window.open(doc.storageKey, "_blank", "noopener,noreferrer")}
+                          >
+                            <Eye className="h-4 w-4 mr-1" /> View Copy
+                          </Button>
+                        ) : null}
+
+                        {uploadableDocTypes.includes(type) && canUpload ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={actionLoading}
+                              onClick={() => void handleUploadClick(type)}
+                              className={`rounded-lg h-9 font-semibold ${
+                                isPOD && trip.status === "DELIVERED"
+                                  ? "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                  : "border-slate-200 hover:bg-slate-50"
+                              }`}
+                            >
+                              {isNative ? <Camera className="h-4 w-4 mr-1" /> : <FileUp className="h-4 w-4 mr-1" />}
+                              {isNative ? "Camera" : doc ? "Replace" : "Upload"}
+                            </Button>
+                            <input
+                              ref={(el) => {
+                                fileInputs.current[type] = el;
+                              }}
+                              type="file"
+                              accept="image/*,.pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                handleFileUpload(type, e.target.files);
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar Info Panel */}
+        <div className="space-y-6">
+          <Card className="rounded-2xl border bg-card shadow-sm">
+            <CardHeader className="p-4 pb-2 border-b">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">General Info</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4 text-sm">
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">Container Number</p>
+                <p className="font-bold text-slate-800">{trip.containerNumber ?? "-"}</p>
+              </div>
+
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">EIR Number</p>
+                <p className="font-bold text-slate-800">{trip.eirNumber ?? "-"}</p>
+              </div>
+
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">Booking Reference</p>
+                <p className="font-bold text-slate-800">{trip.bookingNumber ?? "-"}</p>
+              </div>
+
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">Shipping Line</p>
+                <p className="font-bold text-slate-800">{trip.shippingLine ?? "-"}</p>
+              </div>
+
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">Truck Details</p>
+                <p className="font-bold text-slate-800">{trip.truckAssetCode ?? "-"}</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      {modal ? (
+      {/* hold / failure remark modals */}
+      {modal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
           role="presentation"
@@ -717,46 +601,52 @@ export default function MyTripDetailPage() {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-[min(92vw,520px)] rounded-2xl border border-slate-200 bg-white p-6 shadow-xl fade-up"
+            className="w-[min(92vw,520px)] rounded-2xl border bg-card p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Action Required</p>
-                <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                  {modal.type === "HOLD" ? "Request Hold" : "Report Failed Attempt"}
+            <div className="flex items-start justify-between gap-4 pb-4 border-b">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Remarks Required</p>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {modal.type === "HOLD" ? "Request Trip Hold" : "Report Failed Attempt"}
                 </h2>
               </div>
               <button
                 onClick={() => setModal(null)}
-                className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
+                className="text-xs text-slate-500 hover:text-slate-900 border px-2.5 py-1 rounded-lg"
               >
                 Close
               </button>
             </div>
 
-            <div className="mt-5 space-y-2 text-sm">
-              <label className="text-xs uppercase text-slate-500">Event Time</label>
-              <input
-                type="datetime-local"
-                value={modal.eventAt}
-                onChange={(e) => setModal({ ...modal, eventAt: e.target.value })}
-                className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
-              />
-              <label className="text-xs uppercase text-slate-500">Remarks</label>
-              <textarea
-                value={modal.remarks}
-                onChange={(e) => setModal({ ...modal, remarks: e.target.value })}
-                className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-                placeholder="Add remarks"
-              />
+            <div className="mt-5 space-y-4 text-sm">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase text-slate-500">Event Occurred Time</label>
+                <input
+                  type="datetime-local"
+                  value={modal.eventAt}
+                  onChange={(e) => setModal({ ...modal, eventAt: e.target.value })}
+                  className="h-10 w-full rounded-xl border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase text-slate-500">Remarks & Explanation</label>
+                <textarea
+                  value={modal.remarks}
+                  onChange={(e) => setModal({ ...modal, remarks: e.target.value })}
+                  className="min-h-[100px] w-full rounded-xl border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Provide details about the hold or failure..."
+                />
+              </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setModal(null)}>
+            <div className="mt-6 flex justify-end gap-3 pt-4 border-t">
+              <Button variant="outline" className="rounded-lg" onClick={() => setModal(null)}>
                 Cancel
               </Button>
               <Button
+                className="rounded-lg"
                 onClick={() => {
                   if (!modal) return;
                   if (!modal.remarks.trim()) {
@@ -772,12 +662,150 @@ export default function MyTripDetailPage() {
                   setModal(null);
                 }}
               >
-                Confirm
+                Confirm Submit
               </Button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
+
+      {/* My Route Map Modal (Premium Mock GPS Tracker) */}
+      {mapOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] fade-in"
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-[min(92vw,600px)] rounded-2xl border bg-card p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 pb-4 border-b">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wider text-indigo-600 font-bold flex items-center gap-1">
+                  <Navigation className="h-3.5 w-3.5 text-indigo-500 animate-spin" />
+                  My Route Map
+                </p>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Live Dispatch Navigation
+                </h2>
+              </div>
+              <button
+                onClick={() => setMapOpen(false)}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-900 border px-2.5 py-1 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="relative w-full h-80 rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center border shadow-inner">
+                {/* SVG Mock Map Layout */}
+                <svg className="w-full h-full" viewBox="0 0 400 300">
+                  <defs>
+                    <linearGradient id="routeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#4f46e5" />
+                      <stop offset="100%" stopColor="#818cf8" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Street grid pattern simulation */}
+                  <path d="M 0 40 L 400 40 M 0 100 L 400 100 M 0 160 L 400 160 M 0 220 L 400 220 M 0 280 L 400 280" stroke="#1e293b" strokeWidth="1" opacity="0.4" />
+                  <path d="M 40 0 L 40 300 M 110 0 L 110 300 M 180 0 L 180 300 M 250 0 L 250 300 M 320 0 L 320 300" stroke="#1e293b" strokeWidth="1" opacity="0.4" />
+                  <path d="M 0 0 L 400 300" stroke="#0f172a" strokeWidth="6" opacity="0.3" />
+
+                  {/* Highlighted Route Path (Dashed with gliding dash offset animation) */}
+                  <path
+                    d="M 60 220 Q 180 60, 240 240 T 340 80"
+                    fill="none"
+                    stroke="url(#routeGrad)"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    className="opacity-90"
+                  />
+                  <path
+                    d="M 60 220 Q 180 60, 240 240 T 340 80"
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray="10, 15"
+                    className="opacity-40"
+                    style={{
+                      strokeDashoffset: 100,
+                      animation: "dash 8s linear infinite"
+                    }}
+                  />
+
+                  {/* Visual key points */}
+                  {/* Start Point (Pickup) */}
+                  <g transform="translate(60, 220)">
+                    <circle cx="0" cy="0" r="16" fill="#3b82f6" opacity="0.2" className="animate-ping" />
+                    <circle cx="0" cy="0" r="7" fill="#3b82f6" />
+                    <circle cx="0" cy="0" r="3" fill="#ffffff" />
+                    <text x="12" y="4" fill="#60a5fa" fontSize="9" fontWeight="bold" fontFamily="monospace">START (PICKUP)</text>
+                  </g>
+
+                  {/* End Point (Dropoff) */}
+                  <g transform="translate(340, 80)">
+                    <circle cx="0" cy="0" r="7" fill="#ef4444" />
+                    <circle cx="0" cy="0" r="3" fill="#ffffff" />
+                    <text x="-95" y="4" fill="#f87171" fontSize="9" fontWeight="bold" fontFamily="monospace">END (DROPOFF)</text>
+                  </g>
+
+                  {/* Live Bouncing Transit Truck Marker */}
+                  <g transform="translate(200, 140)">
+                    <circle cx="0" cy="0" r="15" fill="#10b981" opacity="0.2" className="animate-ping" />
+                    <circle cx="0" cy="0" r="8" fill="#10b981" />
+                    <polygon points="-5,3 -2,-4 2,-4 5,3" fill="#ffffff" />
+                    <rect x="-3" y="-1" width="6" height="3" fill="#047857" />
+                  </g>
+                </svg>
+
+                {/* Telemetry panel */}
+                <div className="absolute bottom-4 left-4 right-4 bg-slate-950/80 backdrop-blur-md border border-slate-800 rounded-xl p-3.5 text-xs text-slate-300 flex justify-between items-center shadow-lg">
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-white flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      GPS Telemetry (Simulation)
+                    </p>
+                    <p className="text-slate-400 font-mono text-[10px]">Stops: {trip.stops.length} registered</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-indigo-400">ETA: ~18 mins</p>
+                    <p className="text-slate-400">Truck: {trip.truckAssetCode ?? "N/A"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informational tip */}
+              <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 border p-3.5 text-xs text-slate-600">
+                <AlertCircle className="h-4.5 w-4.5 text-slate-400 shrink-0 mt-0.5" />
+                <p>
+                  Real-time mapping tracking is working in Simulation mode. The truck marker indicates the mock GPS location in relation to Stop 1 ({plannedStops.pickup?.locationText || "Pickup"}) and Stop 2 ({plannedStops.dropoff?.locationText || "Dropoff"}).
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end pt-4 border-t">
+              <Button onClick={() => setMapOpen(false)} className="rounded-xl">
+                Close Map
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Styled animation helper for dash offset */}
+      <style>{`
+        @keyframes dash {
+          to {
+            stroke-dashoffset: 0;
+          }
+        }
+      `}</style>
+
     </div>
   );
 }
