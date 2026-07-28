@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { fetchDashboardKpis } from "@/features/dashboard/kpis";
+import { normalizeUserRoles, resolveDashboardRole } from "@/features/auth/roles";
 import type { PagedResult } from "@/lib/paging";
 
 type Me = {
@@ -21,7 +22,7 @@ const CACHE_TTL_MS = 45_000;
 const cache = new Map<string, { fetchedAt: number; items: NotificationItem[] }>();
 
 function cacheKey(me: Me) {
-  return `${me.userId}:${me.roles.join(",")}`;
+  return `${me.userId}:${resolveDashboardRole(normalizeUserRoles(me.roles)) ?? "none"}`;
 }
 
 async function fetchPagedTotal(url: string) {
@@ -56,18 +57,21 @@ export async function fetchRoleNotifications(me: Me, force = false): Promise<Not
     return cached.items;
   }
 
-  const roles = me.roles ?? [];
-  const isDriver = roles.includes("Driver");
-  const isIo = roles.includes("InventoryOfficer");
-  const isManager = roles.includes("Manager");
-  const isDispatcher = roles.includes("Dispatcher");
-  const isFinance = roles.includes("HeadOfFinance");
-  const isCeo = roles.includes("CEO");
-  const isAdmin = roles.includes("Admin") || roles.includes("SuperAdmin");
+  const activeRole = resolveDashboardRole(normalizeUserRoles(me.roles));
+  const isDriver = activeRole === "Driver";
+  const isIo = activeRole === "InventoryOfficer";
+  const isManager = activeRole === "Manager";
+  const isDispatcher = activeRole === "Dispatcher";
+  const isFinance = activeRole === "HeadOfFinance";
+  const isCeo = activeRole === "CEO";
+  const isAdmin = activeRole === "Admin" || activeRole === "SuperAdmin";
 
   const items: NotificationItem[] = [];
 
-  const kpisPromise = fetchDashboardKpis(me).catch(() => null);
+  const kpisPromise = fetchDashboardKpis(
+    me,
+    activeRole
+  ).catch(() => null);
   const tasks: Promise<void>[] = [];
 
   if (isDriver) {

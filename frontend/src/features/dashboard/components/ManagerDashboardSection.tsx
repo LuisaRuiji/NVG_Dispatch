@@ -28,7 +28,7 @@ export default function ManagerDashboardSection({ kpis, charts, loading }: Props
       empty={!hasData}
       actions={[
         { label: "Approve Requests", to: "/dispatch/requests", icon: ClipboardCheck },
-        { label: "View Dispatch Queue", to: "/dispatch/board", icon: Route },
+        { label: "Open Planning", to: "/dispatch/planning", icon: Route },
         { label: "View Reports", to: "/reports", icon: FileText }
       ]}
     >

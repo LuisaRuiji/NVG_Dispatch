@@ -325,7 +325,10 @@ public sealed class DispatchTripsController : ControllerBase
             request.ContainerNumber,
             request.EirNumber,
             request.BookingNumber,
-            request.ShippingLine);
+            request.ShippingLine,
+            request.ContainerSize,
+            request.TripType,
+            request.TrailerAssetId);
 
         var trip = await _tripLifecycleService.CreateDraftAsync(command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
@@ -361,7 +364,10 @@ public sealed class DispatchTripsController : ControllerBase
             request.ContainerNumber,
             request.EirNumber,
             request.BookingNumber,
-            request.ShippingLine);
+            request.ShippingLine,
+            request.ContainerSize,
+            request.TripType,
+            request.TrailerAssetId);
 
         var trip = await _tripLifecycleService.UpdateTripAsync(tripId, command, BuildActor(), cancellationToken);
         return Ok(new CreateDispatchTripResponse(trip.Id, trip.Status));
@@ -382,6 +388,8 @@ public sealed class DispatchTripsController : ControllerBase
             detail.DriverUsername,
             detail.TruckAssetId,
             detail.TruckAssetCode,
+            detail.TrailerAssetId,
+            detail.TrailerAssetCode,
             detail.PodPending,
             detail.HoldPreviousStatus,
             detail.Notes,
@@ -389,6 +397,8 @@ public sealed class DispatchTripsController : ControllerBase
             detail.EirNumber,
             detail.BookingNumber,
             detail.ShippingLine,
+            detail.ContainerSize,
+            detail.TripType,
             detail.CreatedAt,
             detail.UpdatedAt,
             detail.Stops.Select(stop => new DispatchTripStopResponse(

@@ -11,48 +11,6 @@ namespace NVGInventory.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<double>(
-                name: "dropoff_latitude",
-                schema: "dbo",
-                table: "shipment_requests",
-                type: "float",
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "dropoff_longitude",
-                schema: "dbo",
-                table: "shipment_requests",
-                type: "float",
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "pickup_latitude",
-                schema: "dbo",
-                table: "shipment_requests",
-                type: "float",
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "pickup_longitude",
-                schema: "dbo",
-                table: "shipment_requests",
-                type: "float",
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "latitude",
-                schema: "dbo",
-                table: "dispatch_trip_stops",
-                type: "float",
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "longitude",
-                schema: "dbo",
-                table: "dispatch_trip_stops",
-                type: "float",
-                nullable: true);
-
             migrationBuilder.CreateTable(
                 name: "dispatch_trip_location_pings",
                 schema: "dbo",
@@ -108,35 +66,6 @@ namespace NVGInventory.Data.Migrations
                 name: "dispatch_trip_location_pings",
                 schema: "dbo");
 
-            migrationBuilder.DropColumn(
-                name: "dropoff_latitude",
-                schema: "dbo",
-                table: "shipment_requests");
-
-            migrationBuilder.DropColumn(
-                name: "dropoff_longitude",
-                schema: "dbo",
-                table: "shipment_requests");
-
-            migrationBuilder.DropColumn(
-                name: "pickup_latitude",
-                schema: "dbo",
-                table: "shipment_requests");
-
-            migrationBuilder.DropColumn(
-                name: "pickup_longitude",
-                schema: "dbo",
-                table: "shipment_requests");
-
-            migrationBuilder.DropColumn(
-                name: "latitude",
-                schema: "dbo",
-                table: "dispatch_trip_stops");
-
-            migrationBuilder.DropColumn(
-                name: "longitude",
-                schema: "dbo",
-                table: "dispatch_trip_stops");
         }
     }
 }

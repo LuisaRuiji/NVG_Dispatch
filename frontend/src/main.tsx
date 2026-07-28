@@ -33,6 +33,7 @@ import PurchaseOrderDetailPage from "@/features/purchase-orders/PurchaseOrderDet
 import DispatchBoardPage from "@/features/dispatch/DispatchBoardPage";
 import DispatchMapPage from "@/features/dispatch/DispatchMapPage";
 import DispatchRequestsPage from "@/features/dispatch/DispatchRequestsPage";
+import DispatchPlanningPage from "@/features/dispatch/DispatchPlanningPage";
 import DispatchDocumentsPage from "@/features/dispatch/DispatchDocumentsPage";
 import DispatchTripsPage from "@/features/dispatch/DispatchTripsPage";
 import MyTripsPage from "@/features/dispatch/MyTripsPage";
@@ -225,6 +226,14 @@ function App() {
             element={
               <RoleGate roles={["Manager", "Dispatcher"]}>
                 <DispatchRequestsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/planning"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher"]}>
+                <DispatchPlanningPage />
               </RoleGate>
             }
           />

@@ -14,6 +14,7 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         var statusConverter = new ValueConverter<TripStatus, string>(
             value =>
                 value == TripStatus.Draft ? "DRAFT" :
+                value == TripStatus.ReadyForDispatch ? "READY_FOR_DISPATCH" :
                 value == TripStatus.Dispatched ? "DISPATCHED" :
                 value == TripStatus.EnroutePickup ? "ENROUTE_PICKUP" :
                 value == TripStatus.AtPickup ? "AT_PICKUP" :
@@ -28,6 +29,7 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
                 "DRAFT",
             value =>
                 value == "DRAFT" ? TripStatus.Draft :
+                value == "READY_FOR_DISPATCH" ? TripStatus.ReadyForDispatch :
                 value == "DISPATCHED" ? TripStatus.Dispatched :
                 value == "ENROUTE_PICKUP" ? TripStatus.EnroutePickup :
                 value == "AT_PICKUP" ? TripStatus.AtPickup :
@@ -49,6 +51,7 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         entity.Property(trip => trip.CustomerId).HasColumnName("customer_id");
         entity.Property(trip => trip.DriverUserId).HasColumnName("driver_user_id");
         entity.Property(trip => trip.TruckAssetId).HasColumnName("truck_asset_id");
+        entity.Property(trip => trip.TrailerAssetId).HasColumnName("trailer_asset_id");
         entity.Property(trip => trip.Status)
             .HasColumnName("status")
             .HasConversion(statusConverter)
@@ -120,11 +123,18 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
             .HasForeignKey(trip => trip.TruckAssetId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        entity.HasOne(trip => trip.TrailerAsset)
+            .WithMany()
+            .HasForeignKey(trip => trip.TrailerAssetId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         entity.HasIndex(trip => trip.Status);
         entity.HasIndex(trip => trip.DriverUserId);
         entity.HasIndex(trip => new { trip.DriverUserId, trip.Status });
         entity.HasIndex(trip => trip.CustomerId);
         entity.HasIndex(trip => trip.TruckAssetId);
         entity.HasIndex(trip => new { trip.TruckAssetId, trip.Status });
+        entity.HasIndex(trip => trip.TrailerAssetId);
+        entity.HasIndex(trip => new { trip.TrailerAssetId, trip.Status });
     }
 }

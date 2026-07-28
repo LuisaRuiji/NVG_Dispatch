@@ -2,11 +2,12 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { getDefaultRoute, getMe } from "@/features/auth/authStore";
 import { emitToast } from "@/lib/toastBus";
+import { resolvePrimaryRole, type UserRole } from "@/features/auth/roles";
 
 export const LAST_AUTHORIZED_ROUTE_KEY = "vaia_last_authorized_route";
 
 type Props = {
-  roles: string[];
+  roles: UserRole[];
   children: ReactNode;
 };
 
@@ -19,7 +20,8 @@ export default function RoleGate({ roles, children }: Props) {
     warnedRef.current = false;
   }, [location.pathname]);
 
-  const allowed = me ? roles.some((role) => me.roles.includes(role)) : false;
+  const activeRole = me ? resolvePrimaryRole(me.roles) : null;
+  const allowed = activeRole ? roles.includes(activeRole) : false;
 
   useEffect(() => {
     if (me && allowed) {

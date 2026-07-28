@@ -4,6 +4,7 @@ obj/
 .vs/
 *.tsbuildinfo
 **/artifacts/
+.build-check/
 
 # Frontend
 frontend/node_modules/

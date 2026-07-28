@@ -85,6 +85,8 @@ builder.Services.AddDbContext<InventoryDbContext>(options =>
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<MfaOptions>(builder.Configuration.GetSection(MfaOptions.SectionName));
 builder.Services.Configure<DispatchingOptions>(builder.Configuration.GetSection(DispatchingOptions.SectionName));
+builder.Services.Configure<NVGInventory.Modules.ShipmentRequests.Services.AzureDocumentIntelligenceOptions>(
+    builder.Configuration.GetSection(NVGInventory.Modules.ShipmentRequests.Services.AzureDocumentIntelligenceOptions.SectionName));
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<TotpAuthenticator>();
 builder.Services.AddSingleton<IAuthorizationHandler, RecentMfaRequirementHandler>();
@@ -123,6 +125,10 @@ builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDo
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchDocumentReadService>(serviceProvider =>
     serviceProvider.GetRequiredService<NVGInventory.Modules.Dispatching.Services.DispatchDocumentWorkflowService>());
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchTripQueryService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchPlanningService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.PlanningDecisionSupportService>();
+builder.Services.AddSingleton<NVGInventory.Modules.Dispatching.Services.PlanningRecommendationSnapshotStore>();
+builder.Services.AddSingleton<NVGInventory.Modules.Dispatching.Services.IPlanningAvailabilityNotifier, NVGInventory.Modules.Dispatching.Services.PlanningAvailabilityNotifier>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IGeneratedWaybillService, NVGInventory.Modules.Dispatching.Services.GeneratedWaybillService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService, NVGInventory.Modules.Dispatching.Services.PostDeliveryRecommendationService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripDispatchGateway, NVGInventory.Modules.Dispatching.Services.DispatchShipmentRequestTripDispatchGateway>();
@@ -139,8 +145,12 @@ builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipm
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IPortalCustomerAccessService, NVGInventory.Modules.ShipmentRequests.Services.PortalCustomerAccessService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.ShipmentRequestQueryService>();
+builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestDocumentStorage, NVGInventory.Modules.ShipmentRequests.Services.LocalShipmentRequestDocumentStorage>();
+builder.Services.AddHttpClient<NVGInventory.Modules.ShipmentRequests.Services.IAtwDocumentIntelligenceService, NVGInventory.Modules.ShipmentRequests.Services.AzureAtwDocumentIntelligenceService>();
+builder.Services.AddSingleton<NVGInventory.Modules.ShipmentRequests.Services.IAtwScanSessionStore, NVGInventory.Modules.ShipmentRequests.Services.AtwScanSessionStore>();
 builder.Services.AddScoped<DemoDataSeeder>();
 builder.Services.AddScoped<PerformanceDataSeeder>();
+builder.Services.AddScoped<PlanningCspTopsisDemoSeeder>();
 builder.Services.AddScoped<SensitiveFieldRotationService>();
 builder.Services.AddScoped<PiiFieldEncryptionMigrationService>();
 builder.Services.Configure<IntegrityCheckJobOptions>(builder.Configuration.GetSection("BackgroundJobs:IntegrityCheck"));
@@ -319,6 +329,14 @@ var seedPerf = args.Any(arg =>
     string.Equals(arg, "seed-perf", StringComparison.OrdinalIgnoreCase)
     || string.Equals(arg, "--seed-perf", StringComparison.OrdinalIgnoreCase));
 
+var seedPlanningDemo = args.Any(arg =>
+    string.Equals(arg, "seed-planning-demo", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(arg, "--seed-planning-demo", StringComparison.OrdinalIgnoreCase));
+
+var clearPlanningDemo = args.Any(arg =>
+    string.Equals(arg, "clear-planning-demo", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(arg, "--clear-planning-demo", StringComparison.OrdinalIgnoreCase));
+
 var rotateEncryptionKey = args.Any(arg =>
     string.Equals(arg, "rotate-encryption-key", StringComparison.OrdinalIgnoreCase)
     || string.Equals(arg, "--rotate-encryption-key", StringComparison.OrdinalIgnoreCase));
@@ -326,6 +344,10 @@ var rotateEncryptionKey = args.Any(arg =>
 var migratePiiEncryption = args.Any(arg =>
     string.Equals(arg, "migrate-pii-encryption", StringComparison.OrdinalIgnoreCase)
     || string.Equals(arg, "--migrate-pii-encryption", StringComparison.OrdinalIgnoreCase));
+
+var repairDemoCredentials = args.Any(arg =>
+    string.Equals(arg, "repair-demo-credentials", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(arg, "--repair-demo-credentials", StringComparison.OrdinalIgnoreCase));
 
 if (seedPerf)
 {
@@ -343,12 +365,41 @@ if (seedPerf)
     return;
 }
 
+if (seedPlanningDemo || clearPlanningDemo)
+{
+    if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test"))
+    {
+        throw new InvalidOperationException("Planning CSP-TOPSIS demo seed commands are allowed only in Development or Test.");
+    }
+
+    using var scope = app.Services.CreateScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<PlanningCspTopsisDemoSeeder>();
+    if (clearPlanningDemo)
+    {
+        await seeder.ClearAsync(CancellationToken.None);
+    }
+    else
+    {
+        await seeder.SeedAsync(CancellationToken.None);
+    }
+    return;
+}
+
 if (seedDemo)
 {
     var reset = args.Any(arg => string.Equals(arg, "--reset", StringComparison.OrdinalIgnoreCase));
     using var scope = app.Services.CreateScope();
     var seeder = scope.ServiceProvider.GetRequiredService<DemoDataSeeder>();
     await seeder.SeedAsync(reset, CancellationToken.None);
+    return;
+}
+
+if (repairDemoCredentials)
+{
+    using var scope = app.Services.CreateScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<DemoDataSeeder>();
+    var repairedUsernames = await seeder.RepairDemoCredentialsAsync(CancellationToken.None);
+    Console.WriteLine($"Repaired demo credentials for {repairedUsernames.Count} user(s): {string.Join(", ", repairedUsernames)}.");
     return;
 }
 

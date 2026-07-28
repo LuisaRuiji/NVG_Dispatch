@@ -4,10 +4,10 @@ import ToastHost from "@/components/ToastHost";
 import EmptyState from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/lib/useToast";
 import { getMe } from "@/features/auth/authStore";
+import { resolveDashboardRole } from "@/features/auth/roles";
 import { RefreshCw } from "lucide-react";
 import {
   emptyDashboardCharts,
@@ -44,7 +44,7 @@ const emptyKpis: DashboardKpis = {
 
 export default function DashboardPage() {
   const me = getMe();
-  const roles = me?.roles ?? [];
+  const dashboardRole = resolveDashboardRole(me?.roles ?? []);
   const { toasts, show } = useToast();
   const [loading, setLoading] = useState(false);
   const [kpis, setKpis] = useState<DashboardKpis>(emptyKpis);
@@ -55,11 +55,14 @@ export default function DashboardPage() {
     try {
       setLoading(true);
       const [result, chartResult] = await Promise.all([
-        fetchDashboardKpis(me, force),
-        fetchDashboardCharts(me, force)
+        fetchDashboardKpis(me, dashboardRole, force),
+        fetchDashboardCharts(me, dashboardRole, force)
       ]);
       setKpis(result);
       setCharts(chartResult);
+      if (force && dashboardRole === "Dispatcher") {
+        window.dispatchEvent(new Event("nvg:dispatcher-dashboard-refresh"));
+      }
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to load dashboard metrics.", "error");
@@ -70,82 +73,44 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadKpis();
-  }, [me?.userId]);
+  }, [me?.userId, dashboardRole]);
 
   useEffect(() => {
     const handler = () => loadKpis(true);
     window.addEventListener("nvg:kpi-invalidated", handler);
     return () => window.removeEventListener("nvg:kpi-invalidated", handler);
-  }, [me?.userId]);
+  }, [me?.userId, dashboardRole]);
 
   const sections = useMemo(() => {
-    const visibleSections: { key: string; element: JSX.Element }[] = [];
-
-    if (roles.includes("SuperAdmin") || roles.includes("Admin")) {
-      visibleSections.push({
-        key: "admin",
-        element: <AdminDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
+    switch (dashboardRole) {
+      case "SuperAdmin":
+      case "Admin":
+        return [{ key: "admin", element: <AdminDashboardSection kpis={kpis} charts={charts} loading={loading} /> }];
+      case "Manager":
+        return [{ key: "manager", element: <ManagerDashboardSection kpis={kpis} charts={charts} loading={loading} /> }];
+      case "Dispatcher":
+        return [{ key: "dispatcher", element: <DispatcherDashboardSection kpis={kpis} loading={loading} /> }];
+      case "HeadOfFinance":
+        return [{ key: "finance", element: <FinanceDashboardSection kpis={kpis} charts={charts} loading={loading} /> }];
+      case "Driver":
+        return [{ key: "driver", element: <DriverDashboardSection kpis={kpis} loading={loading} /> }];
+      case "Customer":
+        return [{ key: "customer", element: <CustomerDashboardSection kpis={kpis} charts={charts} loading={loading} /> }];
+      case "InventoryOfficer":
+        return [{ key: "inventory-officer", element: <InventoryOfficerDashboardSection kpis={kpis} charts={charts} loading={loading} /> }];
+      case "CEO":
+        return [{ key: "ceo", element: <CeoDashboardSection kpis={kpis} charts={charts} loading={loading} /> }];
+      default:
+        return [];
     }
-
-    if (roles.includes("Manager")) {
-      visibleSections.push({
-        key: "manager",
-        element: <ManagerDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
-    }
-
-    if (roles.includes("Dispatcher")) {
-      visibleSections.push({
-        key: "dispatcher",
-        element: <DispatcherDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
-    }
-
-    if (roles.includes("HeadOfFinance")) {
-      visibleSections.push({
-        key: "finance",
-        element: <FinanceDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
-    }
-
-    if (roles.includes("Driver")) {
-      visibleSections.push({
-        key: "driver",
-        element: <DriverDashboardSection kpis={kpis} loading={loading} />
-      });
-    }
-
-    if (roles.includes("Customer")) {
-      visibleSections.push({
-        key: "customer",
-        element: <CustomerDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
-    }
-
-    if (roles.includes("InventoryOfficer")) {
-      visibleSections.push({
-        key: "inventory-officer",
-        element: <InventoryOfficerDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
-    }
-
-    if (roles.includes("CEO")) {
-      visibleSections.push({
-        key: "ceo",
-        element: <CeoDashboardSection kpis={kpis} charts={charts} loading={loading} />
-      });
-    }
-
-    return visibleSections;
-  }, [roles, kpis, charts, loading]);
+  }, [dashboardRole, kpis, charts, loading]);
 
   return (
     <div className="space-y-8">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title="Dashboard"
-        description="Role-aware operations snapshot across dispatch, documents, finance, customers, and inventory."
+        title={dashboardRole === "Dispatcher" ? "Dispatcher Dashboard" : "Dashboard"}
+        description={dashboardRole === "Dispatcher" ? "Review active trips, assignment blockers, and next-job recommendations." : "Role-aware operations snapshot across your current responsibilities."}
         actions={
           <>
             <Badge variant="outline" className="text-[10px] animate-pulse">LIVE</Badge>
@@ -167,9 +132,8 @@ export default function DashboardPage() {
         <EmptyState title="No dashboard sections" description="Your current role has no dashboard widgets." />
       ) : (
         <div className="space-y-8">
-          {sections.map((section, index) => (
+          {sections.map((section) => (
             <div key={section.key} className="space-y-8">
-              {index > 0 ? <Separator /> : null}
               {section.element}
             </div>
           ))}

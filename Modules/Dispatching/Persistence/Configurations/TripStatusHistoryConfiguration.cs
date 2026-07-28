@@ -13,6 +13,7 @@ public sealed class TripStatusHistoryConfiguration : IEntityTypeConfiguration<Tr
         var statusConverter = new ValueConverter<TripStatus, string>(
             value =>
                 value == TripStatus.Draft ? "DRAFT" :
+                value == TripStatus.ReadyForDispatch ? "READY_FOR_DISPATCH" :
                 value == TripStatus.Dispatched ? "DISPATCHED" :
                 value == TripStatus.EnroutePickup ? "ENROUTE_PICKUP" :
                 value == TripStatus.AtPickup ? "AT_PICKUP" :
@@ -27,6 +28,7 @@ public sealed class TripStatusHistoryConfiguration : IEntityTypeConfiguration<Tr
                 "DRAFT",
             value =>
                 value == "DRAFT" ? TripStatus.Draft :
+                value == "READY_FOR_DISPATCH" ? TripStatus.ReadyForDispatch :
                 value == "DISPATCHED" ? TripStatus.Dispatched :
                 value == "ENROUTE_PICKUP" ? TripStatus.EnroutePickup :
                 value == "AT_PICKUP" ? TripStatus.AtPickup :

@@ -10,6 +10,7 @@ export type ShipmentRequestStatus =
   | "SUBMITTED"
   | "APPROVED"
   | "REJECTED"
+  | "NEEDS_REVISION"
   | "CONVERTED_TO_TRIP";
 
 export type ShipmentRequestDocumentType =
@@ -83,6 +84,7 @@ export type ShipmentRequestDetail = {
   cargoDescription?: string | null;
   cargoWeight?: number | null;
   specialInstructions?: string | null;
+  reviewRemarks?: string | null;
   createdAt: string;
   approvedAt?: string | null;
   convertedTripId?: string | null;

@@ -48,7 +48,7 @@ export function DashboardSection({
       ) : (
         <>
           {children}
-          <QuickActionList actions={actions} />
+          {actions.length > 0 ? <QuickActionList actions={actions} /> : null}
         </>
       )}
     </section>

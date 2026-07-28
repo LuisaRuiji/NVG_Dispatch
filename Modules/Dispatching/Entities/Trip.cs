@@ -12,6 +12,8 @@ public sealed class Trip
     public User? Driver { get; set; }
     public Guid? TruckAssetId { get; set; }
     public Asset? TruckAsset { get; set; }
+    public Guid? TrailerAssetId { get; set; }
+    public Asset? TrailerAsset { get; set; }
     public TripStatus Status { get; set; }
     public bool PodPending { get; set; }
     public TripStatus? HoldPreviousStatus { get; set; }

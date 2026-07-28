@@ -129,6 +129,8 @@ public sealed class DispatchMyTripsController : ControllerBase
             detail.DriverUsername,
             detail.TruckAssetId,
             detail.TruckAssetCode,
+            detail.TrailerAssetId,
+            detail.TrailerAssetCode,
             detail.PodPending,
             detail.HoldPreviousStatus,
             detail.Notes,
@@ -136,6 +138,8 @@ public sealed class DispatchMyTripsController : ControllerBase
             detail.EirNumber,
             detail.BookingNumber,
             detail.ShippingLine,
+            detail.ContainerSize,
+            detail.TripType,
             detail.CreatedAt,
             detail.UpdatedAt,
             detail.Stops.Select(stop => new DispatchTripStopResponse(

@@ -42,7 +42,8 @@ public sealed record CreateDispatchTripCommand(
     string? BookingNumber = null,
     string? ShippingLine = null,
     string? ContainerSize = null,
-    string? TripType = null);
+    string? TripType = null,
+    Guid? TrailerAssetId = null);
 
 public sealed record UpdateDispatchTripCommand(
     Guid CustomerId,
@@ -58,7 +59,8 @@ public sealed record UpdateDispatchTripCommand(
     string? BookingNumber = null,
     string? ShippingLine = null,
     string? ContainerSize = null,
-    string? TripType = null);
+    string? TripType = null,
+    Guid? TrailerAssetId = null);
 
 public sealed record DispatchTripCommand(
     Guid TripId,
@@ -98,7 +100,8 @@ public sealed class DispatchTripService : ITripLifecycleService
     private static readonly IReadOnlyDictionary<TripStatus, TripStatus[]> TransitionMap =
         new Dictionary<TripStatus, TripStatus[]>
         {
-            { TripStatus.Draft, [TripStatus.Dispatched, TripStatus.Cancelled] },
+            { TripStatus.Draft, [TripStatus.ReadyForDispatch, TripStatus.Cancelled] },
+            { TripStatus.ReadyForDispatch, [TripStatus.Dispatched, TripStatus.Cancelled] },
             { TripStatus.Dispatched, [TripStatus.EnroutePickup, TripStatus.OnHold, TripStatus.Cancelled] },
             { TripStatus.EnroutePickup, [TripStatus.AtPickup, TripStatus.OnHold, TripStatus.FailedAttempt, TripStatus.Cancelled] },
             { TripStatus.AtPickup, [TripStatus.Loaded, TripStatus.OnHold, TripStatus.FailedAttempt, TripStatus.Cancelled] },
@@ -119,6 +122,7 @@ public sealed class DispatchTripService : ITripLifecycleService
     private readonly DispatchingOptions _options;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly IVaiaCacheService? _cacheService;
+    private readonly IPlanningAvailabilityNotifier? _planningAvailabilityNotifier;
     private readonly List<PendingTripStatusBroadcast> _pendingStatusBroadcasts = [];
 
     public DispatchTripService(
@@ -128,7 +132,8 @@ public sealed class DispatchTripService : ITripLifecycleService
         IOptions<DispatchingOptions> options,
         IAuditService auditService,
         IServiceScopeFactory? serviceScopeFactory = null,
-        IVaiaCacheService? cacheService = null)
+        IVaiaCacheService? cacheService = null,
+        IPlanningAvailabilityNotifier? planningAvailabilityNotifier = null)
     {
         _dbContext = dbContext;
         _userService = userService;
@@ -137,6 +142,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         _options = options.Value ?? new DispatchingOptions();
         _serviceScopeFactory = serviceScopeFactory;
         _cacheService = cacheService;
+        _planningAvailabilityNotifier = planningAvailabilityNotifier;
     }
 
     public async Task<Trip> CreateDraftAsync(
@@ -177,6 +183,11 @@ public sealed class DispatchTripService : ITripLifecycleService
             }
         }
 
+        if (command.TrailerAssetId.HasValue)
+        {
+            await EnsureActiveTrailerAsync(command.TrailerAssetId.Value, cancellationToken);
+        }
+
         var now = DateTime.UtcNow;
         var trip = new Trip
         {
@@ -184,6 +195,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             CustomerId = command.CustomerId,
             DriverUserId = command.DriverUserId,
             TruckAssetId = command.TruckAssetId,
+            TrailerAssetId = command.TrailerAssetId,
             Status = TripStatus.Draft,
             PodPending = false,
             Notes = command.Notes,
@@ -266,6 +278,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         var originalCustomerId = trip.CustomerId;
         var originalDriverUserId = trip.DriverUserId;
         var originalTruckAssetId = trip.TruckAssetId;
+        var originalTrailerAssetId = trip.TrailerAssetId;
         var originalNotes = trip.Notes;
         var originalPickup = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
         var originalDropoff = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
@@ -311,15 +324,21 @@ public sealed class DispatchTripService : ITripLifecycleService
             }
         }
 
+        if (command.TrailerAssetId.HasValue)
+        {
+            await EnsureActiveTrailerAsync(command.TrailerAssetId.Value, cancellationToken);
+        }
+
         var driverChanged = originalDriverUserId != command.DriverUserId;
         var truckChanged = originalTruckAssetId != command.TruckAssetId;
-        var assignmentChanged = driverChanged || truckChanged;
+        var trailerChanged = originalTrailerAssetId != command.TrailerAssetId;
+        var assignmentChanged = driverChanged || truckChanged || trailerChanged;
 
         if (assignmentChanged)
         {
             if (trip.Status == TripStatus.Delivered)
             {
-                throw new ConflictDomainException("Driver or truck reassignment is not allowed after delivery.");
+                throw new ConflictDomainException("Driver, truck, or trailer reassignment is not allowed after delivery.");
             }
 
             var effectiveStatus = await ResolveReassignmentStatusAsync(trip, cancellationToken);
@@ -353,8 +372,14 @@ public sealed class DispatchTripService : ITripLifecycleService
             scheduleChanged = true;
         }
 
+        if (trip.TrailerAssetId != command.TrailerAssetId)
+        {
+            scheduleChanged = true;
+        }
+
         trip.DriverUserId = command.DriverUserId;
         trip.TruckAssetId = command.TruckAssetId;
+        trip.TrailerAssetId = command.TrailerAssetId;
         if (trip.Notes != command.Notes)
         {
             scheduleChanged = true;
@@ -384,6 +409,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                         TripId = trip.Id,
                         StopType = stop.StopType,
                         LocationText = stop.LocationText,
+                        Latitude = stop.Latitude,
+                        Longitude = stop.Longitude,
                         ScheduledAt = stop.ScheduledAt,
                         CreatedAt = now
                     });
@@ -403,13 +430,16 @@ public sealed class DispatchTripService : ITripLifecycleService
                 stop.ScheduledAt)).ToList());
         }
 
-        if (!isDraft && assignmentChanged)
+        if (assignmentChanged || command.Stops is not null)
         {
-            var (pickupAt, dropoffAt) = GetScheduledWindow(trip.Stops);
+            var (pickupAt, dropoffAt) = command.Stops is not null
+                ? GetScheduledWindow(command.Stops)
+                : GetScheduledWindow(trip.Stops);
             await EnforceAssignmentConflictsAsync(
                 trip.Id,
                 trip.DriverUserId,
                 trip.TruckAssetId,
+                trip.TrailerAssetId,
                 pickupAt,
                 dropoffAt,
                 actor,
@@ -421,6 +451,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             originalCustomerId,
             originalDriverUserId,
             originalTruckAssetId,
+            originalTrailerAssetId,
             originalNotes,
             originalPickup,
             originalDropoff,
@@ -450,6 +481,7 @@ public sealed class DispatchTripService : ITripLifecycleService
                 CustomerId = originalCustomerId,
                 DriverUserId = originalDriverUserId,
                 TruckAssetId = originalTruckAssetId,
+                TrailerAssetId = originalTrailerAssetId,
                 Notes = originalNotes,
                 Pickup = originalPickup is null
                     ? null
@@ -468,6 +500,7 @@ public sealed class DispatchTripService : ITripLifecycleService
                 trip.CustomerId,
                 trip.DriverUserId,
                 trip.TruckAssetId,
+                trip.TrailerAssetId,
                 trip.Notes,
                 Pickup = afterPickup is null
                     ? null
@@ -536,9 +569,9 @@ public sealed class DispatchTripService : ITripLifecycleService
 
         ApplyRowVersion(trip, command.RowVersion);
 
-        if (trip.Status != TripStatus.Draft)
+        if (trip.Status != TripStatus.ReadyForDispatch)
         {
-            throw new ConflictDomainException("Only draft trips can be dispatched.");
+            throw new ConflictDomainException("Only trips marked ready for dispatch can be dispatched.");
         }
 
         if (command.DriverUserId == Guid.Empty)
@@ -570,12 +603,18 @@ public sealed class DispatchTripService : ITripLifecycleService
             }
         }
 
+        if (trip.TrailerAssetId.HasValue)
+        {
+            await EnsureActiveTrailerAsync(trip.TrailerAssetId.Value, cancellationToken);
+        }
+
         var (pickupAt, dropoffAt) = GetScheduledWindow(trip.Stops);
         await EnforceAtwDispatchReadinessAsync(trip.Id, actor, command.Remarks, cancellationToken);
         await EnforceAssignmentConflictsAsync(
             trip.Id,
             command.DriverUserId,
             command.TruckAssetId,
+            trip.TrailerAssetId,
             pickupAt,
             dropoffAt,
             actor,
@@ -636,9 +675,9 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new ConflictDomainException("Trip is already in that status.");
         }
 
-        if (toStatus == TripStatus.Draft)
+        if (toStatus is TripStatus.Draft or TripStatus.ReadyForDispatch)
         {
-            throw new ConflictDomainException("Trips cannot transition back to draft.");
+            throw new ConflictDomainException("Use Planning validation to mark a Draft trip ready for dispatch.");
         }
 
         if (fromStatus == TripStatus.Closed || fromStatus == TripStatus.Cancelled)
@@ -776,6 +815,11 @@ public sealed class DispatchTripService : ITripLifecycleService
             trip.PodPending = command.PodPendingOverride.Value;
         }
 
+        if (toStatus == TripStatus.Delivered)
+        {
+            await EnforceDeliverDocumentReadinessAsync(trip.Id, actor, remarks, cancellationToken);
+        }
+
         trip.Status = toStatus;
         trip.UpdatedAt = DateTime.UtcNow;
         AddHistory(trip.Id, fromStatus, trip.Status, actor.UserId, remarks, command.EventAt);
@@ -819,9 +863,9 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new ConflictDomainException("Closed or cancelled trips cannot be corrected.");
         }
 
-        if (toStatus == TripStatus.Draft)
+        if (toStatus is TripStatus.Draft or TripStatus.ReadyForDispatch)
         {
-            throw new ConflictDomainException("Trips cannot be corrected to draft.");
+            throw new ConflictDomainException("Trips cannot be corrected to a planning status.");
         }
 
         if (trip.Status == toStatus)
@@ -993,6 +1037,22 @@ public sealed class DispatchTripService : ITripLifecycleService
                 scheduleChanged = true;
                 dropoffStop.LocationText = dropoffInput.LocationText;
             }
+
+            if (pickupInput.Latitude.HasValue && pickupInput.Longitude.HasValue &&
+                (pickupStop.Latitude != pickupInput.Latitude || pickupStop.Longitude != pickupInput.Longitude))
+            {
+                scheduleChanged = true;
+                pickupStop.Latitude = pickupInput.Latitude;
+                pickupStop.Longitude = pickupInput.Longitude;
+            }
+
+            if (dropoffInput.Latitude.HasValue && dropoffInput.Longitude.HasValue &&
+                (dropoffStop.Latitude != dropoffInput.Latitude || dropoffStop.Longitude != dropoffInput.Longitude))
+            {
+                scheduleChanged = true;
+                dropoffStop.Latitude = dropoffInput.Latitude;
+                dropoffStop.Longitude = dropoffInput.Longitude;
+            }
         }
 
         if (pickupInput.ScheduledAt != pickupStop.ScheduledAt)
@@ -1089,9 +1149,9 @@ public sealed class DispatchTripService : ITripLifecycleService
             throw new ConflictDomainException("Closed or cancelled trips cannot transition.");
         }
 
-        if (toStatus == TripStatus.Draft)
+        if (toStatus is TripStatus.Draft or TripStatus.ReadyForDispatch)
         {
-            throw new ConflictDomainException("Trips cannot transition back to draft.");
+            throw new ConflictDomainException("Use Planning validation to mark a Draft trip ready for dispatch.");
         }
 
         if (toStatus == TripStatus.Cancelled)
@@ -1222,7 +1282,7 @@ public sealed class DispatchTripService : ITripLifecycleService
                 throw new ConflictDomainException("Dispatching requires an assigned driver.");
             }
 
-            if (fromStatus == TripStatus.Draft && allowDraftDispatch)
+            if (fromStatus == TripStatus.ReadyForDispatch && allowDraftDispatch && toStatus == TripStatus.Dispatched)
             {
                 return;
             }
@@ -1315,12 +1375,52 @@ public sealed class DispatchTripService : ITripLifecycleService
         return (pickup.Value, dropoff.Value);
     }
 
+    private static (DateTime PickupAt, DateTime DropoffAt) GetScheduledWindow(
+        IEnumerable<DispatchTripStopInput> stops)
+    {
+        var pickup = stops.FirstOrDefault(stop => stop.StopType == TripStopType.Pickup)?.ScheduledAt;
+        var dropoff = stops.FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff)?.ScheduledAt;
+
+        if (!pickup.HasValue || !dropoff.HasValue)
+        {
+            throw new BusinessRuleViolationException("Scheduled pickup and dropoff times are required.");
+        }
+
+        if (pickup.Value >= dropoff.Value)
+        {
+            throw new BusinessRuleViolationException("Pickup time must be earlier than dropoff time.");
+        }
+
+        return (pickup.Value, dropoff.Value);
+    }
+
+    private async Task EnsureActiveTrailerAsync(Guid trailerAssetId, CancellationToken cancellationToken)
+    {
+        var trailer = await _dbContext.DispatchTrailers
+            .AsNoTracking()
+            .Include(item => item.Asset)
+            .FirstOrDefaultAsync(item => item.AssetId == trailerAssetId, cancellationToken);
+
+        if (trailer?.Asset is null)
+        {
+            throw new NotFoundException("Trailer asset not found.");
+        }
+
+        if (trailer.Asset.Status != AssetStatus.Active ||
+            !string.Equals(trailer.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BusinessRuleViolationException("Trailer is inactive.");
+        }
+    }
+
     private sealed record AssignmentConflictDetail(
         Guid TripId,
         Guid? DriverUserId,
         string? DriverUsername,
         Guid? TruckAssetId,
         string? TruckAssetCode,
+        Guid? TrailerAssetId,
+        string? TrailerAssetCode,
         DateTime WindowStart,
         DateTime WindowEnd);
 
@@ -1328,11 +1428,12 @@ public sealed class DispatchTripService : ITripLifecycleService
         Guid tripId,
         Guid? driverUserId,
         Guid? truckAssetId,
+        Guid? trailerAssetId,
         DateTime pickupAt,
         DateTime dropoffAt,
         CancellationToken cancellationToken)
     {
-        if (!driverUserId.HasValue && !truckAssetId.HasValue)
+        if (!driverUserId.HasValue && !truckAssetId.HasValue && !trailerAssetId.HasValue)
         {
             return Array.Empty<AssignmentConflictDetail>();
         }
@@ -1341,18 +1442,10 @@ public sealed class DispatchTripService : ITripLifecycleService
             .AsNoTracking()
             .Where(t => t.Id != tripId && t.Status != TripStatus.Cancelled && t.Status != TripStatus.Closed);
 
-        if (driverUserId.HasValue && truckAssetId.HasValue)
-        {
-            query = query.Where(t => t.DriverUserId == driverUserId.Value || t.TruckAssetId == truckAssetId.Value);
-        }
-        else if (driverUserId.HasValue)
-        {
-            query = query.Where(t => t.DriverUserId == driverUserId.Value);
-        }
-        else if (truckAssetId.HasValue)
-        {
-            query = query.Where(t => t.TruckAssetId == truckAssetId.Value);
-        }
+        query = query.Where(t =>
+            (driverUserId.HasValue && t.DriverUserId == driverUserId.Value) ||
+            (truckAssetId.HasValue && t.TruckAssetId == truckAssetId.Value) ||
+            (trailerAssetId.HasValue && t.TrailerAssetId == trailerAssetId.Value));
 
         return await query
             .Select(t => new
@@ -1362,6 +1455,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                 DriverUsername = t.Driver != null ? t.Driver.Username : null,
                 t.TruckAssetId,
                 TruckAssetCode = t.TruckAsset != null ? t.TruckAsset.AssetCode : null,
+                t.TrailerAssetId,
+                TrailerAssetCode = t.TrailerAsset != null ? t.TrailerAsset.AssetCode : null,
                 Pickup = t.Stops.Where(s => s.StopType == TripStopType.Pickup).Select(s => s.ScheduledAt).FirstOrDefault(),
                 Dropoff = t.Stops.Where(s => s.StopType == TripStopType.Dropoff).Select(s => s.ScheduledAt).FirstOrDefault()
             })
@@ -1372,6 +1467,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                 t.DriverUsername,
                 t.TruckAssetId,
                 t.TruckAssetCode,
+                t.TrailerAssetId,
+                t.TrailerAssetCode,
                 t.Pickup!.Value,
                 t.Dropoff!.Value))
             .ToListAsync(cancellationToken);
@@ -1381,6 +1478,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         Guid tripId,
         Guid? driverUserId,
         Guid? truckAssetId,
+        Guid? trailerAssetId,
         DateTime pickupAt,
         DateTime dropoffAt,
         DispatchActorContext actor,
@@ -1391,6 +1489,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId,
             driverUserId,
             truckAssetId,
+            trailerAssetId,
             pickupAt,
             dropoffAt,
             cancellationToken);
@@ -1421,6 +1520,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             {
                 DriverUserId = driverUserId,
                 TruckAssetId = truckAssetId,
+                TrailerAssetId = trailerAssetId,
                 PickupAt = pickupAt,
                 DropoffAt = dropoffAt,
                 Conflicts = conflicts.Select(conflict => new
@@ -1430,6 +1530,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                     conflict.DriverUsername,
                     conflict.TruckAssetId,
                     conflict.TruckAssetCode,
+                    conflict.TrailerAssetId,
+                    conflict.TrailerAssetCode,
                     conflict.WindowStart,
                     conflict.WindowEnd
                 }).ToList(),
@@ -1581,7 +1683,8 @@ public sealed class DispatchTripService : ITripLifecycleService
             TripDocumentType.Atw,
             TripDocumentType.Eir,
             TripDocumentType.GatePass,
-            TripDocumentType.Dr
+            TripDocumentType.Dr,
+            TripDocumentType.Pod
         };
 
         foreach (var documentType in requiredBeforeDelivery)
@@ -1604,6 +1707,12 @@ public sealed class DispatchTripService : ITripLifecycleService
         if (missing.Count == 0)
         {
             return;
+        }
+
+        if (actor.IsDriver)
+        {
+            throw new ConflictDomainException(
+                $"Cannot confirm delivery until {string.Join(" ", missing)}");
         }
 
         if (string.IsNullOrWhiteSpace(remarks))
@@ -1641,6 +1750,8 @@ public sealed class DispatchTripService : ITripLifecycleService
                 conflict.DriverUsername,
                 conflict.TruckAssetId,
                 conflict.TruckAssetCode,
+                conflict.TrailerAssetId,
+                conflict.TrailerAssetCode,
                 WindowStart = conflict.WindowStart,
                 WindowEnd = conflict.WindowEnd,
                 Message = BuildConflictItemMessage(conflict)
@@ -1670,7 +1781,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             return $"{BuildAssignmentLabel(conflict)} is already assigned from {conflict.WindowStart:HH:mm} to {conflict.WindowEnd:HH:mm}.";
         }
 
-        return "Scheduling conflict: the selected driver or truck is already assigned in overlapping windows.";
+        return "Scheduling conflict: a selected driver, truck, or trailer is already assigned in an overlapping window.";
     }
 
     private static string BuildConflictItemMessage(AssignmentConflictDetail conflict)
@@ -1686,20 +1797,16 @@ public sealed class DispatchTripService : ITripLifecycleService
         var truckLabel = !string.IsNullOrWhiteSpace(conflict.TruckAssetCode)
             ? $"truck {conflict.TruckAssetCode}"
             : null;
+        var trailerLabel = !string.IsNullOrWhiteSpace(conflict.TrailerAssetCode)
+            ? $"trailer {conflict.TrailerAssetCode}"
+            : null;
 
-        if (!string.IsNullOrWhiteSpace(driverLabel) && !string.IsNullOrWhiteSpace(truckLabel))
+        var labels = new[] { driverLabel, truckLabel, trailerLabel }
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .ToArray();
+        if (labels.Length > 0)
         {
-            return $"{driverLabel} or {truckLabel}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(driverLabel))
-        {
-            return driverLabel;
-        }
-
-        if (!string.IsNullOrWhiteSpace(truckLabel))
-        {
-            return truckLabel;
+            return string.Join(" or ", labels);
         }
 
         return "The selected assignment";
@@ -1878,6 +1985,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         Guid originalCustomerId,
         Guid? originalDriverUserId,
         Guid? originalTruckAssetId,
+        Guid? originalTrailerAssetId,
         string? originalNotes,
         TripStop? originalPickup,
         TripStop? originalDropoff,
@@ -1899,6 +2007,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         AddChange("Customer", originalCustomerId.ToString(), trip.CustomerId.ToString());
         AddChange("Driver", originalDriverUserId?.ToString(), trip.DriverUserId?.ToString());
         AddChange("Truck", originalTruckAssetId?.ToString(), trip.TruckAssetId?.ToString());
+        AddChange("Trailer", originalTrailerAssetId?.ToString(), trip.TrailerAssetId?.ToString());
         AddChange("Notes", originalNotes, trip.Notes);
 
         var updatedPickup = ResolveStopInput(command, trip, TripStopType.Pickup);
@@ -2008,6 +2117,10 @@ public sealed class DispatchTripService : ITripLifecycleService
         try
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
+            if (_planningAvailabilityNotifier is not null)
+            {
+                await _planningAvailabilityNotifier.InvalidateAsync("trip-updated", cancellationToken: cancellationToken);
+            }
             var broadcasts = _pendingStatusBroadcasts.ToList();
             _pendingStatusBroadcasts.Clear();
             await InvalidateStatusChangeCachesAsync(broadcasts, cancellationToken);

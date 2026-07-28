@@ -39,9 +39,10 @@ export default function PurchaseOrderDetailPage() {
     roles.includes("InventoryOfficer") &&
     (detail?.status === "APPROVED" || detail?.status === "PARTIALLY_RECEIVED");
 
-  const canDecide =
-    detail?.approval?.nextApproverRole &&
-    roles.includes(detail.approval.nextApproverRole);
+  const nextApproverRole = detail?.approval?.nextApproverRole;
+  const canDecide = Boolean(
+    nextApproverRole && roles.some((role) => role === nextApproverRole)
+  );
 
   const decisionSummary = useMemo(() => {
     if (!detail?.approval) return "";

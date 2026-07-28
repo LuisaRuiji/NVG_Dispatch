@@ -12,8 +12,6 @@ import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import { getMe } from "@/features/auth/authStore";
 import type {
-  DispatchAssignmentDayView,
-  DispatchAssignmentGroupBy,
   DispatchTripDocument,
   DispatchTripListItem,
   TripDocumentState,
@@ -103,32 +101,6 @@ function formatDateTime(value?: string | null) {
   return new Date(value).toLocaleString();
 }
 
-function toDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatWindowRange(startRaw?: string | null, endRaw?: string | null) {
-  if (!startRaw || !endRaw) return "-";
-  const start = new Date(startRaw);
-  const end = new Date(endRaw);
-  return `${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}-${end.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit"
-  })}`;
-}
-
-function formatDurationMinutes(totalMinutes?: number | null) {
-  if (typeof totalMinutes !== "number" || Number.isNaN(totalMinutes) || totalMinutes < 0) return "-";
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h`;
-  return `${minutes}m`;
-}
-
 function formatWindow(trip: DispatchTripListItem) {
   const startRaw = trip.plannedStart ?? trip.pickupScheduledAt;
   const endRaw = trip.plannedEnd ?? trip.dropoffScheduledAt;
@@ -200,16 +172,6 @@ export default function DispatchBoardPage() {
       loading: true
     }
   );
-  const [assignmentGroupBy, setAssignmentGroupBy] = useState<DispatchAssignmentGroupBy>("driver");
-  const [assignmentDay, setAssignmentDay] = useState(() => toDateInputValue(new Date()));
-  const [assignmentView, setAssignmentView] = useState<{
-    groups: DispatchAssignmentDayView["groups"];
-    loading: boolean;
-  }>({
-    groups: [],
-    loading: true
-  });
-
   const loadPanel = async (
     endpoint: string,
     setter: React.Dispatch<React.SetStateAction<PanelState>>,
@@ -325,27 +287,6 @@ export default function DispatchBoardPage() {
     }
   };
 
-  const loadAssignmentDayView = async (dayValue = assignmentDay, groupByValue = assignmentGroupBy) => {
-    setAssignmentView((prev) => ({ ...prev, loading: true }));
-    try {
-      const params = new URLSearchParams();
-      params.set("day", dayValue);
-      params.set("groupBy", groupByValue);
-      const result = await api<DispatchAssignmentDayView>(
-        `/api/dispatch/trips/assignment-day?${params.toString()}`,
-        { method: "GET" }
-      );
-      setAssignmentView({
-        groups: result.groups ?? [],
-        loading: false
-      });
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to load assignment day view.", "error");
-      setAssignmentView((prev) => ({ ...prev, loading: false }));
-    }
-  };
-
   const refreshAll = async () => {
     const [activeItems, onHoldItems, failedItems, podPendingItems] = await Promise.all([
       loadActive(),
@@ -356,17 +297,12 @@ export default function DispatchBoardPage() {
     void loadUpcoming();
     void loadDeliveredToday();
     void loadDocQueue(podPendingItems.length ? podPendingItems : [...onHoldItems, ...failedItems]);
-    void loadAssignmentDayView();
     return activeItems;
   };
 
   useEffect(() => {
     refreshAll();
   }, []);
-
-  useEffect(() => {
-    void loadAssignmentDayView();
-  }, [assignmentDay, assignmentGroupBy]);
 
   const metrics = useMemo(
     () => [
@@ -469,104 +405,6 @@ export default function DispatchBoardPage() {
             </p>
           </div>
         ))}
-      </div>
-
-      <div className="surface-card p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Planning visibility</p>
-            <h3 className="text-sm font-semibold text-foreground">Daily Assignment View</h3>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={assignmentGroupBy}
-              onChange={(e) => setAssignmentGroupBy(e.target.value as DispatchAssignmentGroupBy)}
-              className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              <option value="driver">Driver</option>
-              <option value="truck">Truck</option>
-            </select>
-            <input
-              type="date"
-              value={assignmentDay}
-              onChange={(e) => setAssignmentDay(e.target.value)}
-              className="h-9 rounded-lg border border-border bg-background px-3 text-sm"
-            />
-            <Button variant="outline" size="sm" onClick={() => loadAssignmentDayView()}>
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        {assignmentView.loading ? (
-          <LoadingSkeleton rows={3} />
-        ) : assignmentView.groups.length === 0 ? (
-          <EmptyState title="No assignments" description="No scheduled trip windows for the selected day." />
-        ) : (
-          <div className="space-y-4">
-            {assignmentView.groups.map((group) => (
-              <div key={group.groupKey} className="rounded-lg border border-border/60">
-                <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-3">
-                  <div className="text-sm font-semibold text-foreground">{group.groupLabel}</div>
-                  {group.hasOverlap ? (
-                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
-                      Conflict
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                      OK
-                    </span>
-                  )}
-                </div>
-                <DataTable>
-                  <thead className="bg-muted/10 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Trip</th>
-                      <th className="px-4 py-3 text-left">Customer</th>
-                      <th className="px-4 py-3 text-left">Window</th>
-                      <th className="px-4 py-3 text-left">Duration</th>
-                      <th className="px-4 py-3 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {group.trips.map((trip) => (
-                      <tr
-                        key={trip.tripId}
-                        className={`cursor-pointer text-sm hover:bg-muted/30 ${
-                          trip.hasOverlap ? "bg-rose-50/40" : ""
-                        }`}
-                        onClick={() => nav(`/dispatch/trips/${trip.tripId}`)}
-                      >
-                        <td className="px-4 py-3 font-medium text-foreground">{trip.tripReference}</td>
-                        <td className="px-4 py-3">{trip.customer?.name ?? "-"}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {formatWindowRange(trip.plannedStart, trip.plannedEnd)}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {formatDurationMinutes(trip.plannedDurationMinutes)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-                            {trip.hasOverlap ? (
-                              <span className="rounded-full border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
-                                Overlap
-                              </span>
-                            ) : (
-                              <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                                OK
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </DataTable>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

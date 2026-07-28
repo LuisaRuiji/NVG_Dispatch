@@ -48,3 +48,9 @@ public sealed record ShipmentRequestSubmittedEvent(
     string PickupLocation,
     string DropoffLocation,
     DateTime SubmittedAt);
+
+public sealed record PlanningInvalidatedEvent(
+    Guid? TripId,
+    string Reason,
+    long AvailabilityVersion,
+    DateTime InvalidatedAt);

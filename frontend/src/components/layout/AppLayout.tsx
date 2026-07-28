@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { getMe, logout } from "@/features/auth/authStore";
+import { resolvePrimaryRole, type UserRole } from "@/features/auth/roles";
 import { cn } from "@/lib/utils";
 import nvgLogo from "@/assets/nvg-logo.png";
 import ToastHost from "@/components/ToastHost";
@@ -23,14 +24,15 @@ import {
   Settings,
   Bell,
   Sliders,
-  Map as MapIcon
+  Map as MapIcon,
+  CalendarClock
 } from "lucide-react";
 import { TrackingProvider } from "@/features/dispatch/TrackingContext";
 
 type NavItem = {
   label: string;
   to: string;
-  roles?: string[];
+  roles?: UserRole[];
   moduleKey?: string;
   icon: ComponentType<{ className?: string }>;
 };
@@ -46,7 +48,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Requests",
     items: [
-      { label: "My Requests", to: "/my/requests", roles: ["Driver"], icon: User, moduleKey: "requests" },
+      { label: "Requests", to: "/my/requests", roles: ["Driver"], icon: User, moduleKey: "requests" },
       { label: "IO Queue", to: "/queue/io", roles: ["InventoryOfficer"], icon: ClipboardList, moduleKey: "requests" },
       { label: "Manager Queue", to: "/queue/manager", roles: ["Manager"], icon: ClipboardCheck, moduleKey: "requests" },
       { label: "Awaiting Issue", to: "/queue/issue", roles: ["InventoryOfficer"], icon: FileText, moduleKey: "requests" }
@@ -66,11 +68,11 @@ const navSections: { title: string; items: NavItem[] }[] = [
       { label: "Dispatch Board", to: "/dispatch/board", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
       { label: "Live Operations Map", to: "/dispatch/live-map", roles: ["Manager", "Dispatcher"], icon: MapIcon, moduleKey: "dispatch" },
       { label: "Requests", to: "/dispatch/requests", roles: ["Manager", "Dispatcher"], icon: ClipboardList, moduleKey: "dispatch" },
+      { label: "Planning", to: "/dispatch/planning", roles: ["Manager", "Dispatcher"], icon: CalendarClock, moduleKey: "dispatch" },
       { label: "Trips", to: "/dispatch/trips", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
       { label: "Optimization Settings", to: "/dispatch/optimization-settings", roles: ["Manager", "Owner"], icon: Sliders, moduleKey: "dispatch" },
       { label: "Documents", to: "/dispatch/documents", roles: ["Manager", "HeadOfFinance"], icon: FileText, moduleKey: "dispatch" },
-      { label: "My Trips", to: "/dispatch/my-trips", roles: ["Driver"], icon: Truck, moduleKey: "dispatch" },
-      { label: "My Route Map", to: "/dispatch/my-route-map", roles: ["Driver"], icon: MapIcon, moduleKey: "dispatch" }
+      { label: "Trips", to: "/dispatch/my-trips", roles: ["Driver"], icon: Truck, moduleKey: "dispatch" }
     ]
   },
   {
@@ -93,7 +95,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
     items: [
       { label: "Customers", to: "/admin/customers", roles: ["Manager", "Dispatcher"], icon: User, moduleKey: "users" },
       { label: "Modules", to: "/admin/modules", roles: ["SuperAdmin"], icon: Settings },
-      { label: "Audit Logs", to: "/admin/audit-logs", roles: ["SuperAdmin", "Admin", "Manager", "Dispatcher", "HeadOfFinance", "InventoryOfficer", "Driver"], icon: FileText, moduleKey: "reports" },
+      { label: "Audit Logs", to: "/admin/audit-logs", roles: ["SuperAdmin", "Admin", "Manager", "Dispatcher", "HeadOfFinance", "InventoryOfficer"], icon: FileText, moduleKey: "reports" },
       { label: "Auth Logs", to: "/admin/auth-events", roles: ["Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },
       { label: "Users", to: "/admin/users", roles: ["Admin", "SuperAdmin"], icon: User, moduleKey: "users" },
       { label: "Integrity", to: "/admin/integrity", roles: ["Manager", "HeadOfFinance", "CEO", "Admin", "SuperAdmin"], icon: ShieldCheck, moduleKey: "reports" }
@@ -144,19 +146,8 @@ export default function AppLayout() {
   });
 
   const roles = me?.roles ?? [];
-  const rolePriority = [
-    "SuperAdmin",
-    "Admin",
-    "Manager",
-    "Dispatcher",
-    "HeadOfFinance",
-    "CEO",
-    "InventoryOfficer",
-    "Driver",
-    "Customer"
-  ];
-  const primaryRole =
-    rolePriority.find((role) => roles.includes(role)) ?? roles[0] ?? "User";
+  const activeRole = resolvePrimaryRole(roles);
+  const primaryRole = activeRole ?? "User";
   const canSeeSearch = ["InventoryOfficer", "Manager", "HeadOfFinance", "CEO"].includes(primaryRole);
 
   const moduleEnabledMap = useMemo(() => {
@@ -236,12 +227,12 @@ export default function AppLayout() {
         .map((section) => ({
           ...section,
           items: section.items.filter((item) =>
-            (item.roles ? item.roles.some((role) => roles.includes(role)) : true) &&
+            (item.roles ? Boolean(activeRole && item.roles.includes(activeRole)) : true) &&
             (item.moduleKey ? moduleEnabledMap.get(item.moduleKey) !== false : true)
           )
         }))
         .filter((section) => section.items.length > 0),
-    [roles, moduleEnabledMap]
+    [activeRole, moduleEnabledMap]
   );
 
   useEffect(() => {

@@ -56,6 +56,13 @@ export type DriverLocationUpdatedEvent = {
   tripStatus: string;
 };
 
+export type PlanningInvalidatedEvent = {
+  tripId?: string | null;
+  reason: string;
+  availabilityVersion: number;
+  invalidatedAt: string;
+};
+
 interface DispatchHubHandlers {
   onTripStatusChanged?: (e: TripStatusChangedEvent) => void;
   onDocumentUploaded?: (e: DocumentUploadedEvent) => void;
@@ -63,6 +70,7 @@ interface DispatchHubHandlers {
   onRecommendationGenerated?: (e: RecommendationGeneratedEvent) => void;
   onShipmentRequestSubmitted?: (e: ShipmentRequestSubmittedEvent) => void;
   onDriverLocationUpdated?: (e: DriverLocationUpdatedEvent) => void;
+  onPlanningInvalidated?: (e: PlanningInvalidatedEvent) => void;
 }
 
 export function useDispatchHub(handlers: DispatchHubHandlers): void {
@@ -83,6 +91,8 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
       handlersRef.current.onShipmentRequestSubmitted?.(e);
     const driverLocationUpdated = (e: DriverLocationUpdatedEvent) =>
       handlersRef.current.onDriverLocationUpdated?.(e);
+    const planningInvalidated = (e: PlanningInvalidatedEvent) =>
+      handlersRef.current.onPlanningInvalidated?.(e);
 
     hub.on("TripStatusChanged", tripStatusChanged);
     hub.on("DocumentUploaded", documentUploaded);
@@ -90,6 +100,7 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
     hub.on("RecommendationGenerated", recommendationGenerated);
     hub.on("ShipmentRequestSubmitted", shipmentRequestSubmitted);
     hub.on("DriverLocationUpdated", driverLocationUpdated);
+    hub.on("PlanningInvalidated", planningInvalidated);
     void startDispatchHub().catch((error) => {
       console.warn("Dispatch hub connection failed.", error);
     });
@@ -101,6 +112,7 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
       hub.off("RecommendationGenerated", recommendationGenerated);
       hub.off("ShipmentRequestSubmitted", shipmentRequestSubmitted);
       hub.off("DriverLocationUpdated", driverLocationUpdated);
+      hub.off("PlanningInvalidated", planningInvalidated);
       void stopDispatchHub().catch(() => undefined);
     };
   }, []);

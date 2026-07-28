@@ -1,3 +1,5 @@
+import type { UserRole } from "./roles";
+
 export type LoginRequest = { username: string; password: string; rememberMe?: boolean };
 export type LoginResponse = {
   accessToken: string;
@@ -42,7 +44,7 @@ export type StepUpResponse = {
 export type MeResponse = {
   userId: string;
   username: string;
-  roles: string[];
+  roles: UserRole[];
   mfaEnabled?: boolean;
   mustChangePassword?: boolean;
 };

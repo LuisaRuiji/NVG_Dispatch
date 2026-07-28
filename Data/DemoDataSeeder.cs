@@ -19,6 +19,26 @@ public sealed class DemoDataSeeder
     public const string SuperAdminEmail = "Superadmin@nvg.com";
     public const string SuperAdminPassword = "SuperAdminDemo1!";
 
+    private sealed record DemoCredentialSpec(string Username, string Email, string RoleName, string? CustomerName = null);
+
+    private static readonly DemoCredentialSpec[] DemoCredentialSpecs =
+    {
+        new("Superadmin", "Superadmin@nvg.com", RoleNames.SuperAdmin),
+        new("dispatcher.davao", "dispatch@nvg.local", RoleNames.Dispatcher),
+        new("ops.manager", "manager@nvg.local", RoleNames.Manager),
+        new("finance.head", "finance@nvg.local", RoleNames.HeadOfFinance),
+        new("ceo", "ceo@nvg.local", RoleNames.Ceo),
+        new("inventory.officer", "inventory@nvg.local", RoleNames.InventoryOfficer),
+        new("juan.delacruz", "juan.delacruz@nvg.local", RoleNames.Driver),
+        new("marco.santos", "marco.santos@nvg.local", RoleNames.Driver),
+        new("rene.garcia", "rene.garcia@nvg.local", RoleNames.Driver),
+        new("allan.tan", "allan.tan@nvg.local", RoleNames.Driver),
+        new("benjie.ramos", "benjie.ramos@nvg.local", RoleNames.Driver),
+        new("nilo.bautista", "nilo.bautista@nvg.local", RoleNames.Driver),
+        new("client.kudos", "client.kudos@nvg.local", RoleNames.Customer, "KUDOS Logistics"),
+        new("client.ktc", "client.ktc@nvg.local", RoleNames.Customer, "KTC Operations")
+    };
+
     private readonly InventoryDbContext _dbContext;
     private readonly UserService _userService;
     private readonly AssetService _assetService;
@@ -89,6 +109,94 @@ public sealed class DemoDataSeeder
         await LogSeedSummaryAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<string>> RepairDemoCredentialsAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            throw new InvalidOperationException("Demo credential repair allowed only in Development.");
+        }
+
+        var usernames = DemoCredentialSpecs.Select(spec => spec.Username).ToArray();
+        var users = await _dbContext.Users
+            .Include(user => user.UserRoles)
+            .Where(user => usernames.Contains(user.Username))
+            .ToListAsync(cancellationToken);
+
+        var usersByUsername = users.ToDictionary(user => user.Username, StringComparer.OrdinalIgnoreCase);
+        var roleIds = await _dbContext.Roles
+            .Where(role => DemoCredentialSpecs.Select(spec => spec.RoleName).Contains(role.Name))
+            .ToDictionaryAsync(role => role.Name, role => role.Id, cancellationToken);
+        var customers = await _dbContext.DispatchCustomers
+            .Where(customer => customer.Name == "KUDOS Logistics" || customer.Name == "KTC Operations")
+            .ToDictionaryAsync(customer => customer.Name, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        var passwordHash = _passwordHashService.HashPassword(SuperAdminPassword);
+        foreach (var spec in DemoCredentialSpecs)
+        {
+            if (!roleIds.TryGetValue(spec.RoleName, out var roleId))
+            {
+                throw new InvalidOperationException($"Required demo role '{spec.RoleName}' is missing.");
+            }
+
+            if (!usersByUsername.TryGetValue(spec.Username, out var user))
+            {
+                user = NewUser(spec.Username, spec.Email, passwordHash, DateTime.UtcNow);
+                _dbContext.Users.Add(user);
+                usersByUsername.Add(user.Username, user);
+            }
+
+            user.PasswordHash = passwordHash;
+            user.IsActive = true;
+
+            if (spec.CustomerName is not null)
+            {
+                if (!customers.TryGetValue(spec.CustomerName, out var customer))
+                {
+                    customer = CreateDemoCustomer(spec.CustomerName, DateTime.UtcNow);
+                    _dbContext.DispatchCustomers.Add(customer);
+                    customers.Add(customer.Name, customer);
+                }
+
+                user.CustomerId = customer.Id;
+            }
+
+            if (!user.UserRoles.Any(userRole => userRole.RoleId == roleId))
+            {
+                _dbContext.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = roleId });
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return usersByUsername.Keys.OrderBy(username => username).ToList();
+    }
+
+    private static Customer CreateDemoCustomer(string name, DateTime now)
+    {
+        return name == "KUDOS Logistics"
+            ? new Customer
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                Address = "Tagum City, Davao del Norte",
+                ContactPerson = "Mara Villanueva",
+                ContactEmail = "dispatch@kudos-logistics.example",
+                Phone = "+63 84 555 0181",
+                Contact = "Tagum dispatch desk",
+                CreatedAt = now
+            }
+            : new Customer
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                Address = "Davao City",
+                ContactPerson = "Rogelio Uy",
+                ContactEmail = "ops@ktc-operations.example",
+                Phone = "+63 82 555 0182",
+                Contact = "Davao operations desk",
+                CreatedAt = now
+            };
+    }
+
     private async Task WipeDevSeedDataAsync(CancellationToken cancellationToken)
     {
         DatabaseResetGuard.EnsureSafeToReset(_environment, _dbContext);
@@ -150,6 +258,7 @@ public sealed class DemoDataSeeder
     {
         if (await _dbContext.DispatchTrips.AnyAsync(cancellationToken))
         {
+            await SeedActiveDemoRecommendationsAsync(DateTime.UtcNow, cancellationToken);
             return;
         }
 
@@ -293,8 +402,7 @@ public sealed class DemoDataSeeder
         // Save first so trips are in DB for the algorithm
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // Generate ACTUAL recommendations using the CSP-TOPSIS algorithm!
-        await GenerateActualDemoRecommendationsAsync(dispatcher.Id, now, cancellationToken);
+        await SeedActiveDemoRecommendationsAsync(now, cancellationToken);
     }
 
     private async Task SeedInventoryDemoAsync(CancellationToken cancellationToken)
@@ -844,44 +952,109 @@ public sealed class DemoDataSeeder
         }
     }
 
-    private async Task GenerateActualDemoRecommendationsAsync(
-        Guid dispatcherId,
+    private async Task SeedActiveDemoRecommendationsAsync(
         DateTime now,
         CancellationToken cancellationToken)
     {
-        // Find 5 most recently delivered trips that have truck and driver assigned
+        const int targetPendingRecommendationCount = 10;
+        var existingPendingCount = await _dbContext.DispatchRecommendations
+            .CountAsync(recommendation =>
+                recommendation.ExpiresAt > now &&
+                !recommendation.WasAccepted &&
+                !recommendation.WasIgnored,
+                cancellationToken);
+        if (existingPendingCount >= targetPendingRecommendationCount)
+        {
+            return;
+        }
+
+        // Four delivered drivers create a dense but still scannable queue: 3 + 3 + 3 + 1 choices.
         var completedTrips = await _dbContext.DispatchTrips
             .Where(t => t.Status == TripStatus.Delivered && t.DriverUserId.HasValue && t.TruckAssetId.HasValue)
             .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
-            .Take(5)
+            .Take(4)
             .ToListAsync(cancellationToken);
+
+        var draftTrips = await _dbContext.DispatchTrips
+            .Where(t => t.Status == TripStatus.Draft)
+            .OrderByDescending(t => t.CreatedAt)
+            .Take(3)
+            .ToListAsync(cancellationToken);
+
+        if (completedTrips.Count == 0 || draftTrips.Count == 0)
+        {
+            _logger.LogWarning("Demo recommendations were not seeded because delivered trips or draft trips are missing.");
+            return;
+        }
+
+        var remaining = targetPendingRecommendationCount - existingPendingCount;
 
         for (var groupIndex = 0; groupIndex < completedTrips.Count; groupIndex++)
         {
-            var completedTrip = completedTrips[groupIndex];
-            
-            // Generate real recommendations using CSP-TOPSIS
-            var recs = await _recommendationService.GenerateRecommendationsAsync(completedTrip.Id, cancellationToken);
-            if (recs == null || recs.Count == 0) continue;
-
-            var generatedAt = now.AddDays(-7 * (groupIndex % 4)).AddHours(-groupIndex - 2);
-            var groupAccepted = groupIndex < 2;
-
-            foreach (var rec in recs)
+            if (remaining == 0)
             {
-                rec.GeneratedAt = generatedAt;
-                rec.ExpiresAt = generatedAt.AddMinutes(30);
+                break;
+            }
 
-                // Add demo user interactions
-                rec.WasAccepted = groupAccepted && rec.Rank == 1;
-                rec.WasIgnored = !rec.WasAccepted;
-                rec.ReviewedByUserId = dispatcherId;
-                rec.ReviewedAt = generatedAt.AddMinutes(12 + rec.Rank);
-                
-                _dbContext.DispatchRecommendations.Add(rec);
+            var completedTrip = completedTrips[groupIndex];
+            var recs = await _recommendationService.GenerateRecommendationsAsync(completedTrip.Id, cancellationToken);
+            var activeForDriver = 0;
+
+            foreach (var rec in recs.OrderBy(rec => rec.Rank))
+            {
+                if (activeForDriver < 3 && remaining > 0)
+                {
+                    activeForDriver++;
+                    remaining--;
+                    rec.Rank = activeForDriver;
+                    rec.GeneratedAt = now.AddMinutes(-2 - groupIndex * 3);
+                    rec.ExpiresAt = now.AddMinutes(28 - groupIndex * 4);
+                    rec.WasAccepted = false;
+                    rec.WasIgnored = false;
+                    rec.ReviewedByUserId = null;
+                    rec.ReviewedAt = null;
+                }
+                else
+                {
+                    // Keep surplus algorithm output for report history without adding visual noise to the action queue.
+                    rec.WasIgnored = true;
+                    rec.ReviewedAt = now.AddDays(-1);
+                }
+            }
+
+            // The real scorer may return fewer choices when CSP constraints rule out a draft trip.
+            // Add valid demo fallbacks so the UI can always be reviewed with a complete decision queue.
+            foreach (var draftTrip in draftTrips.Where(trip => recs.All(rec => rec.RecommendedTripId != trip.Id)))
+            {
+                if (activeForDriver == 3 || remaining == 0)
+                {
+                    break;
+                }
+
+                activeForDriver++;
+                remaining--;
+                var score = Math.Max(0.55m, 0.93m - activeForDriver * 0.06m - groupIndex * 0.01m);
+                _dbContext.DispatchRecommendations.Add(new DispatchRecommendation
+                {
+                    Id = Guid.NewGuid(),
+                    CompletedTripId = completedTrip.Id,
+                    DriverId = completedTrip.DriverUserId!.Value,
+                    TruckId = completedTrip.TruckAssetId!.Value,
+                    RecommendedTripId = draftTrip.Id,
+                    ProximityScore = score,
+                    AvailabilityScore = 0.85m,
+                    TruckMatchScore = 0.90m,
+                    AgingScore = 0.70m,
+                    TotalScore = score,
+                    Rank = activeForDriver,
+                    GeneratedAt = now.AddMinutes(-2 - groupIndex * 3),
+                    ExpiresAt = now.AddMinutes(28 - groupIndex * 4),
+                    WasAccepted = false,
+                    WasIgnored = false
+                });
             }
         }
-        
+
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 

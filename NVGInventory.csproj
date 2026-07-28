@@ -27,6 +27,7 @@
   <ItemGroup>
     <Compile Remove="InventoryERP.Api\**\*.cs" />
     <Compile Remove="NVGInventory.Tests\**\*.cs" />
+    <Compile Remove="tmp\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -40,6 +41,7 @@
     <None Remove="frontend\**" />
     <None Remove="**\bin\**" />
     <None Remove="**\obj\**" />
+    <None Remove="tmp\**" />
   </ItemGroup>
 
 </Project>

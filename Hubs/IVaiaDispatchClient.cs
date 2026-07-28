@@ -10,4 +10,5 @@ public interface IVaiaDispatchClient
     Task RecommendationGenerated(RecommendationGeneratedEvent e);
     Task DriverLocationUpdated(DriverLocationUpdatedEvent e);
     Task ShipmentRequestSubmitted(ShipmentRequestSubmittedEvent e);
+    Task PlanningInvalidated(PlanningInvalidatedEvent e);
 }

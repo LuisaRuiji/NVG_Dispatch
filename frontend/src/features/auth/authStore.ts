@@ -10,6 +10,8 @@ import type {
   MfaVerifyRequest,
   StepUpResponse
 } from "./types";
+import { normalizeUserRoles } from "./roles";
+import { clearDashboardKpiCache } from "@/features/dashboard/kpis";
 
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = "nvg_access_token";
 const LEGACY_REFRESH_TOKEN_STORAGE_KEY = "nvg_refresh_token";
@@ -19,6 +21,8 @@ let token: string | null = null;
 let me: MeResponse | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
 let refreshBlocked = false;
+
+type MeApiResponse = Omit<MeResponse, "roles"> & { roles: string[] };
 
 export function getToken() {
   return token;
@@ -56,7 +60,7 @@ export async function login(payload: LoginRequest): Promise<MeResponse | MfaRequ
   }
 
   applyAccessToken(resp);
-  me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+  me = await loadValidatedIdentity();
   void registerPushNotifications();
   return me;
 }
@@ -68,7 +72,7 @@ export async function verifyMfaLogin(payload: MfaVerifyRequest) {
     auth: false
   });
   applyAccessToken(resp);
-  me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+  me = await loadValidatedIdentity();
   void registerPushNotifications();
   return me;
 }
@@ -118,7 +122,7 @@ export async function loadMeIfTokenExists() {
 
   if (token) {
     try {
-      me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+      me = await loadValidatedIdentity();
       void registerPushNotifications();
       return me;
     } catch {
@@ -128,7 +132,7 @@ export async function loadMeIfTokenExists() {
   }
 
   if (await refreshSession()) {
-    me = await api<MeResponse>("/api/auth/me", { method: "GET" });
+    me = await loadValidatedIdentity();
     void registerPushNotifications();
     return me;
   }
@@ -191,16 +195,23 @@ export function changePassword(newPassword: string) {
 }
 
 function applyAccessToken(resp: LoginResponse) {
+  clearDashboardKpiCache();
   token = resp.accessToken;
   refreshBlocked = false;
   setAccessToken(token);
 }
 
 function clearSessionState() {
+  clearDashboardKpiCache();
   token = null;
   me = null;
   setAccessToken(null);
   clearLegacyTokenStorage();
+}
+
+async function loadValidatedIdentity(): Promise<MeResponse> {
+  const response = await api<MeApiResponse>("/api/auth/me", { method: "GET" });
+  return { ...response, roles: normalizeUserRoles(response.roles) };
 }
 
 function clearLegacyTokenStorage() {

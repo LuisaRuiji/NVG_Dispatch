@@ -215,6 +215,7 @@ public sealed class TripStatusJsonConverter : EnumStringConverter<TripStatus>
     private static readonly IReadOnlyDictionary<TripStatus, string> Map = new Dictionary<TripStatus, string>
     {
         [TripStatus.Draft] = "DRAFT",
+        [TripStatus.ReadyForDispatch] = "READY_FOR_DISPATCH",
         [TripStatus.Dispatched] = "DISPATCHED",
         [TripStatus.EnroutePickup] = "ENROUTE_PICKUP",
         [TripStatus.AtPickup] = "AT_PICKUP",
@@ -295,7 +296,8 @@ public sealed class ShipmentRequestStatusJsonConverter : EnumStringConverter<Shi
             [ShipmentRequestStatus.Submitted] = "SUBMITTED",
             [ShipmentRequestStatus.Approved] = "APPROVED",
             [ShipmentRequestStatus.Rejected] = "REJECTED",
-            [ShipmentRequestStatus.ConvertedToTrip] = "CONVERTED_TO_TRIP"
+            [ShipmentRequestStatus.ConvertedToTrip] = "CONVERTED_TO_TRIP",
+            [ShipmentRequestStatus.NeedsRevision] = "NEEDS_REVISION"
         };
 
     private static readonly IReadOnlyDictionary<string, ShipmentRequestStatus> Reverse =

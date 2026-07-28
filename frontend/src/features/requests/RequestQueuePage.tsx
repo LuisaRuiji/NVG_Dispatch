@@ -56,7 +56,7 @@ export default function RequestQueuePage({
       nav("/login");
       return;
     }
-    if (requireRole && !me.roles?.includes(requireRole)) {
+    if (requireRole && !me.roles?.some((role) => role === requireRole)) {
       show("Access denied.", "error");
       return;
     }

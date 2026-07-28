@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Exceptions;
@@ -59,6 +60,11 @@ public sealed record UploadShipmentRequestDocumentCommand(
     string StorageKey,
     Guid UploadedByUserId);
 
+public sealed record AtwUploadResult(
+    ShipmentRequestDocument Document,
+    AtwExtractionResult Analysis,
+    IReadOnlyCollection<string> AppliedFields);
+
 public sealed class ShipmentRequestService
 {
     private readonly InventoryDbContext _dbContext;
@@ -67,6 +73,8 @@ public sealed class ShipmentRequestService
     private readonly IAuditService? _auditService;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly IVaiaCacheService? _cacheService;
+    private readonly IShipmentRequestDocumentStorage? _documentStorage;
+    private readonly IAtwDocumentIntelligenceService? _documentIntelligenceService;
 
     public ShipmentRequestService(
         InventoryDbContext dbContext,
@@ -74,7 +82,9 @@ public sealed class ShipmentRequestService
         IShipmentRequestTripCreationService tripCreationService,
         IAuditService? auditService = null,
         IServiceScopeFactory? serviceScopeFactory = null,
-        IVaiaCacheService? cacheService = null)
+        IVaiaCacheService? cacheService = null,
+        IShipmentRequestDocumentStorage? documentStorage = null,
+        IAtwDocumentIntelligenceService? documentIntelligenceService = null)
     {
         _dbContext = dbContext;
         _userService = userService;
@@ -82,6 +92,8 @@ public sealed class ShipmentRequestService
         _auditService = auditService;
         _serviceScopeFactory = serviceScopeFactory;
         _cacheService = cacheService;
+        _documentStorage = documentStorage;
+        _documentIntelligenceService = documentIntelligenceService;
     }
 
     public async Task<ShipmentRequest> CreateDraftAsync(
@@ -147,9 +159,9 @@ public sealed class ShipmentRequestService
             throw new NotFoundException("Shipment request not found.");
         }
 
-        if (request.Status != ShipmentRequestStatus.Draft)
+        if (request.Status is not (ShipmentRequestStatus.Draft or ShipmentRequestStatus.NeedsRevision))
         {
-            throw new ConflictDomainException("Submitted requests cannot be modified.");
+            throw new ConflictDomainException("Only draft requests or requests needing revision can be modified.");
         }
 
         EnsureLocations(command.PickupLocation, command.DropoffLocation);
@@ -199,9 +211,9 @@ public sealed class ShipmentRequestService
             throw new NotFoundException("Shipment request not found.");
         }
 
-        if (request.Status != ShipmentRequestStatus.Draft)
+        if (request.Status is not (ShipmentRequestStatus.Draft or ShipmentRequestStatus.NeedsRevision))
         {
-            throw new ConflictDomainException("Only draft requests can be submitted.");
+            throw new ConflictDomainException("Only draft requests or requests needing revision can be submitted.");
         }
 
         var submittedAt = DateTime.UtcNow;
@@ -274,6 +286,102 @@ public sealed class ShipmentRequestService
         return doc;
     }
 
+    public async Task<AtwUploadResult> UploadAndAnalyzeAtwAsync(
+        Guid requestId,
+        Guid customerId,
+        Guid uploadedByUserId,
+        Stream content,
+        string fileName,
+        string? contentType,
+        long sizeBytes,
+        AtwExtractionResult? scannedAnalysis = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_documentStorage is null || _documentIntelligenceService is null)
+        {
+            throw new InvalidOperationException("Document intelligence services are not configured.");
+        }
+
+        await _userService.EnsureActiveUserAsync(uploadedByUserId, cancellationToken);
+        var request = await _dbContext.ShipmentRequests
+            .FirstOrDefaultAsync(item => item.Id == requestId && item.CustomerId == customerId, cancellationToken);
+        if (request is null)
+        {
+            throw new NotFoundException("Shipment request not found.");
+        }
+
+        if (request.Status is ShipmentRequestStatus.Approved
+            or ShipmentRequestStatus.Rejected
+            or ShipmentRequestStatus.ConvertedToTrip)
+        {
+            throw new ConflictDomainException("ATW cannot be uploaded for a finalized request.");
+        }
+
+        var stored = await _documentStorage.SaveAsync(
+            customerId,
+            requestId,
+            content,
+            fileName,
+            contentType,
+            sizeBytes,
+            cancellationToken);
+
+        // Analyze the stored file so the scanner always receives exactly the retained evidence.
+        AtwExtractionResult analysis;
+        if (scannedAnalysis is not null)
+        {
+            analysis = scannedAnalysis;
+        }
+        else await using (var storedContent = File.OpenRead(stored.AbsolutePath))
+        {
+            analysis = await _documentIntelligenceService.AnalyzeAsync(storedContent, stored.ContentType, cancellationToken);
+        }
+
+        var riskFlags = analysis.RiskFlags.ToList();
+        var appliedFields = new List<string>();
+        request.ContainerNumber = FillIfMissing(request.ContainerNumber, analysis.ContainerNumber, "container number", appliedFields);
+        request.BookingNumber = FillIfMissing(request.BookingNumber, analysis.BookingNumber, "booking number", appliedFields);
+        request.ShippingLine = FillIfMissing(request.ShippingLine, analysis.ShippingLine, "shipping line", appliedFields);
+        AddMismatchFlag(riskFlags, "Container number", request.ContainerNumber, analysis.ContainerNumber);
+        AddMismatchFlag(riskFlags, "Booking number", request.BookingNumber, analysis.BookingNumber);
+        AddMismatchFlag(riskFlags, "Shipping line", request.ShippingLine, analysis.ShippingLine);
+
+        var document = new ShipmentRequestDocument
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            DocumentType = ShipmentRequestDocumentType.Atw,
+            StorageKey = stored.StorageKey,
+            OriginalFileName = stored.OriginalFileName,
+            ContentType = stored.ContentType,
+            SizeBytes = stored.SizeBytes,
+            UploadedByUserId = uploadedByUserId,
+            UploadedAt = DateTime.UtcNow,
+            AnalysisStatus = analysis.IsConfigured
+                ? (analysis.Error is null ? DocumentAnalysisStatus.NeedsReview : DocumentAnalysisStatus.Failed)
+                : DocumentAnalysisStatus.NotConfigured,
+            AnalysisError = analysis.Error,
+            ExtractedContainerNumber = analysis.ContainerNumber,
+            ExtractedBookingNumber = analysis.BookingNumber,
+            ExtractedShippingLine = analysis.ShippingLine,
+            ExtractionConfidence = analysis.Confidence,
+            RiskFlagsJson = JsonSerializer.Serialize(riskFlags),
+            AnalyzedAt = analysis.IsConfigured ? DateTime.UtcNow : null
+        };
+
+        _dbContext.ShipmentRequestDocuments.Add(document);
+        _auditService?.AddEntry(
+            uploadedByUserId,
+            "ATW_UPLOADED_AND_ANALYZED",
+            "shipment_request_document",
+            document.Id,
+            null,
+            new { request.Id, document.AnalysisStatus, AppliedFields = appliedFields, RiskFlags = riskFlags });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
+        return new AtwUploadResult(document, analysis with { RiskFlags = riskFlags }, appliedFields);
+    }
+
     public async Task<ShipmentRequest> ApproveAsync(
         Guid requestId,
         Guid actorUserId,
@@ -297,6 +405,7 @@ public sealed class ShipmentRequestService
         request.Status = ShipmentRequestStatus.Approved;
         request.ApprovedAt = DateTime.UtcNow;
         request.ApprovedByUserId = actorUserId;
+        request.RejectionRemarks = null;
 
         _auditService?.AddEntry(
             actorUserId,
@@ -344,6 +453,7 @@ public sealed class ShipmentRequestService
         }
 
         request.Status = ShipmentRequestStatus.Rejected;
+        request.RejectionRemarks = remarks.Trim();
 
         _auditService?.AddEntry(
             actorUserId,
@@ -355,12 +465,130 @@ public sealed class ShipmentRequestService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
+        await QueuePushToCustomerUsersAsync(
+            request.CustomerId,
+            "Shipment Request Rejected",
+            "Your shipment request was rejected. Open it to review the dispatcher's remarks.",
+            new Dictionary<string, string> { ["requestId"] = request.Id.ToString() },
+            cancellationToken);
         return request;
+    }
+
+    public async Task<ShipmentRequest> RequestChangesAsync(
+        Guid requestId,
+        Guid actorUserId,
+        string remarks,
+        CancellationToken cancellationToken = default)
+    {
+        await _userService.EnsureActiveUserAsync(actorUserId, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(remarks))
+        {
+            throw new BusinessRuleViolationException("Remarks are required.");
+        }
+
+        var request = await _dbContext.ShipmentRequests
+            .FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken);
+
+        if (request is null)
+        {
+            throw new NotFoundException("Shipment request not found.");
+        }
+
+        if (request.Status != ShipmentRequestStatus.Submitted)
+        {
+            throw new ConflictDomainException("Only submitted requests can be returned for changes.");
+        }
+
+        request.Status = ShipmentRequestStatus.NeedsRevision;
+        request.RejectionRemarks = remarks.Trim();
+
+        _auditService?.AddEntry(
+            actorUserId,
+            "SHIPMENT_REQUEST_CHANGES_REQUESTED",
+            "shipment_request",
+            request.Id,
+            null,
+            new { request.Status, Remarks = request.RejectionRemarks });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
+        await QueuePushToCustomerUsersAsync(
+            request.CustomerId,
+            "Shipment Request Needs Changes",
+            "Dispatch reviewed your request and needs additional information.",
+            new Dictionary<string, string> { ["requestId"] = request.Id.ToString() },
+            cancellationToken);
+        return request;
+    }
+
+    public async Task<(ShipmentRequest Request, Guid TripId, bool Created)> StartPlanningAsync(
+        Guid requestId,
+        DispatchActorContext actor,
+        DateTime? scheduledPickupTimeOverride = null,
+        CancellationToken cancellationToken = default)
+    {
+        await _userService.EnsureActiveUserAsync(actor.UserId, cancellationToken);
+
+        var request = await _dbContext.ShipmentRequests
+            .FirstOrDefaultAsync(item => item.Id == requestId, cancellationToken);
+        if (request is null)
+        {
+            throw new NotFoundException("Shipment request not found.");
+        }
+
+        if (request.ConvertedTripId.HasValue)
+        {
+            var exists = await _dbContext.DispatchTrips
+                .AsNoTracking()
+                .AnyAsync(trip => trip.Id == request.ConvertedTripId.Value, cancellationToken);
+            if (!exists)
+            {
+                throw new ConflictDomainException("The linked planning trip no longer exists. Resolve the request link before continuing.");
+            }
+
+            return (request, request.ConvertedTripId.Value, false);
+        }
+
+        if (request.Status != ShipmentRequestStatus.Approved)
+        {
+            throw new ConflictDomainException("Only approved requests can enter Planning.");
+        }
+
+        var now = DateTime.UtcNow;
+        if (request.RequestedPickupTime.HasValue && request.RequestedPickupTime.Value <= now &&
+            (!scheduledPickupTimeOverride.HasValue || scheduledPickupTimeOverride.Value <= now))
+        {
+            throw new BusinessRuleViolationException("A future scheduled pickup time is required before starting Planning for a past-due booking.");
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var tripId = await _tripCreationService.CreateDraftTripFromApprovedRequestAsync(
+            new CreateTripFromShipmentRequestCommand(request.Id, scheduledPickupTimeOverride),
+            actor,
+            cancellationToken);
+
+        request.Status = ShipmentRequestStatus.ConvertedToTrip;
+        request.ConvertedTripId = tripId;
+        await CarryOverAtwToTripAsync(request.Id, tripId, cancellationToken);
+        _auditService?.AddEntry(
+            actor.UserId,
+            "SHIPMENT_REQUEST_PLANNING_STARTED",
+            "shipment_request",
+            request.Id,
+            null,
+            new { request.ConvertedTripId, request.Status, ScheduledPickupTime = scheduledPickupTimeOverride ?? request.RequestedPickupTime });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await InvalidateShipmentRequestCachesAsync(request.CustomerId, cancellationToken);
+        return (request, tripId, true);
     }
 
     public async Task<(ShipmentRequest Request, Guid TripId)> ConvertToTripAsync(
         Guid requestId,
         DispatchActorContext actor,
+        DateTime? scheduledPickupTimeOverride = null,
         CancellationToken cancellationToken = default)
     {
         await _userService.EnsureActiveUserAsync(actor.UserId, cancellationToken);
@@ -383,18 +611,28 @@ public sealed class ShipmentRequestService
             throw new ConflictDomainException("This request has already been converted.");
         }
 
+        var now = DateTime.UtcNow;
+        if (request.RequestedPickupTime.HasValue && request.RequestedPickupTime.Value <= now)
+        {
+            if (!scheduledPickupTimeOverride.HasValue || scheduledPickupTimeOverride.Value <= now)
+            {
+                throw new BusinessRuleViolationException(
+                    "A future scheduled pickup time is required before converting a past-due request.");
+            }
+        }
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var tripId = await _tripCreationService.CreateDraftTripFromApprovedRequestAsync(
             new CreateTripFromShipmentRequestCommand(
                 request.Id,
-                request.RequestedPickupTime),
+                scheduledPickupTimeOverride),
             actor,
             cancellationToken);
 
         request.Status = ShipmentRequestStatus.ConvertedToTrip;
         request.ConvertedTripId = tripId;
-        await CarryOverAtwToTripAsync(request.Id, tripId, actor.UserId, cancellationToken);
+        await CarryOverAtwToTripAsync(request.Id, tripId, cancellationToken);
 
         _auditService?.AddEntry(
             actor.UserId,
@@ -402,7 +640,13 @@ public sealed class ShipmentRequestService
             "shipment_request",
             request.Id,
             null,
-            new { request.Status, request.ConvertedTripId });
+            new
+            {
+                request.Status,
+                request.ConvertedTripId,
+                OriginalRequestedPickupTime = request.RequestedPickupTime,
+                ScheduledPickupTime = scheduledPickupTimeOverride ?? request.RequestedPickupTime
+            });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -445,6 +689,31 @@ public sealed class ShipmentRequestService
         return value.Trim();
     }
 
+    private static string? FillIfMissing(
+        string? existing,
+        string? extracted,
+        string label,
+        ICollection<string> appliedFields)
+    {
+        if (string.IsNullOrWhiteSpace(existing) && !string.IsNullOrWhiteSpace(extracted))
+        {
+            appliedFields.Add(label);
+            return extracted.Trim();
+        }
+
+        return existing;
+    }
+
+    private static void AddMismatchFlag(List<string> flags, string label, string? current, string? extracted)
+    {
+        if (!string.IsNullOrWhiteSpace(current) &&
+            !string.IsNullOrWhiteSpace(extracted) &&
+            !string.Equals(current.Trim(), extracted.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            flags.Add($"{label} conflicts with the value entered on the request.");
+        }
+    }
+
     private static string ToStorageValue(ContainerSize value)
     {
         return value switch
@@ -471,7 +740,6 @@ public sealed class ShipmentRequestService
     private async Task CarryOverAtwToTripAsync(
         Guid requestId,
         Guid tripId,
-        Guid actorUserId,
         CancellationToken cancellationToken)
     {
         var atw = await _dbContext.ShipmentRequestDocuments
@@ -485,7 +753,6 @@ public sealed class ShipmentRequestService
             return;
         }
 
-        var now = DateTime.UtcNow;
         _dbContext.DispatchTripDocuments.Add(new TripDocument
         {
             Id = Guid.NewGuid(),
@@ -493,10 +760,12 @@ public sealed class ShipmentRequestService
             Type = TripDocumentType.Atw,
             State = TripDocumentState.Uploaded,
             StorageKey = atw.StorageKey,
-            UploadedByUserId = actorUserId,
-            UploadedAt = now,
+            // Preserve the document's customer provenance. The dispatcher converts the
+            // request, but did not upload the ATW itself.
+            UploadedByUserId = atw.UploadedByUserId,
+            UploadedAt = atw.UploadedAt,
             IsActive = true,
-            Remarks = "ATW carried over from shipment request."
+            Remarks = "Customer-provided ATW carried over from shipment request."
         });
     }
 

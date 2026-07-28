@@ -104,6 +104,56 @@ public sealed class DashboardController : ControllerBase
                     .CountAsync(request => request.Status == ShipmentRequestStatus.Approved, cancellationToken);
 
                 var incompleteDocumentAlerts = await CountMissingRequiredDocumentsAsync(activeTripIds, cancellationToken);
+                var now = DateTime.UtcNow;
+                var today = now.Date;
+                var tomorrow = today.AddDays(1);
+                var todayDispatches = await _dbContext.DispatchTrips
+                    .AsNoTracking()
+                    .Where(trip => trip.Status != TripStatus.Closed && trip.Status != TripStatus.Cancelled)
+                    .CountAsync(trip => trip.Stops.Any(stop =>
+                        stop.StopType == TripStopType.Pickup &&
+                        stop.ScheduledAt.HasValue &&
+                        stop.ScheduledAt.Value >= today &&
+                        stop.ScheduledAt.Value < tomorrow), cancellationToken);
+
+                var activeTruckAssetIds = await _dbContext.DispatchTrucks
+                    .AsNoTracking()
+                    .Where(truck => truck.Status == "Active" && truck.Asset != null && truck.Asset.Status == AssetStatus.Active)
+                    .Select(truck => truck.AssetId)
+                    .ToListAsync(cancellationToken);
+                var assignedTruckCount = activeTruckAssetIds.Count == 0
+                    ? 0
+                    : await _dbContext.DispatchTrips
+                        .AsNoTracking()
+                        .Where(trip =>
+                            ActiveOperationalStatuses.Contains(trip.Status) &&
+                            trip.TruckAssetId.HasValue &&
+                            activeTruckAssetIds.Contains(trip.TruckAssetId.Value))
+                        .Select(trip => trip.TruckAssetId!.Value)
+                        .Distinct()
+                        .CountAsync(cancellationToken);
+
+                var delayedTrips = await _dbContext.DispatchTrips
+                    .AsNoTracking()
+                    .Where(trip => ActiveOperationalStatuses.Contains(trip.Status))
+                    .CountAsync(trip =>
+                        ((trip.Status == TripStatus.Dispatched || trip.Status == TripStatus.EnroutePickup) &&
+                            trip.Stops.Any(stop =>
+                                stop.StopType == TripStopType.Pickup &&
+                                stop.ScheduledAt.HasValue &&
+                                stop.ScheduledAt.Value < now)) ||
+                        trip.Stops.Any(stop =>
+                            stop.StopType == TripStopType.Dropoff &&
+                            stop.ScheduledAt.HasValue &&
+                            stop.ScheduledAt.Value < now),
+                        cancellationToken);
+
+                var tripsOnHold = await _dbContext.DispatchTrips
+                    .AsNoTracking()
+                    .CountAsync(trip => trip.Status == TripStatus.OnHold, cancellationToken);
+                var tripsFailedAttempt = await _dbContext.DispatchTrips
+                    .AsNoTracking()
+                    .CountAsync(trip => trip.Status == TripStatus.FailedAttempt, cancellationToken);
                 var statusBreakdown = await _dbContext.DispatchTrips
                     .AsNoTracking()
                     .Where(trip => trip.Status != TripStatus.Closed && trip.Status != TripStatus.Cancelled)
@@ -117,11 +167,15 @@ public sealed class DashboardController : ControllerBase
                     Math.Max(totalActiveDrivers - driversOnRoad, 0),
                     documentAlerts,
                     submittedShipmentRequests,
-                    await _dbContext.DispatchTrips.AsNoTracking().CountAsync(trip => trip.Status == TripStatus.OnHold, cancellationToken),
+                    tripsOnHold,
                     await _dbContext.DispatchTrips.AsNoTracking().CountAsync(trip => trip.Status == TripStatus.Draft, cancellationToken),
-                    await _dbContext.DispatchTrips.AsNoTracking().CountAsync(trip => trip.Status == TripStatus.FailedAttempt, cancellationToken),
+                    tripsFailedAttempt,
                     approvedShipmentRequests,
                     incompleteDocumentAlerts,
+                    todayDispatches,
+                    Math.Max(activeTruckAssetIds.Count - assignedTruckCount, 0),
+                    delayedTrips,
+                    tripsOnHold + tripsFailedAttempt + delayedTrips + incompleteDocumentAlerts,
                     statusBreakdown);
             },
             TimeSpan.FromMinutes(2),
@@ -309,6 +363,7 @@ public sealed class DashboardController : ControllerBase
                 {
                     ShipmentRequestStatus.Draft,
                     ShipmentRequestStatus.Submitted,
+                    ShipmentRequestStatus.NeedsRevision,
                     ShipmentRequestStatus.Approved
                 };
 
@@ -335,7 +390,7 @@ public sealed class DashboardController : ControllerBase
                     await _dbContext.ShipmentRequests
                         .AsNoTracking()
                         .Where(request => request.CustomerId == customerId.Value)
-                        .Where(request => request.Status == ShipmentRequestStatus.Draft || request.Status == ShipmentRequestStatus.Submitted)
+                        .Where(request => request.Status == ShipmentRequestStatus.Draft || request.Status == ShipmentRequestStatus.Submitted || request.Status == ShipmentRequestStatus.NeedsRevision)
                         .CountAsync(request => !_dbContext.ShipmentRequestDocuments.Any(document => document.RequestId == request.Id), cancellationToken),
                     activeRequestStatusGroups
                         .Select(group => new StatusCountChartItemResponse(group.Status.ToString(), group.Count))
@@ -992,6 +1047,10 @@ public sealed record DispatchDashboardKpisResponse(
     int TripsFailedAttempt,
     int ApprovedShipmentRequests,
     int IncompleteDocumentAlerts,
+    int TodayDispatches,
+    int TrucksAvailable,
+    int DelayedTrips,
+    int OpenIssues,
     IReadOnlyCollection<StatusCountChartItemResponse> StatusBreakdown);
 
 public sealed record FinanceDashboardKpisResponse(

@@ -130,6 +130,36 @@ export async function apiOptional<T>(path: string, init: RequestInitEx = {}): Pr
   }
 }
 
+export async function uploadFile<T>(
+  path: string,
+  file: File,
+  fieldName = "file",
+  fields: Record<string, string> = {}
+): Promise<T> {
+  const headers = new Headers();
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  const formData = new FormData();
+  formData.append(fieldName, file);
+  Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: formData
+  });
+
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    const payload = normalizePayload(raw);
+    throw new ApiRequestError(res.status, payload?.message?.trim() || raw.trim() || "File upload failed.", payload ?? undefined, raw);
+  }
+
+  return (await res.json()) as T;
+}
+
 export async function downloadFile(path: string, filename: string) {
   const headers = new Headers();
   if (accessToken) {
@@ -163,4 +193,40 @@ export async function downloadFile(path: string, filename: string) {
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+}
+
+export async function previewFile(path: string) {
+  const previewWindow = window.open("", "_blank");
+  if (previewWindow) {
+    previewWindow.opener = null;
+  }
+  const headers = new Headers();
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, { credentials: "include", headers });
+    if (!res.ok) {
+      const raw = await res.text().catch(() => "");
+      const payload = normalizePayload(raw);
+      throw new ApiRequestError(
+        res.status,
+        payload?.message?.trim() || raw.trim() || "Document preview failed.",
+        payload ?? undefined,
+        raw
+      );
+    }
+
+    const url = window.URL.createObjectURL(await res.blob());
+    if (previewWindow) {
+      previewWindow.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    previewWindow?.close();
+    throw error;
+  }
 }

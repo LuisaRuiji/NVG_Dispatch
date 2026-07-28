@@ -194,6 +194,55 @@ public class DispatchTripSimulationTests : SqlServerIntegrationTestBase
     }
 
     [SqlServerFact]
+    public async Task UpdateDraft_PreservesStopCoordinates()
+    {
+        Guid tripId;
+        Guid dispatcherId;
+
+        await using (var setup = CreateDbContext())
+        {
+            (tripId, _, dispatcherId, _, _, _) = await SeedDraftTripAsync(setup);
+        }
+
+        await using (var context = CreateDbContext())
+        {
+            var trip = await context.DispatchTrips
+                .Include(item => item.Stops)
+                .SingleAsync(item => item.Id == tripId);
+            var pickupAt = trip.Stops.Single(stop => stop.StopType == TripStopType.Pickup).ScheduledAt!.Value;
+            var dropoffAt = trip.Stops.Single(stop => stop.StopType == TripStopType.Dropoff).ScheduledAt!.Value;
+            var service = CreateService(context);
+
+            await service.UpdateTripAsync(
+                tripId,
+                new UpdateDispatchTripCommand(
+                    trip.CustomerId,
+                    null,
+                    null,
+                    trip.Notes,
+                    new[]
+                    {
+                        new DispatchTripStopInput(TripStopType.Pickup, "Panabo City, Davao del Norte", pickupAt, 7.3083m, 125.6847m),
+                        new DispatchTripStopInput(TripStopType.Dropoff, "Davao Container Yard", dropoffAt, 7.0915m, 125.6117m)
+                    },
+                    null,
+                    trip.RowVersion),
+                new DispatchActorContext(dispatcherId, false, true, false, false, false));
+
+            var updatedStops = await context.DispatchTripStops
+                .Where(stop => stop.TripId == tripId)
+                .ToListAsync();
+
+            var pickup = updatedStops.Single(stop => stop.StopType == TripStopType.Pickup);
+            var dropoff = updatedStops.Single(stop => stop.StopType == TripStopType.Dropoff);
+            Assert.Equal(7.3083m, pickup.Latitude);
+            Assert.Equal(125.6847m, pickup.Longitude);
+            Assert.Equal(7.0915m, dropoff.Latitude);
+            Assert.Equal(125.6117m, dropoff.Longitude);
+        }
+    }
+
+    [SqlServerFact]
     public async Task Dispatch_ConflictMessage_IncludesTripAssignmentAndWindow()
     {
         Guid firstTripId;

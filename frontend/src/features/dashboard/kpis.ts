@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { DashboardRole } from "@/features/auth/roles";
 import type {
   DocumentAlertChartItem,
   DriverUtilizationChartItem,
@@ -12,7 +13,6 @@ import type {
 
 type Me = {
   userId: string;
-  roles: string[];
 };
 
 type PagedResult = {
@@ -30,6 +30,10 @@ export type DispatchDashboardKpis = {
   tripsFailedAttempt: number;
   approvedShipmentRequests: number;
   incompleteDocumentAlerts: number;
+  todayDispatches: number;
+  trucksAvailable: number;
+  delayedTrips: number;
+  openIssues: number;
   statusBreakdown: { status: string; count: number }[];
 };
 
@@ -132,8 +136,8 @@ const cache = new Map<string, { fetchedAt: number; data: DashboardKpis }>();
 const chartCache = new Map<string, { fetchedAt: number; data: DashboardCharts }>();
 const CACHE_TTL_MS = 60_000;
 
-function cacheKey(me: Me) {
-  return `${me.userId}:${me.roles.join(",")}`;
+function cacheKey(me: Me, role: DashboardRole | null) {
+  return `${me.userId}:${role ?? "none"}`;
 }
 
 async function fetchPagedTotal(url: string) {
@@ -141,24 +145,27 @@ async function fetchPagedTotal(url: string) {
   return result.totalCount ?? 0;
 }
 
-export async function fetchDashboardKpis(me: Me, force = false): Promise<DashboardKpis> {
-  const key = cacheKey(me);
+export async function fetchDashboardKpis(
+  me: Me,
+  role: DashboardRole | null,
+  force = false
+): Promise<DashboardKpis> {
+  const key = cacheKey(me, role);
   const cached = cache.get(key);
   const now = Date.now();
   if (!force && cached && now - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.data;
   }
 
-  const roles = me.roles;
-  const isDriver = roles.includes("Driver");
-  const isIo = roles.includes("InventoryOfficer");
-  const isManager = roles.includes("Manager");
-  const isDispatcher = roles.includes("Dispatcher");
-  const isFinance = roles.includes("HeadOfFinance");
-  const isCeo = roles.includes("CEO");
-  const isAdmin = roles.includes("Admin");
-  const isSuperAdmin = roles.includes("SuperAdmin");
-  const isCustomer = roles.includes("Customer");
+  const isDriver = role === "Driver";
+  const isIo = role === "InventoryOfficer";
+  const isManager = role === "Manager";
+  const isDispatcher = role === "Dispatcher";
+  const isFinance = role === "HeadOfFinance";
+  const isCeo = role === "CEO";
+  const isAdmin = role === "Admin";
+  const isSuperAdmin = role === "SuperAdmin";
+  const isCustomer = role === "Customer";
 
   const tasks: Promise<[keyof DashboardKpis, DashboardKpis[keyof DashboardKpis]]>[] = [];
   const toKpiTask = <K extends keyof DashboardKpis>(
@@ -297,23 +304,25 @@ export async function fetchDashboardKpis(me: Me, force = false): Promise<Dashboa
   return base;
 }
 
-export async function fetchDashboardCharts(me: Me, force = false): Promise<DashboardCharts> {
-  const key = `charts:${cacheKey(me)}`;
+export async function fetchDashboardCharts(
+  me: Me,
+  role: DashboardRole | null,
+  force = false
+): Promise<DashboardCharts> {
+  const key = `charts:${cacheKey(me, role)}`;
   const cached = chartCache.get(key);
   const now = Date.now();
   if (!force && cached && now - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.data;
   }
 
-  const roles = me.roles;
-  const isIo = roles.includes("InventoryOfficer");
-  const isManager = roles.includes("Manager");
-  const isDispatcher = roles.includes("Dispatcher");
-  const isFinance = roles.includes("HeadOfFinance");
-  const isCeo = roles.includes("CEO");
-  const isAdmin = roles.includes("Admin");
-  const isSuperAdmin = roles.includes("SuperAdmin");
-  const isCustomer = roles.includes("Customer");
+  const isIo = role === "InventoryOfficer";
+  const isManager = role === "Manager";
+  const isFinance = role === "HeadOfFinance";
+  const isCeo = role === "CEO";
+  const isAdmin = role === "Admin";
+  const isSuperAdmin = role === "SuperAdmin";
+  const isCustomer = role === "Customer";
 
   const tasks: Promise<[keyof DashboardCharts, DashboardCharts[keyof DashboardCharts]]>[] = [];
   const toChartTask = <K extends keyof DashboardCharts>(
@@ -324,7 +333,7 @@ export async function fetchDashboardCharts(me: Me, force = false): Promise<Dashb
       .then((value): [keyof DashboardCharts, DashboardCharts[keyof DashboardCharts]] => [keyName, value])
       .catch((): [keyof DashboardCharts, DashboardCharts[keyof DashboardCharts]] => [keyName, []]);
 
-  if (isDispatcher || isManager || isAdmin || isSuperAdmin) {
+  if (isManager || isAdmin || isSuperAdmin) {
     tasks.push(toChartTask("dispatcherWeeklyTrips", api<TimeCountChartItem[]>("/api/dashboard/dispatcher-weekly-trips", { method: "GET" })));
     tasks.push(toChartTask("documentAlerts", api<DocumentAlertChartItem[]>("/api/dashboard/document-alerts", { method: "GET" })));
   }

@@ -16,12 +16,14 @@ public sealed class ShipmentRequestConfiguration : IEntityTypeConfiguration<Ship
                 value == ShipmentRequestStatus.Submitted ? "SUBMITTED" :
                 value == ShipmentRequestStatus.Approved ? "APPROVED" :
                 value == ShipmentRequestStatus.Rejected ? "REJECTED" :
+                value == ShipmentRequestStatus.NeedsRevision ? "NEEDS_REVISION" :
                 "CONVERTED_TO_TRIP",
             value =>
                 value == "DRAFT" ? ShipmentRequestStatus.Draft :
                 value == "SUBMITTED" ? ShipmentRequestStatus.Submitted :
                 value == "APPROVED" ? ShipmentRequestStatus.Approved :
                 value == "REJECTED" ? ShipmentRequestStatus.Rejected :
+                value == "NEEDS_REVISION" ? ShipmentRequestStatus.NeedsRevision :
                 ShipmentRequestStatus.ConvertedToTrip);
 
         entity.ToTable("shipment_requests");

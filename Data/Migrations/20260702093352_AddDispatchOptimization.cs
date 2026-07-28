@@ -32,19 +32,8 @@ namespace NVGInventory.Data.Migrations
                 type: "decimal(9,6)",
                 nullable: true);
 
-            migrationBuilder.AddColumn<decimal>(
-                name: "latitude",
-                schema: "dbo",
-                table: "dispatch_trip_stops",
-                type: "decimal(9,6)",
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "longitude",
-                schema: "dbo",
-                table: "dispatch_trip_stops",
-                type: "decimal(9,6)",
-                nullable: true);
+            AddOrConvertCoordinateColumn(migrationBuilder, "dispatch_trip_stops", "latitude");
+            AddOrConvertCoordinateColumn(migrationBuilder, "dispatch_trip_stops", "longitude");
 
             migrationBuilder.CreateTable(
                 name: "dispatch_optimization_plans",
@@ -286,6 +275,16 @@ namespace NVGInventory.Data.Migrations
                 name: "longitude",
                 schema: "dbo",
                 table: "dispatch_trip_stops");
+        }
+
+        private static void AddOrConvertCoordinateColumn(MigrationBuilder migrationBuilder, string table, string column)
+        {
+            migrationBuilder.Sql($"""
+                IF COL_LENGTH(N'dbo.{table}', N'{column}') IS NULL
+                    ALTER TABLE [dbo].[{table}] ADD [{column}] decimal(9,6) NULL;
+                ELSE
+                    ALTER TABLE [dbo].[{table}] ALTER COLUMN [{column}] decimal(9,6) NULL;
+                """);
         }
     }
 }

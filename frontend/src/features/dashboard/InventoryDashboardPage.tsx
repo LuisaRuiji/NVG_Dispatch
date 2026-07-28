@@ -10,12 +10,14 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/lib/useToast";
 import { Button } from "@/components/ui/button";
 import { fetchDashboardKpis } from "./kpis";
+import { resolveDashboardRole } from "@/features/auth/roles";
 import { ArrowRight, RefreshCw, Zap, Settings2 } from "lucide-react";
 
 export default function DashboardPage() {
   const me = getMe();
   const { toasts, show } = useToast();
   const roles = me?.roles ?? [];
+  const dashboardRole = resolveDashboardRole(roles);
 
   const [loading, setLoading] = useState(false);
   const [kpis, setKpis] = useState<any>({
@@ -40,7 +42,7 @@ export default function DashboardPage() {
     if (!me) return;
     try {
       setLoading(true);
-      const result = await fetchDashboardKpis(me, force);
+      const result = await fetchDashboardKpis(me, dashboardRole, force);
       setKpis(result);
     } catch (e: any) {
       console.error(e);
@@ -52,13 +54,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadKpis();
-  }, [me?.userId]);
+  }, [me?.userId, dashboardRole]);
 
   useEffect(() => {
     const handler = () => loadKpis(true);
     window.addEventListener("nvg:kpi-invalidated", handler);
     return () => window.removeEventListener("nvg:kpi-invalidated", handler);
-  }, [me?.userId]);
+  }, [me?.userId, dashboardRole]);
 
   const quickActions = useMemo(() => {
     const actions: { label: string; to: string }[] = [];

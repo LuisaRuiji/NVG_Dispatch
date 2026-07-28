@@ -22,7 +22,8 @@ const documentLabels: Record<TripDocumentType, string> = {
   WAYBILL: "Waybill"
 };
 
-const driverUploadableDocTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD"];
+// ATW is supplied and managed by dispatch. Drivers can view it but must never upload it.
+const driverUploadableDocTypes: TripDocumentType[] = ["EIR", "GATE_PASS", "DR", "POD"];
 const lockedStatuses: TripStatus[] = ["CLOSED", "CANCELLED", "FAILED_ATTEMPT", "ON_HOLD"];
 
 export function formatDocumentLabel(type: TripDocumentType | string) {
@@ -116,10 +117,6 @@ export function canDriverUploadDocument(docType: TripDocumentType, status: TripS
     return false;
   }
 
-  if (docType === "ATW") {
-    return status !== "DRAFT";
-  }
-
   if ((docType === "EIR" || docType === "GATE_PASS") && !isStatusAtLeast(status, "AT_PICKUP")) {
     return false;
   }
@@ -128,7 +125,7 @@ export function canDriverUploadDocument(docType: TripDocumentType, status: TripS
     return false;
   }
 
-  if (docType === "POD" && !isStatusAtLeast(status, "DELIVERED")) {
+  if (docType === "POD" && !isStatusAtLeast(status, "AT_DROPOFF")) {
     return false;
   }
 
@@ -136,7 +133,7 @@ export function canDriverUploadDocument(docType: TripDocumentType, status: TripS
 }
 
 export function getPrimaryDriverUploadType(trip: DispatchTripDetail) {
-  const priority: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD"];
+  const priority: TripDocumentType[] = ["EIR", "GATE_PASS", "DR", "POD"];
   return (
     priority.find((type) => {
       const state = getDocumentState(trip.documents, type);
@@ -145,6 +142,16 @@ export function getPrimaryDriverUploadType(trip: DispatchTripDetail) {
     priority.find((type) => canDriverUploadDocument(type, trip.status)) ??
     null
   );
+}
+
+export function getDeliveryDocumentBlockers(documents: DocumentChecklistLike[] | undefined) {
+  const requiredBeforeDelivery: TripDocumentType[] = ["EIR", "GATE_PASS", "DR", "POD"];
+  return requiredBeforeDelivery
+    .filter((type) => {
+      const state = getDocumentState(documents, type);
+      return state === "MISSING" || state === "REJECTED";
+    })
+    .map((type) => `${formatDocumentLabel(type)} must be uploaded before delivery`);
 }
 
 export function getDriverTripNextAction(
@@ -165,7 +172,7 @@ export function getDriverTripNextAction(
     case "ENROUTE_PICKUP":
       return "Next: Arrive at pickup";
     case "AT_PICKUP":
-      if (isDocumentAttentionState(atwState)) return "Next: Upload ATW";
+      if (isDocumentAttentionState(atwState)) return "ATW needs dispatch attention";
       if (isDocumentAttentionState(eirState)) return "Next: Upload EIR";
       if (isDocumentAttentionState(gatePassState)) return "Next: Upload Gate Pass";
       return "Next: Confirm loaded";
@@ -174,6 +181,7 @@ export function getDriverTripNextAction(
     case "ENROUTE_DROPOFF":
       return "Next: Arrive at dropoff";
     case "AT_DROPOFF":
+      if (isDocumentAttentionState(podState)) return "Next: Upload POD";
       if (isDocumentAttentionState(drState)) return "Next: Upload DR";
       return "Next: Confirm delivery";
     case "DELIVERED":
@@ -195,6 +203,7 @@ export function getDriverTripNextAction(
 function isStatusAtLeast(current: TripStatus, required: TripStatus) {
   const order: TripStatus[] = [
     "DRAFT",
+    "READY_FOR_DISPATCH",
     "DISPATCHED",
     "ENROUTE_PICKUP",
     "AT_PICKUP",

@@ -1,5 +1,6 @@
 export type TripStatus =
   | "DRAFT"
+  | "READY_FOR_DISPATCH"
   | "DISPATCHED"
   | "ENROUTE_PICKUP"
   | "AT_PICKUP"
@@ -226,10 +227,14 @@ export type DispatchTripDetail = {
   driverUsername?: string | null;
   truckAssetId?: string | null;
   truckAssetCode?: string | null;
+  trailerAssetId?: string | null;
+  trailerAssetCode?: string | null;
   containerNumber?: string | null;
   eirNumber?: string | null;
   bookingNumber?: string | null;
   shippingLine?: string | null;
+  containerSize?: string | null;
+  tripType?: string | null;
   podPending: boolean;
   holdPreviousStatus?: TripStatus | null;
   notes?: string | null;
@@ -277,6 +282,7 @@ export const operationalFlow: TripStatus[] = [
 
 export const statusLabels: Record<TripStatus, string> = {
   DRAFT: "Draft",
+  READY_FOR_DISPATCH: "Ready for dispatch",
   DISPATCHED: "Dispatched",
   ENROUTE_PICKUP: "Enroute pickup",
   AT_PICKUP: "At pickup",

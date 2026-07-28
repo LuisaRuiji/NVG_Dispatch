@@ -1,513 +1,84 @@
 import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import PageHeader from "@/components/PageHeader";
-import ToastHost from "@/components/ToastHost";
-import StatusBadge from "@/components/StatusBadge";
+import { ArrowLeft, AlertTriangle, LocateFixed, Navigation, RefreshCw, Signal, Truck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import PageHeader from "@/components/PageHeader";
+import StatusBadge from "@/components/StatusBadge";
+import ToastHost from "@/components/ToastHost";
+import TripMap from "@/components/dispatch/TripMap";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
-import {
-  Clock,
-  ArrowLeft,
-  Navigation,
-  Compass,
-  Zap,
-  Activity,
-  AlertTriangle,
-  Play,
-  Square,
-  AlertOctagon,
-  RefreshCw,
-  Terminal
-} from "lucide-react";
 import { useTracking } from "./TrackingContext";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 
-// Sleek SVG Pin Icon Generator for Professional Enterprise Driver Maps
-const createDriverPin = (type: "pickup" | "pickupCompleted" | "dropoff" | "truck") => {
-  let bgColor = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-  let shadowColor = "rgba(16, 185, 129, 0.45)";
-  let svgContent = "";
-  let pulseRing = "";
-
-  if (type === "pickup") {
-    bgColor = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-    shadowColor = "rgba(16, 185, 129, 0.45)";
-    svgContent = `<path fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 7.5L12 3L4 7.5M20 7.5l-8 4.5m8-4.5v9l-8 4.5m0-9L4 7.5m8 4.5v9M4 7.5v9l8 4.5"/>`;
-  } else if (type === "pickupCompleted") {
-    bgColor = "linear-gradient(135deg, #059669 0%, #047857 100%)";
-    shadowColor = "rgba(5, 150, 105, 0.45)";
-    svgContent = `<path fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6L9 17l-5-5"/>`;
-  } else if (type === "dropoff") {
-    bgColor = "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)";
-    shadowColor = "rgba(59, 130, 246, 0.45)";
-    svgContent = `<path fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6-5.333-6-10a6 6 0 0 1 12 0c0 4.667-6 10-6 10z"/><circle cx="12" cy="11" r="2.5" fill="white"/>`;
-  } else if (type === "truck") {
-    bgColor = "linear-gradient(135deg, #6366f1 0%, #4338ca 100%)";
-    shadowColor = "rgba(99, 102, 241, 0.45)";
-    pulseRing = `<div style="position: absolute; width: 42px; height: 42px; border-radius: 50%; border: 2px solid #6366f1; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.75;"></div>`;
-    svgContent = `<rect x="1" y="3" width="15" height="13" rx="2" fill="none" stroke="white" stroke-width="2"/><path d="M16 8h4l3 3v5h-7V8z" fill="none" stroke="white" stroke-width="2"/><circle cx="5.5" cy="18.5" r="2" fill="white"/><circle cx="18.5" cy="18.5" r="2" fill="white"/>`;
-  }
-
-  const html = `
-    <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 42px; height: 42px;">
-      ${pulseRing}
-      <div style="
-        background: ${bgColor};
-        width: 34px;
-        height: 34px;
-        border-radius: 50% 50% 50% 4px;
-        transform: rotate(-45deg);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 2px solid #ffffff;
-        box-shadow: 0 4px 10px ${shadowColor}, 0 2px 4px rgba(0,0,0,0.25);
-      ">
-        <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; transform: rotate(45deg);">
-          ${svgContent}
-        </svg>
-      </div>
-    </div>
-  `;
-
-  return L.divIcon({
-    className: "custom-leaflet-pin-icon",
-    html: html,
-    iconSize: [42, 42],
-    iconAnchor: [21, 38],
-    popupAnchor: [0, -34]
-  });
-};
-
-const pickupIcon = createDriverPin("pickup");
-const completedPickupIcon = createDriverPin("pickupCompleted");
-const dropoffIcon = createDriverPin("dropoff");
-const truckIcon = createDriverPin("truck");
-
-// Helper component to auto-adjust map bounds dynamically based on active trip status
-function MapBoundsUpdater({ pickup, dropoff, truck, isHeadingToPickup }: { pickup: [number, number] | null; dropoff: [number, number] | null; truck: [number, number] | null; isHeadingToPickup: boolean }) {
-  const map = useMap();
-  useEffect(() => {
-    const points: [number, number][] = [];
-    if (truck && truck[0] && truck[1]) points.push(truck);
-    
-    if (isHeadingToPickup) {
-      if (pickup && pickup[0] && pickup[1]) points.push(pickup);
-    } else {
-      if (dropoff && dropoff[0] && dropoff[1]) points.push(dropoff);
-    }
-    
-    if (points.length > 1) {
-      try {
-        const bounds = L.latLngBounds(points);
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-      } catch (e) {
-        // ignore
-      }
-    } else if (points.length === 1) {
-      try {
-        map.setView(points[0], 14);
-      } catch (e) {
-        // ignore
-      }
-    }
-  }, [pickup, dropoff, truck, isHeadingToPickup, map]);
-  return null;
-}
-
-// Helper component to draw the routing polyline following actual roads via OSRM public routing API
-function RoutePolyline({ from, to, color }: { from: [number, number] | null; to: [number, number] | null; color: string }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!from || !to || !from[0] || !from[1] || !to[0] || !to[1]) return;
-
-    let polyline: L.Polyline | null = null;
-
-    const fetchRoute = async () => {
-      try {
-        // OSRM public API: coordinates are [longitude, latitude]
-        const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.routes && data.routes.length > 0) {
-          // OSRM returns [lng, lat] — Leaflet needs [lat, lng]
-          const coords: [number, number][] = data.routes[0].geometry.coordinates.map(
-            (c: [number, number]) => [c[1], c[0]] as [number, number]
-          );
-          polyline = L.polyline(coords, {
-            color: color,
-            weight: 4,
-            opacity: 0.85,
-          }).addTo(map);
-        } else {
-          // fallback to straight line if OSRM fails
-          polyline = L.polyline([from, to], { color, weight: 3, dashArray: "6, 6", opacity: 0.7 }).addTo(map);
-        }
-      } catch {
-        // fallback to straight line on network error
-        try {
-          polyline = L.polyline([from, to], { color, weight: 3, dashArray: "6, 6", opacity: 0.7 }).addTo(map);
-        } catch { /* ignore */ }
-      }
-    };
-
-    fetchRoute();
-
-    return () => {
-      if (polyline) polyline.remove();
-    };
-  }, [from?.[0], from?.[1], to?.[0], to?.[1], color, map]);
-
-  return null;
+function formatLastUpdated(value?: string | null) {
+  if (!value) return "No location update received";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No location update received";
+  const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
+  return minutes < 1 ? "Updated just now" : `Updated ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
 }
 
 export default function MyRouteMapPage() {
-  const {
-    trip,
-    loading,
-    error,
-    trackingActive,
-    currentCoords,
-    gpsWarning,
-    networkError,
-    logs,
-    startWatcher,
-    stopWatcher,
-    fetchActiveTrip
-  } = useTracking();
-  
-  const { toasts } = useToast();
   const nav = useNavigate();
+  const { toasts } = useToast();
+  const { trip, loading, error, trackingActive, currentCoords, gpsWarning, networkError, startWatcher, stopWatcher, fetchActiveTrip } = useTracking();
 
   useEffect(() => {
-    fetchActiveTrip();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void fetchActiveTrip();
+    return () => { void stopWatcher(); };
   }, []);
 
-  const handleStartTracking = async () => {
-    await startWatcher();
-  };
+  if (loading && !trip) {
+    return <div className="mx-auto max-w-6xl space-y-6"><PageHeader title="Route map" description="Loading active trip…" /><LoadingSkeleton rows={6} /></div>;
+  }
 
-  const handleStopTracking = async () => {
-    await stopWatcher();
-  };
+  if (!trip) {
+    return <div className="mx-auto max-w-3xl space-y-6"><PageHeader title="Route map" description="Route visibility is available for your active trip." /><EmptyState title="No active route" description={error ?? "A route map becomes available when you have an active assigned trip."} /></div>;
+  }
+
+  const driver = currentCoords
+    ? { latitude: currentCoords.latitude, longitude: currentCoords.longitude, label: "Your current location" }
+    : trip.lastLatitude != null && trip.lastLongitude != null
+      ? { latitude: trip.lastLatitude, longitude: trip.lastLongitude, label: "Last shared location" }
+      : null;
+  const lastUpdatedAt = currentCoords ? new Date().toISOString() : trip.lastLocationAt;
+  const hasCoordinateWarning = trip.pickupLatitude == null || trip.pickupLongitude == null || trip.dropoffLatitude == null || trip.dropoffLongitude == null;
 
   return (
-    <div className="container mx-auto p-4 max-w-4xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 pb-8">
       <ToastHost toasts={toasts} />
-
       <PageHeader
-        title="My Route Map"
-        description="Real-time GPS tracker — only visible to you"
-        breadcrumbs={
-          <nav className="flex items-center gap-1.5 text-xs">
-            <Link to="/dispatch/my-trips" className="text-muted-foreground hover:text-foreground font-medium">
-              My Trips
-            </Link>
-            <span className="text-muted-foreground">/</span>
-            <span className="text-foreground font-semibold">Route Map</span>
-          </nav>
-        }
-        actions={
-          <button
-            onClick={() => nav("/dispatch/my-trips")}
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-secondary transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to Trips
-          </button>
-        }
+        title="Route map"
+        description="Your current trip route and the latest shared location."
+        breadcrumbs={<span className="text-sm text-muted-foreground">My trips / Route map</span>}
+        actions={<div className="flex gap-2"><Button variant="outline" onClick={() => nav(`/dispatch/my-trips/${trip.tripId}`)}><Navigation className="h-4 w-4" />Open trip</Button><Button variant="outline" size="icon" aria-label="Back to my trips" onClick={() => nav("/dispatch/my-trips")}><ArrowLeft className="h-4 w-4" /></Button></div>}
       />
 
-      {loading && !trip ? (
-        <div className="space-y-4">
-          <LoadingSkeleton rows={6} />
+      <section className="surface-card overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-border p-5 md:flex-row md:items-center md:justify-between md:p-6">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Active trip</p><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-mono text-lg font-bold">{trip.tripId.slice(0, 8).toUpperCase()}</span><StatusBadge status={trip.currentTripStatus} /></div><p className="mt-2 text-sm text-muted-foreground">Next stop: {trip.currentTripStatus.replace(/_/g, " ").toLowerCase().includes("dropoff") ? trip.dropoffLocation ?? "Drop-off" : trip.pickupLocation ?? "Pickup"}</p></div>
+          <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => void fetchActiveTrip()}><RefreshCw className="h-4 w-4" />Refresh map</Button>{trackingActive ? <Button variant="outline" size="sm" onClick={() => void stopWatcher()}><Signal className="h-4 w-4" />Stop sharing</Button> : <Button size="sm" onClick={() => void startWatcher()}><LocateFixed className="h-4 w-4" />Share current location</Button>}</div>
         </div>
-      ) : error ? (
-        <Card className="border-destructive/30 bg-destructive/5 p-8 text-center space-y-4">
-          <AlertOctagon className="h-12 w-12 mx-auto text-destructive" />
-          <h3 className="font-semibold text-lg text-destructive">Unable to Load Route Map</h3>
-          <p className="text-sm text-muted-foreground">{error}</p>
-          <button
-            onClick={fetchActiveTrip}
-            className="px-4 py-2 bg-secondary text-foreground text-xs font-semibold rounded-lg hover:bg-secondary/80 transition-colors inline-flex items-center gap-1.5"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Retry
-          </button>
-        </Card>
-      ) : trip ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <TripMap
+          className="rounded-none border-0"
+          heightClassName="h-[min(62vh,38rem)] min-h-[24rem]"
+          pickup={{ latitude: trip.pickupLatitude, longitude: trip.pickupLongitude, label: trip.pickupLocation ?? "Pickup" }}
+          dropoff={{ latitude: trip.dropoffLatitude, longitude: trip.dropoffLongitude, label: trip.dropoffLocation ?? "Drop-off" }}
+          driver={driver}
+          driverRecordedAt={lastUpdatedAt}
+          driverAccuracyMeters={currentCoords?.accuracy}
+          emptyTitle="No route coordinates available"
+        />
+      </section>
 
-          {/* Left column — controls + vehicle info */}
-          <div className="md:col-span-1 space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <section className="surface-soft p-4"><p className="flex items-center gap-2 text-sm font-semibold"><Signal className="h-4 w-4 text-primary" />Location sharing</p><p className="mt-2 text-sm text-foreground">{trackingActive ? "Sharing while this page is open" : "Not currently sharing"}</p><p className="mt-1 text-xs text-muted-foreground">VAIA only uses this location for the assigned active trip.</p></section>
+        <section className="surface-soft p-4"><p className="flex items-center gap-2 text-sm font-semibold"><LocateFixed className="h-4 w-4 text-primary" />Last location</p><p className="mt-2 text-sm text-foreground">{formatLastUpdated(lastUpdatedAt)}</p><p className="mt-1 text-xs text-muted-foreground">{driver ? "Shown on the map above." : "Share your location when ready."}</p></section>
+        <section className="surface-soft p-4"><p className="flex items-center gap-2 text-sm font-semibold"><Truck className="h-4 w-4 text-primary" />Assigned vehicle</p><p className="mt-2 text-sm text-foreground">{trip.plateNumber || "Truck not specified"}</p><p className="mt-1 text-xs text-muted-foreground">Trip-scoped location visibility.</p></section>
+      </div>
 
-            {/* Tracking Controller */}
-            <Card className="overflow-hidden border border-border bg-card shadow-sm">
-              <CardHeader className="bg-muted/50 pb-3 pt-4 px-5">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Zap className="h-3.5 w-3.5 text-primary" /> Tracking Controller
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-5 px-5 pb-5 space-y-4">
-                {/* Trip status badge */}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Trip Status</span>
-                  <StatusBadge status={trip.currentTripStatus} />
-                </div>
-
-                {/* Live indicator */}
-                <div className="flex items-center justify-between p-3 rounded-lg bg-background border border-border">
-                  <div className="flex items-center gap-2">
-                    <Activity
-                      className={`h-4 w-4 ${trackingActive ? "text-emerald-500 animate-pulse" : "text-muted-foreground"}`}
-                    />
-                    <span className="text-xs font-semibold">GPS Tracking</span>
-                  </div>
-                  <span
-                    className={`text-xs font-bold uppercase tracking-wider ${
-                      trackingActive ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
-                    }`}
-                  >
-                    {trackingActive ? "● Active (Auto)" : "Standby"}
-                  </span>
-                </div>
-
-                {/* Action button */}
-                {!trackingActive ? (
-                  <button
-                    onClick={handleStartTracking}
-                    disabled={loading}
-                    className="w-full py-2 bg-secondary hover:bg-secondary/80 disabled:opacity-50 text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 text-xs transition-all"
-                  >
-                    <Play className="h-3.5 w-3.5" /> Resume Tracking
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleStopTracking}
-                    disabled={loading}
-                    className="w-full py-2 bg-muted hover:bg-muted/80 disabled:opacity-50 text-muted-foreground font-medium rounded-lg flex items-center justify-center gap-2 text-xs transition-all"
-                  >
-                    <Square className="h-3.5 w-3.5" /> Pause Tracking
-                  </button>
-                )}
-
-                {/* Warnings */}
-                {gpsWarning && (
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs rounded-lg flex items-start gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>{gpsWarning}</span>
-                  </div>
-                )}
-                {networkError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-lg flex items-start gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>{networkError}</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Vehicle info */}
-            <Card className="overflow-hidden border border-border bg-card shadow-sm">
-              <CardHeader className="bg-muted/50 pb-3 pt-4 px-5">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Vehicle Profile
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-5 px-5 pb-5 space-y-3">
-                <div className="flex justify-between border-b border-border pb-2.5 text-xs">
-                  <span className="text-muted-foreground">Plate Number</span>
-                  <span className="font-bold font-mono">{trip.plateNumber}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2.5 text-xs">
-                  <span className="text-muted-foreground">Driver</span>
-                  <span className="font-bold">{trip.driverName}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Session ID</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">{trip.tripId.slice(0, 8).toUpperCase()}…</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right column — route visual + telemetry + logs */}
-          <div className="md:col-span-2 space-y-6">
-
-            {/* Transit Route Visualizer */}
-            <Card className="overflow-hidden border border-border bg-card shadow-sm">
-              <CardHeader className="bg-muted/50 pb-3 pt-4 px-5">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Transit Route
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-5 px-5 pb-5 space-y-6">
-                {/* Route Map Container */}
-                <div className="relative w-full h-[320px] bg-background border border-border rounded-lg overflow-hidden z-0">
-                  <MapContainer center={[trip.pickupLatitude || 7.07, trip.pickupLongitude || 125.6]} zoom={12} className="h-full w-full">
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    
-                    {(() => {
-                      const status = trip.currentTripStatus.toUpperCase().replace(/_/g, "");
-                      const isHeadingToPickup = ["DISPATCHED", "ENROUTEPICKUP", "ATPICKUP"].includes(status);
-                      const isHeadingToDropoff = ["LOADED", "ENROUTEDROPOFF", "ATDROPOFF"].includes(status);
-                      const truckCoords: [number, number] | null = currentCoords 
-                        ? [currentCoords.latitude, currentCoords.longitude] 
-                        : (trip.lastLatitude && trip.lastLongitude ? [trip.lastLatitude, trip.lastLongitude] : null);
-
-                      return (
-                        <>
-                          <MapBoundsUpdater 
-                            pickup={trip.pickupLatitude && trip.pickupLongitude ? [trip.pickupLatitude, trip.pickupLongitude] : null}
-                            dropoff={trip.dropoffLatitude && trip.dropoffLongitude ? [trip.dropoffLatitude, trip.dropoffLongitude] : null}
-                            truck={truckCoords}
-                            isHeadingToPickup={isHeadingToPickup}
-                          />
-
-                          {/* Render Pickup stop always: active 📦 or completed ✅ once loaded */}
-                          {trip.pickupLatitude && trip.pickupLongitude && (
-                            <Marker 
-                              position={[trip.pickupLatitude, trip.pickupLongitude]} 
-                              icon={isHeadingToPickup ? pickupIcon : completedPickupIcon}
-                            >
-                              <Popup>
-                                <div className="text-xs space-y-0.5">
-                                  <p className="font-bold text-emerald-600 uppercase tracking-wide">
-                                    {isHeadingToPickup ? "Pickup Stop 📦" : "Pickup Completed ✅"}
-                                  </p>
-                                  <p className="font-medium text-foreground">{trip.pickupLocation}</p>
-                                </div>
-                              </Popup>
-                            </Marker>
-                          )}
-
-                          {trip.dropoffLatitude && trip.dropoffLongitude && (
-                            <Marker position={[trip.dropoffLatitude, trip.dropoffLongitude]} icon={dropoffIcon}>
-                              <Popup>
-                                <div className="text-xs space-y-0.5">
-                                  <p className="font-bold text-blue-600 uppercase tracking-wide">Dropoff Stop</p>
-                                  <p className="font-medium text-foreground">{trip.dropoffLocation}</p>
-                                </div>
-                              </Popup>
-                            </Marker>
-                          )}
-
-                          {/* Active truck position */}
-                          {truckCoords && (
-                            <Marker position={truckCoords} icon={truckIcon}>
-                              <Popup>
-                                <div className="text-xs space-y-1">
-                                  <p className="font-bold text-indigo-600">{trip.plateNumber} (Your Truck)</p>
-                                  <p className="text-[10px] text-muted-foreground">Driver: {trip.driverName}</p>
-                                  {currentCoords != null && currentCoords.speed != null && (
-                                    <p className="font-mono text-[10px] bg-secondary px-1.5 py-0.5 rounded inline-block">
-                                      Speed: {Math.round(currentCoords.speed * 3.6)} km/h
-                                    </p>
-                                  )}
-                                </div>
-                              </Popup>
-                            </Marker>
-                          )}
-
-                          {isHeadingToPickup && (
-                            <RoutePolyline 
-                              from={truckCoords} 
-                              to={trip.pickupLatitude && trip.pickupLongitude ? [trip.pickupLatitude, trip.pickupLongitude] : null}
-                              color="#10b981"
-                            />
-                          )}
-
-                          {/* Dynamic route polyline connecting truck to next objective */}
-                          {isHeadingToDropoff && (
-                            <RoutePolyline 
-                              from={truckCoords} 
-                              to={trip.dropoffLatitude && trip.dropoffLongitude ? [trip.dropoffLatitude, trip.dropoffLongitude] : null}
-                              color="#3b82f6"
-                            />
-                          )}
-                        </>
-                      );
-                    })()}
-                  </MapContainer>
-                </div>
-
-                {/* Delay warning */}
-                {trip.delayFlag && (
-                  <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-2 rounded-lg">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                    Delay detected on this route. Please contact dispatch if unable to recover schedule.
-                  </div>
-                )}
-
-                {/* Telemetry panels */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 bg-muted/30 border border-border rounded-lg text-center space-y-1">
-                    <Compass className="h-4 w-4 mx-auto text-primary" />
-                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Heading</div>
-                    <div className="text-sm font-bold font-mono">
-                      {currentCoords?.heading != null ? `${Math.round(currentCoords.heading)}°` : "—"}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-muted/30 border border-border rounded-lg text-center space-y-1">
-                    <Navigation className="h-4 w-4 mx-auto text-primary rotate-45" />
-                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Speed</div>
-                    <div className="text-sm font-bold font-mono">
-                      {currentCoords?.speed != null ? `${Math.round(currentCoords.speed * 3.6)} km/h` : "0 km/h"}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-muted/30 border border-border rounded-lg text-center space-y-1">
-                    <Clock className="h-4 w-4 mx-auto text-primary" />
-                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wide">Accuracy</div>
-                    <div className="text-sm font-bold font-mono">
-                      {currentCoords ? `±${Math.round(currentCoords.accuracy)}m` : "—"}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* GPS Log Console */}
-            <Card className="overflow-hidden border border-border bg-card shadow-sm">
-              <CardHeader className="bg-muted/50 pb-3 pt-4 px-5 flex flex-row items-center justify-between">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Terminal className="h-3.5 w-3.5 text-primary" /> GPS Event Log
-                </CardTitle>
-                <span className="text-[10px] font-mono text-muted-foreground">DriverApp v1.0</span>
-              </CardHeader>
-              <CardContent className="pt-4 px-5 pb-5">
-                <div className="h-44 w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 overflow-y-auto font-mono text-xs text-zinc-400 space-y-0.5">
-                  {logs.length === 0 ? (
-                    <div className="text-zinc-600 italic">No GPS events yet. Press Start Tracking to begin…</div>
-                  ) : (
-                    logs.map((log, i) => (
-                      <div
-                        key={i}
-                        className={
-                          log.includes("Error") || log.includes("error")
-                            ? "text-red-400"
-                            : log.includes("started") || log.includes("Sent")
-                            ? "text-emerald-400"
-                            : log.includes("stopped")
-                            ? "text-amber-400"
-                            : ""
-                        }
-                      >
-                        {log}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      ) : null}
+      {gpsWarning || networkError || hasCoordinateWarning ? <section role="status" className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Location needs attention</p><p className="mt-1 text-xs">{networkError ? "Location sharing is reconnecting. Your trip status remains unchanged." : gpsWarning ? "GPS signal is weak or unavailable. Move to an open area and try sharing again." : "Pickup or drop-off map coordinates are missing. Contact dispatch to update the trip pin."}</p></div></section> : null}
     </div>
   );
 }

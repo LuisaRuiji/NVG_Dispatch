@@ -6,5 +6,6 @@ public enum ShipmentRequestStatus
     Submitted = 1,
     Approved = 2,
     Rejected = 3,
-    ConvertedToTrip = 4
+    ConvertedToTrip = 4,
+    NeedsRevision = 5
 }

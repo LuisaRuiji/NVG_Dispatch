@@ -286,12 +286,12 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             case TripDocumentType.Pod:
                 if (actor.IsDispatcher)
                 {
-                    EnsureStatusAtLeast(trip.Status, TripStatus.Delivered, "POD can only be uploaded after delivery.");
+                    EnsureStatusAtLeast(trip.Status, TripStatus.AtDropoff, "POD can only be uploaded after arriving at drop-off.");
                     return;
                 }
 
                 EnsureAssignedDriver(actor, trip, "Only the assigned driver or dispatcher can upload POD.");
-                EnsureStatusAtLeast(trip.Status, TripStatus.Delivered, "POD can only be uploaded after delivery.");
+                EnsureStatusAtLeast(trip.Status, TripStatus.AtDropoff, "POD can only be uploaded after arriving at drop-off.");
                 return;
 
             default:

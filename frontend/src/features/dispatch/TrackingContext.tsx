@@ -94,20 +94,6 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Auto-start GPS tracking seamlessly whenever an active trip is present
-  useEffect(() => {
-    if (!trip) return;
-    const status = trip.currentTripStatus.toUpperCase();
-    const activeStatuses = ["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP", "LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"];
-    const finalStatuses = ["DELIVERED", "CLOSED", "CANCELLED"];
-
-    if (activeStatuses.includes(status) && watcherId.current === null) {
-      startWatcher();
-    } else if (finalStatuses.includes(status) && watcherId.current !== null) {
-      stopWatcher();
-    }
-  }, [trip?.currentTripStatus]);
-
   const getDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371000;
     const phi1 = (lat1 * Math.PI) / 180;
@@ -136,7 +122,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     let shouldSend = false;
     if (lastSentTime.current === 0) {
       shouldSend = true;
-    } else if (timeDiff >= 12000) {
+    } else if (timeDiff >= 60000) {
       shouldSend = true;
     } else if (lastSentCoords.current) {
       const distance = getDistanceMeters(
@@ -254,6 +240,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
   };
 
   const stopWatcher = async () => {
+    const wasTracking = watcherId.current !== null;
     if (watcherId.current !== null) {
       navigator.geolocation.clearWatch(watcherId.current);
       watcherId.current = null;
@@ -266,7 +253,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     lastSentCoords.current = null;
 
     const currentTrip = tripRef.current;
-    if (currentTrip) {
+    if (wasTracking && currentTrip) {
       try {
         const endLat = currentCoords?.latitude ?? null;
         const endLon = currentCoords?.longitude ?? null;

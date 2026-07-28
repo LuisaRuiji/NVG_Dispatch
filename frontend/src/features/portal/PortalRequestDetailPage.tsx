@@ -82,8 +82,8 @@ export default function PortalRequestDetailPage() {
   });
   const [uploadModal, setUploadModal] = useState<UploadModal>(null);
 
-  const isDraft = request?.status === "DRAFT";
-  const canUpload = request?.status === "DRAFT";
+  const isEditable = request?.status === "DRAFT" || request?.status === "NEEDS_REVISION";
+  const canUpload = isEditable;
 
   const updateForm = (patch: Partial<FormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -244,6 +244,14 @@ export default function PortalRequestDetailPage() {
           ) : null}
         </div>
 
+        {request.status === "NEEDS_REVISION" && request.reviewRemarks ? (
+          <div className="rounded-xl border border-warning/30 bg-warning/10 p-4" role="status">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-warning-foreground">Dispatcher feedback</p>
+            <p className="mt-2 text-sm text-foreground">{request.reviewRemarks}</p>
+            <p className="mt-2 text-xs text-muted-foreground">Update the request, then submit it again for review.</p>
+          </div>
+        ) : null}
+
         {request.status === "SUBMITTED" &&
         request.requestedPickupTime &&
         new Date(request.requestedPickupTime).getTime() < Date.now() ? (
@@ -279,7 +287,7 @@ export default function PortalRequestDetailPage() {
             <Input
               value={form.pickupLocation}
               onChange={(e) => updateForm({ pickupLocation: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
           <div className="space-y-2">
@@ -287,7 +295,7 @@ export default function PortalRequestDetailPage() {
             <Input
               value={form.dropoffLocation}
               onChange={(e) => updateForm({ dropoffLocation: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
           <div className="space-y-2">
@@ -296,7 +304,7 @@ export default function PortalRequestDetailPage() {
               type="datetime-local"
               value={form.requestedPickupTime}
               onChange={(e) => updateForm({ requestedPickupTime: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
           <div className="space-y-2">
@@ -304,7 +312,7 @@ export default function PortalRequestDetailPage() {
             <select
               value={form.containerSize}
               onChange={(e) => updateForm({ containerSize: e.target.value as ContainerSize })}
-              disabled={!isDraft}
+              disabled={!isEditable}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-70"
             >
               {containerSizeOptions.map(([value, label]) => (
@@ -319,7 +327,7 @@ export default function PortalRequestDetailPage() {
             <select
               value={form.tripType}
               onChange={(e) => updateForm({ tripType: e.target.value as TripType })}
-              disabled={!isDraft}
+              disabled={!isEditable}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-70"
             >
               {tripTypeOptions.map(([value, label]) => (
@@ -337,7 +345,7 @@ export default function PortalRequestDetailPage() {
               step="0.01"
               value={form.cargoWeight}
               onChange={(e) => updateForm({ cargoWeight: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
           <div className="space-y-2">
@@ -345,7 +353,7 @@ export default function PortalRequestDetailPage() {
             <Input
               value={form.containerNumber}
               onChange={(e) => updateForm({ containerNumber: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
           <div className="space-y-2">
@@ -353,7 +361,7 @@ export default function PortalRequestDetailPage() {
             <Input
               value={form.shippingLine}
               onChange={(e) => updateForm({ shippingLine: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
           <div className="space-y-2">
@@ -361,7 +369,7 @@ export default function PortalRequestDetailPage() {
             <Input
               value={form.bookingNumber}
               onChange={(e) => updateForm({ bookingNumber: e.target.value })}
-              disabled={!isDraft}
+              disabled={!isEditable}
             />
           </div>
         </div>
@@ -371,7 +379,7 @@ export default function PortalRequestDetailPage() {
           <Textarea
             value={form.cargoDescription}
             onChange={(e) => updateForm({ cargoDescription: e.target.value })}
-            disabled={!isDraft}
+            disabled={!isEditable}
             className="min-h-[110px]"
           />
         </div>
@@ -381,18 +389,18 @@ export default function PortalRequestDetailPage() {
           <Textarea
             value={form.specialInstructions}
             onChange={(e) => updateForm({ specialInstructions: e.target.value })}
-            disabled={!isDraft}
+            disabled={!isEditable}
             className="min-h-[110px]"
           />
         </div>
 
         <div className="flex flex-wrap justify-end gap-3">
-          {isDraft ? (
+          {isEditable ? (
             <Button variant="outline" onClick={handleSave} disabled={saving}>
               Save Draft
             </Button>
           ) : null}
-          {isDraft ? (
+          {isEditable ? (
             <Button onClick={handleSubmit} disabled={saving}>
               Submit Request
             </Button>

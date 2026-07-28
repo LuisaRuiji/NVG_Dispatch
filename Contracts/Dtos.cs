@@ -798,13 +798,16 @@ public sealed record CreateDispatchTripRequest(
     Guid CustomerId,
     Guid? DriverUserId,
     Guid? TruckAssetId,
+    Guid? TrailerAssetId,
     string? Notes,
     IReadOnlyCollection<DispatchTripStopRequest>? Stops,
     DispatchTripFinancialRequest? Financials = null,
     string? ContainerNumber = null,
     string? EirNumber = null,
     string? BookingNumber = null,
-    string? ShippingLine = null);
+    string? ShippingLine = null,
+    string? ContainerSize = null,
+    string? TripType = null);
 
 public sealed record CreateDispatchTripResponse(Guid TripId, TripStatus Status);
 
@@ -812,6 +815,7 @@ public sealed record UpdateDispatchTripRequest(
     Guid CustomerId,
     Guid? DriverUserId,
     Guid? TruckAssetId,
+    Guid? TrailerAssetId,
     string? Notes,
     IReadOnlyCollection<DispatchTripStopRequest>? Stops,
     string? Remarks = null,
@@ -820,7 +824,9 @@ public sealed record UpdateDispatchTripRequest(
     string? ContainerNumber = null,
     string? EirNumber = null,
     string? BookingNumber = null,
-    string? ShippingLine = null);
+    string? ShippingLine = null,
+    string? ContainerSize = null,
+    string? TripType = null);
 
 public sealed record DispatchTripActionRequest(
     Guid DriverUserId,
@@ -1027,6 +1033,8 @@ public sealed record DispatchTripDetailResponse(
     string? DriverUsername,
     Guid? TruckAssetId,
     string? TruckAssetCode,
+    Guid? TrailerAssetId,
+    string? TrailerAssetCode,
     bool PodPending,
     TripStatus? HoldPreviousStatus,
     string? Notes,
@@ -1034,6 +1042,8 @@ public sealed record DispatchTripDetailResponse(
     string? EirNumber,
     string? BookingNumber,
     string? ShippingLine,
+    string? ContainerSize,
+    string? TripType,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     IReadOnlyCollection<DispatchTripStopResponse> Stops,
@@ -1136,6 +1146,7 @@ public sealed record ShipmentRequestDetailResponse(
     string? CargoDescription,
     decimal? CargoWeight,
     string? SpecialInstructions,
+    string? ReviewRemarks,
     DateTime CreatedAt,
     DateTime? ApprovedAt,
     Guid? ConvertedTripId,
@@ -1153,14 +1164,51 @@ public sealed record ShipmentRequestDocumentUploadRequest(
     ShipmentRequestDocumentType DocumentType,
     string StorageKey);
 
+public sealed record AtwDocumentUploadResponse(
+    Guid DocumentId,
+    string AnalysisStatus,
+    string? ExtractedContainerNumber,
+    string? ExtractedBookingNumber,
+    string? ExtractedShippingLine,
+    decimal Confidence,
+    IReadOnlyCollection<string> RiskFlags,
+    IReadOnlyCollection<string> AppliedFields,
+    string? AnalysisError);
+
+public sealed record AtwScanResponse(
+    Guid ScanId,
+    string? ExtractedContainerNumber,
+    string? ExtractedBookingNumber,
+    string? ExtractedShippingLine,
+    decimal Confidence,
+    IReadOnlyCollection<string> RiskFlags,
+    string? AnalysisError,
+    string? SuggestedPickupLocation,
+    string? SuggestedDropoffLocation,
+    string? SuggestedContainerSize,
+    string? SuggestedCargoDescription,
+    decimal? SuggestedCargoWeight,
+    string? SuggestedSpecialInstructions,
+    DateTime? SuggestedRequestedPickupTime,
+    DateTime? AtwIssueDate,
+    DateTime? AtwValidUntil);
+
 public sealed record ShipmentRequestRejectRequest(string Remarks);
+
+public sealed record ShipmentRequestRequestChangesRequest(string Remarks);
+
+public sealed record ShipmentRequestConvertRequest(DateTime? ScheduledPickupTime);
 
 public sealed record DispatchShipmentRequestQueueItemResponse(
     Guid Id,
     Guid CustomerId,
     string CustomerName,
     string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
     string DropoffLocation,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
     DateTime? RequestedPickupTime,
     ContainerSize ContainerSize,
     TripType TripType,
@@ -1168,13 +1216,88 @@ public sealed record DispatchShipmentRequestQueueItemResponse(
     string? ShippingLine,
     string? BookingNumber,
     int DocumentsCount,
+    Guid? AtwDocumentId,
+    string? AtwOriginalFileName,
+    string? AtwAnalysisStatus,
+    DateTime? AtwUploadedAt,
     DateTime CreatedAt,
-    string Status);
+    string Status,
+    string Priority,
+    string? ReviewRemarks);
+
+public sealed record DispatchShipmentRequestDocumentResponse(
+    Guid Id,
+    ShipmentRequestDocumentType DocumentType,
+    string? OriginalFileName,
+    string? ContentType,
+    long? SizeBytes,
+    string AnalysisStatus,
+    string? AnalysisError,
+    decimal? ExtractionConfidence,
+    Guid UploadedByUserId,
+    string? UploadedByUsername,
+    DateTime UploadedAt);
+
+public sealed record DispatchShipmentRequestActivityResponse(
+    string Action,
+    string? ActorUsername,
+    DateTime CreatedAt);
+
+public sealed record DispatchShipmentRequestAssignmentResponse(
+    Guid TripId,
+    Guid? DriverUserId,
+    string? DriverUsername,
+    Guid? TruckAssetId,
+    string? TruckAssetCode,
+    Guid? TrailerAssetId,
+    string? TrailerAssetCode);
+
+public sealed record DispatchShipmentRequestDetailResponse(
+    Guid Id,
+    Guid CustomerId,
+    string CustomerName,
+    string Status,
+    string PickupLocation,
+    decimal? PickupLatitude,
+    decimal? PickupLongitude,
+    string DropoffLocation,
+    decimal? DropoffLatitude,
+    decimal? DropoffLongitude,
+    DateTime? RequestedPickupTime,
+    ContainerSize ContainerSize,
+    TripType TripType,
+    string? ContainerNumber,
+    string? ShippingLine,
+    string? BookingNumber,
+    string? CargoDescription,
+    decimal? CargoWeight,
+    string? SpecialInstructions,
+    string? ReviewRemarks,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    Guid? ConvertedTripId,
+    IReadOnlyCollection<DispatchShipmentRequestDocumentResponse> Documents,
+    IReadOnlyCollection<DispatchShipmentRequestActivityResponse> Activity,
+    DispatchShipmentRequestAssignmentResponse? Assignment);
 
 public sealed record ShipmentRequestConversionResponse(
     Guid RequestId,
     Guid TripId,
     ShipmentRequestStatus Status);
+
+public sealed record PlanningStartRequest(DateTime? ScheduledPickupTime);
+
+public sealed record PlanningStartResponse(
+    Guid RequestId,
+    Guid TripId,
+    ShipmentRequestStatus Status,
+    bool Created);
+
+public sealed record PlanningMarkReadyRequest(
+    string RowVersion,
+    string RecommendationToken,
+    int? SelectedRank,
+    string? OverrideReason);
 
 public sealed record CustomerShipmentListItemResponse(
     Guid TripId,

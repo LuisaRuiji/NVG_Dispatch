@@ -1,41 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import PageHeader from "@/components/PageHeader";
-import LoadingSkeleton from "@/components/LoadingSkeleton";
+import { Calendar, ChevronRight, Clock, MapPin, Navigation, RefreshCw, Truck } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
-import ToastHost from "@/components/ToastHost";
+import LoadingSkeleton from "@/components/LoadingSkeleton";
+import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import ToastHost from "@/components/ToastHost";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
-import type { DispatchTripListItem, TripStatus } from "./types";
+import { useToast } from "@/lib/useToast";
 import {
-  Calendar,
-  Clock,
-  MapPin,
-  RefreshCw,
-  Truck,
-  ChevronRight,
-  Play
-} from "lucide-react";
+  getDriverDocumentBlockers,
+  getDriverTripNextAction,
+  summarizeDocumentBlockers
+} from "./driverTripUi";
+import type { DispatchTripListItem, TripStatus } from "./types";
 
 type StatusScope = "ACTIVE" | "ALL";
 
-type TabOption = {
-  key: StatusScope;
-  label: string;
-};
-
 const driverActionMap: Record<TripStatus, { endpoint: string; label: string } | null> = {
   DRAFT: null,
-  DISPATCHED: { endpoint: "start", label: "Start Pickup" },
-  ENROUTE_PICKUP: { endpoint: "arrive-pickup", label: "Arrive Pickup" },
-  AT_PICKUP: { endpoint: "confirm-loaded", label: "Confirm Loaded" },
-  LOADED: { endpoint: "depart-pickup", label: "Depart Pickup" },
-  ENROUTE_DROPOFF: { endpoint: "arrive-dropoff", label: "Arrive Dropoff" },
-  AT_DROPOFF: { endpoint: "confirm-delivery", label: "Confirm Delivery" },
+  READY_FOR_DISPATCH: null,
+  DISPATCHED: { endpoint: "start", label: "Start trip to pickup" },
+  ENROUTE_PICKUP: { endpoint: "arrive-pickup", label: "Mark arrived at pickup" },
+  AT_PICKUP: { endpoint: "confirm-loaded", label: "Confirm container loaded" },
+  LOADED: { endpoint: "depart-pickup", label: "Start trip to drop-off" },
+  ENROUTE_DROPOFF: { endpoint: "arrive-dropoff", label: "Mark arrived at drop-off" },
+  AT_DROPOFF: { endpoint: "confirm-delivery", label: "Confirm delivery" },
   DELIVERED: null,
   CLOSED: null,
   CANCELLED: null,
@@ -43,289 +35,222 @@ const driverActionMap: Record<TripStatus, { endpoint: string; label: string } | 
   FAILED_ATTEMPT: null
 };
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "Not scheduled";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not scheduled";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function MyTripsPage() {
   const nav = useNavigate();
   const { toasts, show } = useToast();
-
   const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-
+  const [actionTripId, setActionTripId] = useState<string | null>(null);
   const [trips, setTrips] = useState<DispatchTripListItem[]>([]);
   const [statusScope, setStatusScope] = useState<StatusScope>("ACTIVE");
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split("T")[0];
-  });
-
-  const tabs: TabOption[] = useMemo(
-    () => [
-      { key: "ACTIVE", label: "Active Duties" },
-      { key: "ALL", label: "All Schedules" }
-    ],
-    []
-  );
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const loadTrips = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      params.set("scope", statusScope);
-      params.set("page", "1");
-      params.set("pageSize", "50");
-
-      if (statusScope === "ALL" && selectedDate) {
+      const params = new URLSearchParams({ scope: statusScope, page: "1", pageSize: "50" });
+      if (statusScope === "ALL") {
         params.set("from", `${selectedDate}T00:00:00Z`);
         params.set("to", `${selectedDate}T23:59:59.999Z`);
       }
-
-      const result = await api<PagedResult<DispatchTripListItem>>(
-        `/api/dispatch/my-trips?${params.toString()}`,
-        { method: "GET" }
-      );
+      const result = await api<PagedResult<DispatchTripListItem>>(`/api/dispatch/my-trips?${params}`, { method: "GET" });
       setTrips(result.items ?? []);
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to load trips.", "error");
+    } catch (error: unknown) {
+      show(getErrorMessage(error, "Unable to load your trips."), "error");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTrips();
+    void loadTrips();
   }, [statusScope, selectedDate]);
 
-  const handleQuickAction = async (tripId: string, endpoint: string, rowVersion: string) => {
+  const handleAction = async (trip: DispatchTripListItem, endpoint: string) => {
     try {
-      setActionLoading(true);
-      await api(`/api/dispatch/trips/${tripId}/${endpoint}`, {
+      setActionTripId(trip.id);
+      await api(`/api/dispatch/trips/${trip.id}/${endpoint}`, {
         method: "POST",
-        body: JSON.stringify({
-          eventAt: new Date().toISOString(),
-          rowVersion,
-          remarks: null
-        })
+        body: JSON.stringify({ eventAt: new Date().toISOString(), rowVersion: trip.rowVersion, remarks: null })
       });
-      show("Trip status updated successfully.", "success");
-      void loadTrips();
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to update trip status.", "error");
-      void loadTrips(); // Automatically pull down latest database state and rowVersion
+      show("Trip updated.", "success");
+      await loadTrips();
+    } catch (error: unknown) {
+      show(getErrorMessage(error, "The trip could not be updated. Refresh and try again."), "error");
+      await loadTrips();
     } finally {
-      setActionLoading(false);
+      setActionTripId(null);
     }
   };
 
-  // KPIs
-  const kpis = useMemo(() => {
-    const total = trips.length;
-    const inProgress = trips.filter(
-      (t) =>
-        t.status === "DISPATCHED" ||
-        t.status === "ENROUTE_PICKUP" ||
-        t.status === "AT_PICKUP" ||
-        t.status === "LOADED" ||
-        t.status === "ENROUTE_DROPOFF" ||
-        t.status === "AT_DROPOFF"
-    ).length;
-    const completed = trips.filter((t) => t.status === "DELIVERED" || t.status === "CLOSED").length;
-    return { total, inProgress, completed };
-  }, [trips]);
+  const activeTrip = useMemo(
+    () => trips.find((trip) => driverActionMap[trip.status] !== null) ?? (statusScope === "ACTIVE" ? trips[0] ?? null : null),
+    [statusScope, trips]
+  );
+  const remainingTrips = useMemo(() => trips.filter((trip) => trip.id !== activeTrip?.id), [activeTrip?.id, trips]);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="mx-auto max-w-5xl space-y-6 pb-8">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title="My Trips"
-        description="View your assigned schedules, track pickups, and manage transit lifecycles."
-        breadcrumbs={
-          <nav className="flex items-center gap-2" aria-label="Breadcrumb">
-            <span className="text-muted-foreground">Driver Portal</span>
-            <span className="text-muted-foreground">/</span>
-            <span className="text-foreground font-medium">My Trips</span>
-          </nav>
-        }
+        title="My trips"
+        description="Your current work, scheduled stops, and required documents."
+        breadcrumbs={<span className="text-sm text-muted-foreground">Driver</span>}
       />
 
-      {/* Date and scope filters */}
-      <div className="grid gap-4 sm:flex sm:items-center sm:justify-between p-4 rounded-2xl border bg-card shadow-sm">
-        <div className="flex gap-2.5">
-          {tabs.map((tab) => (
+      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex rounded-full bg-muted p-1" role="tablist" aria-label="Trip schedule scope">
+          {([
+            ["ACTIVE", "Current"],
+            ["ALL", "Schedules"]
+          ] as const).map(([scope, label]) => (
             <button
-              key={tab.key}
-              onClick={() => setStatusScope(tab.key)}
-              className={`rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
-                statusScope === tab.key
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "border text-muted-foreground hover:bg-slate-50 hover:text-foreground"
+              key={scope}
+              type="button"
+              role="tab"
+              aria-selected={statusScope === scope}
+              onClick={() => setStatusScope(scope)}
+              className={`h-10 rounded-full px-4 text-sm font-semibold transition-colors ${
+                statusScope === scope ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {tab.label}
+              {label}
             </button>
           ))}
         </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-xl border bg-slate-50/50 px-3 py-1.5 shadow-inner">
-            <Calendar className="h-4 w-4 text-slate-500" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-sm font-semibold text-slate-700 outline-none border-none cursor-pointer"
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
-            className="rounded-xl font-medium"
-          >
-            Today
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={loadTrips}
-            disabled={loading}
-            className="rounded-xl"
-          >
+        <div className="flex flex-wrap items-center gap-2">
+          {statusScope === "ALL" ? (
+            <label className="flex h-10 items-center gap-2 rounded-full border border-input bg-card px-3 text-sm text-muted-foreground">
+              <Calendar className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">Schedule date</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="min-w-0 bg-transparent text-foreground outline-none"
+              />
+            </label>
+          ) : null}
+          <Button variant="outline" size="icon" onClick={() => void loadTrips()} disabled={loading} aria-label="Refresh trips">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
+      {loading && trips.length === 0 ? <LoadingSkeleton rows={5} /> : null}
 
-
-      {/* KPI summaries */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="rounded-2xl border bg-card shadow-sm">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Trips</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <p className="text-2xl font-bold text-slate-900">{kpis.total}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border bg-card shadow-sm">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">In Progress</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <p className="text-2xl font-bold text-indigo-600">{kpis.inProgress}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border bg-card shadow-sm">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Completed</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <p className="text-2xl font-bold text-emerald-600">{kpis.completed}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Trip Lists */}
-      {loading && trips.length === 0 ? (
-        <LoadingSkeleton rows={6} />
-      ) : trips.length === 0 ? (
+      {!loading && trips.length === 0 ? (
         <EmptyState
-          title="No Trips Found"
-          description={`You do not have any trips scheduled on ${new Date(selectedDate).toLocaleDateString(undefined, { dateStyle: "long" })}.`}
+          title={statusScope === "ACTIVE" ? "No current trip" : "No scheduled trips"}
+          description={statusScope === "ACTIVE" ? "You do not have an active assignment right now." : "There are no trips assigned for this date."}
         />
-      ) : (
-        <div className="grid gap-4">
-          {trips.map((trip) => {
-            const nextAction = driverActionMap[trip.status];
-            return (
-              <div
-                key={trip.id}
-                className="group relative rounded-2xl border bg-card p-5 hover:border-slate-300 hover:shadow-md transition-all duration-300 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5 mb-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                        <h3 className="text-sm font-bold text-slate-800">
-                          Trip {trip.id.slice(0, 8).toUpperCase()}
-                        </h3>
-                        <StatusBadge status={trip.status} />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Customer: <span className="font-semibold text-slate-700">{trip.customer?.name ?? "-"}</span>
-                      </p>
-                    </div>
+      ) : null}
 
-                    {/* Quick action button directly in the list card */}
-                    {nextAction && !actionLoading && (
-                      <Button
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleQuickAction(trip.id, nextAction.endpoint, trip.rowVersion);
-                        }}
-                        className="bg-primary text-primary-foreground font-semibold rounded-xl text-xs gap-1.5 shadow-sm shadow-primary/10 transition hover:bg-primary/90"
-                      >
-                        <Play className="h-3 w-3 fill-current" />
-                        {nextAction.label}
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Horizontal visual route path */}
-                  <div className="grid gap-4 md:grid-cols-2 text-sm pt-1">
-                    <div className="relative pl-6">
-                      <div className="absolute left-0 top-1 text-blue-500">
-                        <MapPin className="h-4 w-4" />
-                      </div>
-                      <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Pickup Location</p>
-                      <p className="mt-0.5 font-bold text-slate-800 truncate">{trip.pickupLocation ?? "-"}</p>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                        <Clock className="h-3.5 w-3.5 shrink-0" />
-                        {trip.pickupScheduledAt
-                          ? new Date(trip.pickupScheduledAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
-                          : "Unscheduled"}
-                      </p>
-                    </div>
-
-                    <div className="relative pl-6 md:border-l">
-                      <div className="absolute left-0 md:left-6 top-1 text-rose-500">
-                        <MapPin className="h-4 w-4" />
-                      </div>
-                      <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Dropoff Location</p>
-                      <p className="mt-0.5 font-bold text-slate-800 truncate">{trip.dropoffLocation ?? "-"}</p>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                        <Clock className="h-3.5 w-3.5 shrink-0" />
-                        {trip.dropoffScheduledAt
-                          ? new Date(trip.dropoffScheduledAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
-                          : "Unscheduled"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 pt-3.5 border-t flex items-center justify-between text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 font-medium text-slate-700">
-                    <Truck className="h-4 w-4 text-slate-500" />
-                    <span>Truck: {trip.truckAssetCode ?? "-"}</span>
-                  </div>
-
-                  <button
-                    onClick={() => nav(`/dispatch/my-trips/${trip.id}`)}
-                    className="flex items-center gap-1 font-semibold text-primary hover:text-primary/80 transition-all uppercase tracking-wider"
-                  >
-                    Open View
-                    <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                  </button>
-                </div>
+      {activeTrip ? (
+        <section aria-labelledby="current-trip-heading" className="surface-card overflow-hidden">
+          <div className="flex flex-col gap-4 border-b border-border bg-muted/45 p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Current trip</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <h2 id="current-trip-heading" className="font-mono text-lg font-bold text-foreground">{activeTrip.id.slice(0, 8).toUpperCase()}</h2>
+                <StatusBadge status={activeTrip.status} />
               </div>
-            );
-          })}
-        </div>
-      )}
+              <p className="mt-2 text-sm text-muted-foreground">
+                {activeTrip.customer?.name ?? "Customer not specified"}
+                {activeTrip.containerNumber ? <span className="ml-2 text-foreground">Container {activeTrip.containerNumber}</span> : null}
+              </p>
+            </div>
+            <p className="max-w-sm text-sm font-medium text-foreground">{getDriverTripNextAction(activeTrip)}</p>
+          </div>
+
+          <div className="grid gap-5 p-5 md:grid-cols-2">
+            <StopSummary label="Pickup" location={activeTrip.pickupLocation} scheduledAt={activeTrip.pickupScheduledAt} tone="pickup" />
+            <StopSummary label="Drop-off" location={activeTrip.dropoffLocation} scheduledAt={activeTrip.dropoffScheduledAt} tone="dropoff" />
+          </div>
+
+          <div className="flex flex-col gap-4 border-t border-border p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1 text-sm">
+              <p className="flex items-center gap-2 text-foreground"><Truck className="h-4 w-4 text-muted-foreground" /> {activeTrip.truckAssetCode ?? "Truck not specified"}</p>
+              {summarizeDocumentBlockers(getDriverDocumentBlockers(activeTrip.documents, activeTrip.missingRequiredDocumentCount)).map((blocker) => (
+                <p key={blocker} className="text-xs font-medium text-amber-700 dark:text-amber-300">Document attention: {blocker}</p>
+              ))}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button variant="outline" onClick={() => nav(`/dispatch/my-trips/${activeTrip.id}`)}>
+                Trip details <ChevronRight className="h-4 w-4" />
+              </Button>
+              {driverActionMap[activeTrip.status] ? (
+                <Button
+                  className="h-12 sm:h-11"
+                  disabled={actionTripId !== null}
+                  onClick={() => void handleAction(activeTrip, driverActionMap[activeTrip.status]!.endpoint)}
+                >
+                  <Navigation className="h-4 w-4" />
+                  {actionTripId === activeTrip.id ? "Updating…" : driverActionMap[activeTrip.status]!.label}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {remainingTrips.length > 0 ? (
+        <section aria-labelledby="scheduled-trips-heading" className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 id="scheduled-trips-heading" className="text-lg font-semibold text-foreground">{activeTrip ? "Other assigned trips" : "Scheduled trips"}</h2>
+            <span className="text-xs text-muted-foreground">{remainingTrips.length} scheduled</span>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
+            {remainingTrips.map((trip) => (
+              <button
+                key={trip.id}
+                type="button"
+                onClick={() => nav(`/dispatch/my-trips/${trip.id}`)}
+                className="flex w-full items-center justify-between gap-4 border-b border-border px-4 py-4 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-semibold">{trip.id.slice(0, 8).toUpperCase()}</span>
+                    <StatusBadge status={trip.status} />
+                  </div>
+                  <p className="mt-1 truncate text-sm text-foreground">{trip.pickupLocation ?? "Pickup not specified"} <span className="text-muted-foreground">→</span> {trip.dropoffLocation ?? "Drop-off not specified"}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(trip.pickupScheduledAt)}</p>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function StopSummary({ label, location, scheduledAt, tone }: { label: string; location?: string | null; scheduledAt?: string | null; tone: "pickup" | "dropoff" }) {
+  return (
+    <div className="flex gap-3">
+      <MapPin className={`mt-0.5 h-5 w-5 shrink-0 ${tone === "pickup" ? "text-primary" : "text-accent"}`} aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+        <p className="mt-1 font-semibold text-foreground">{location ?? "Location not specified"}</p>
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="h-3.5 w-3.5" />{formatDateTime(scheduledAt)}</p>
+      </div>
     </div>
   );
 }

@@ -80,6 +80,8 @@ public sealed record DispatchTripDetail(
     string? DriverUsername,
     Guid? TruckAssetId,
     string? TruckAssetCode,
+    Guid? TrailerAssetId,
+    string? TrailerAssetCode,
     bool PodPending,
     TripStatus? HoldPreviousStatus,
     string? Notes,
@@ -87,6 +89,8 @@ public sealed record DispatchTripDetail(
     string? EirNumber,
     string? BookingNumber,
     string? ShippingLine,
+    string? ContainerSize,
+    string? TripType,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     IReadOnlyCollection<TripStop> Stops,
@@ -328,6 +332,7 @@ public sealed class DispatchTripQueryService
             .Include(t => t.Customer)
             .Include(t => t.Driver)
             .Include(t => t.TruckAsset)
+            .Include(t => t.TrailerAsset)
             .Include(t => t.Stops)
             .Include(t => t.Documents)
             .ThenInclude(d => d.UploadedBy)
@@ -427,6 +432,7 @@ public sealed class DispatchTripQueryService
             .Include(t => t.Customer)
             .Include(t => t.Driver)
             .Include(t => t.TruckAsset)
+            .Include(t => t.TrailerAsset)
             .Where(t => t.DriverUserId == driverUserId);
 
         if (!includeClosed)
@@ -773,6 +779,8 @@ public sealed class DispatchTripQueryService
             trip.Driver?.Username,
             trip.TruckAssetId,
             trip.TruckAsset?.AssetCode,
+            trip.TrailerAssetId,
+            trip.TrailerAsset?.AssetCode,
             trip.PodPending,
             trip.HoldPreviousStatus,
             trip.Notes,
@@ -780,6 +788,8 @@ public sealed class DispatchTripQueryService
             trip.EirNumber,
             trip.BookingNumber,
             trip.ShippingLine,
+            trip.ContainerSize,
+            trip.TripType,
             trip.CreatedAt,
             trip.UpdatedAt,
             trip.Stops,
