@@ -28,9 +28,11 @@ public sealed record LiveMapTripResponse(
     string? PickupLocation,
     decimal? PickupLatitude,
     decimal? PickupLongitude,
+    DateTime? PickupScheduledAt,
     string? DropoffLocation,
     decimal? DropoffLatitude,
     decimal? DropoffLongitude,
+    DateTime? DropoffScheduledAt,
     bool DelayFlag);
 
 public sealed class LocationTrackingService
@@ -38,15 +40,18 @@ public sealed class LocationTrackingService
     private readonly InventoryDbContext _dbContext;
     private readonly IAuditService _auditService;
     private readonly IHubContext<DispatchLocationHub, IDispatchLocationClient> _hubContext;
+    private readonly IGeocodingService? _geocodingService;
 
     public LocationTrackingService(
         InventoryDbContext dbContext,
         IAuditService auditService,
-        IHubContext<DispatchLocationHub, IDispatchLocationClient> hubContext)
+        IHubContext<DispatchLocationHub, IDispatchLocationClient> hubContext,
+        IGeocodingService? geocodingService = null)
     {
         _dbContext = dbContext;
         _auditService = auditService;
         _hubContext = hubContext;
+        _geocodingService = geocodingService;
     }
 
     public async Task<LocationTrackingSession> StartTrackingSessionAsync(
@@ -429,6 +434,7 @@ public sealed class LocationTrackingService
     {
         var activeStatuses = new[]
         {
+            TripStatus.Draft,
             TripStatus.Dispatched,
             TripStatus.EnroutePickup,
             TripStatus.AtPickup,
@@ -436,8 +442,7 @@ public sealed class LocationTrackingService
             TripStatus.EnrouteDropoff,
             TripStatus.AtDropoff,
             TripStatus.OnHold,
-            TripStatus.FailedAttempt,
-            TripStatus.Delivered
+            TripStatus.FailedAttempt
         };
 
         var trips = await _dbContext.DispatchTrips
@@ -471,6 +476,30 @@ public sealed class LocationTrackingService
             var pickup = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
             var dropoff = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
 
+            decimal? pickupLat = pickup?.Latitude;
+            decimal? pickupLon = pickup?.Longitude;
+            if (!pickupLat.HasValue && !string.IsNullOrWhiteSpace(pickup?.LocationText) && _geocodingService != null)
+            {
+                var pGeo = await _geocodingService.GeocodeAddressAsync(pickup.LocationText, cancellationToken);
+                if (pGeo != null)
+                {
+                    pickupLat = (decimal)pGeo.Latitude;
+                    pickupLon = (decimal)pGeo.Longitude;
+                }
+            }
+
+            decimal? dropoffLat = dropoff?.Latitude;
+            decimal? dropoffLon = dropoff?.Longitude;
+            if (!dropoffLat.HasValue && !string.IsNullOrWhiteSpace(dropoff?.LocationText) && _geocodingService != null)
+            {
+                var dGeo = await _geocodingService.GeocodeAddressAsync(dropoff.LocationText, cancellationToken);
+                if (dGeo != null)
+                {
+                    dropoffLat = (decimal)dGeo.Latitude;
+                    dropoffLon = (decimal)dGeo.Longitude;
+                }
+            }
+
             var now = DateTime.UtcNow;
             var latePickup = pickup?.ScheduledAt.HasValue == true && now > pickup.ScheduledAt.Value && trip.Status < TripStatus.AtPickup;
             var lateDelivery = dropoff?.ScheduledAt.HasValue == true && now > dropoff.ScheduledAt.Value && trip.Status < TripStatus.Delivered;
@@ -486,11 +515,13 @@ public sealed class LocationTrackingService
                 LastLongitude: trip.LastLongitude,
                 LastLocationAt: trip.LastLocationAt,
                 PickupLocation: pickup?.LocationText,
-                PickupLatitude: pickup?.Latitude,
-                PickupLongitude: pickup?.Longitude,
+                PickupLatitude: pickupLat,
+                PickupLongitude: pickupLon,
+                PickupScheduledAt: pickup?.ScheduledAt,
                 DropoffLocation: dropoff?.LocationText,
-                DropoffLatitude: dropoff?.Latitude,
-                DropoffLongitude: dropoff?.Longitude,
+                DropoffLatitude: dropoffLat,
+                DropoffLongitude: dropoffLon,
+                DropoffScheduledAt: dropoff?.ScheduledAt,
                 DelayFlag: latePickup || lateDelivery
             ));
         }
@@ -546,6 +577,30 @@ public sealed class LocationTrackingService
         var pickup = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
         var dropoff = trip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
 
+        decimal? driverPickupLat = pickup?.Latitude;
+        decimal? driverPickupLon = pickup?.Longitude;
+        if (!driverPickupLat.HasValue && !string.IsNullOrWhiteSpace(pickup?.LocationText) && _geocodingService != null)
+        {
+            var pGeo = await _geocodingService.GeocodeAddressAsync(pickup.LocationText, cancellationToken);
+            if (pGeo != null)
+            {
+                driverPickupLat = (decimal)pGeo.Latitude;
+                driverPickupLon = (decimal)pGeo.Longitude;
+            }
+        }
+
+        decimal? driverDropoffLat = dropoff?.Latitude;
+        decimal? driverDropoffLon = dropoff?.Longitude;
+        if (!driverDropoffLat.HasValue && !string.IsNullOrWhiteSpace(dropoff?.LocationText) && _geocodingService != null)
+        {
+            var dGeo = await _geocodingService.GeocodeAddressAsync(dropoff.LocationText, cancellationToken);
+            if (dGeo != null)
+            {
+                driverDropoffLat = (decimal)dGeo.Latitude;
+                driverDropoffLon = (decimal)dGeo.Longitude;
+            }
+        }
+
         var now = DateTime.UtcNow;
         var latePickup = pickup?.ScheduledAt.HasValue == true && now > pickup.ScheduledAt.Value && trip.Status < TripStatus.AtPickup;
         var lateDelivery = dropoff?.ScheduledAt.HasValue == true && now > dropoff.ScheduledAt.Value && trip.Status < TripStatus.Delivered;
@@ -561,11 +616,13 @@ public sealed class LocationTrackingService
             LastLongitude: trip.LastLongitude,
             LastLocationAt: trip.LastLocationAt,
             PickupLocation: pickup?.LocationText,
-            PickupLatitude: pickup?.Latitude,
-            PickupLongitude: pickup?.Longitude,
+            PickupLatitude: driverPickupLat,
+            PickupLongitude: driverPickupLon,
+            PickupScheduledAt: pickup?.ScheduledAt,
             DropoffLocation: dropoff?.LocationText,
-            DropoffLatitude: dropoff?.Latitude,
-            DropoffLongitude: dropoff?.Longitude,
+            DropoffLatitude: driverDropoffLat,
+            DropoffLongitude: driverDropoffLon,
+            DropoffScheduledAt: dropoff?.ScheduledAt,
             DelayFlag: latePickup || lateDelivery
         );
     }

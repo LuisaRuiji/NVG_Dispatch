@@ -59,9 +59,11 @@ const docStateClasses: Record<TripDocumentState, string> = {
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  const isoStr = iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z";
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 const fromLocalInput = (value: string) => {
@@ -150,7 +152,7 @@ export default function DispatchTripsPage() {
   const { toasts, show } = useToast();
   const me = getMe();
   const roles = me?.roles ?? [];
-  const canOperate = roles.includes("Manager") || roles.includes("Dispatcher");
+  const canOperate = roles.includes("Manager") || roles.includes("Dispatcher") || roles.includes("Admin") || roles.includes("SuperAdmin");
   const isManager = roles.includes("Manager");
 
   const [loading, setLoading] = useState(false);

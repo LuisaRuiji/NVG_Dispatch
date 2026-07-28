@@ -51,15 +51,12 @@ const tripTypeOptions = Object.entries(tripTypeLabels) as [TripType, string][];
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  return iso.slice(0, 16);
 };
 
 const fromLocalInput = (value: string) => {
   if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  return value.length === 16 ? value + ":00" : value;
 };
 
 export default function PortalRequestDetailPage() {
@@ -246,6 +243,35 @@ export default function PortalRequestDetailPage() {
             </span>
           ) : null}
         </div>
+
+        {request.status === "SUBMITTED" &&
+        request.requestedPickupTime &&
+        new Date(request.requestedPickupTime).getTime() < Date.now() ? (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900">
+            <span className="mt-0.5 text-base">⏳</span>
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-amber-950">Priority Dispatch Review Notice</p>
+              <p>
+                Your requested pickup date has passed while pending review. Your request is currently in the <strong>Priority Dispatch Queue</strong> for expedited review and driver allocation.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {request.status === "APPROVED" &&
+        request.requestedPickupTime &&
+        new Date(request.requestedPickupTime).getTime() < Date.now() ? (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900">
+            <span className="mt-0.5 text-base">📢</span>
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-amber-950">Dispatch Priority Re-allocation Notice</p>
+              <p>
+                Your request has been <strong>Approved</strong> and is currently queued for priority driver allocation.
+                Our dispatch team is assigning a vehicle for your shipment; an updated pickup schedule will be confirmed shortly.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">

@@ -103,9 +103,11 @@ const docStateClasses: Record<string, string> = {
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  const isoStr = iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z";
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 const fromLocalInput = (value: string) => {
@@ -221,6 +223,7 @@ export default function TripDetailPage() {
   const [linkKey, setLinkKey] = useState<string | null>(null);
   const [assignmentConflict, setAssignmentConflict] = useState<AssignmentConflictState | null>(null);
   const [updatedJustNow, setUpdatedJustNow] = useState(false);
+  const [geocodedCoords, setGeocodedCoords] = useState<{ pickupLat?: number; pickupLon?: number; dropoffLat?: number; dropoffLon?: number }>({});
   const updatedTimerRef = useRef<number | null>(null);
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
@@ -420,6 +423,59 @@ export default function TripDetailPage() {
       remarks: ""
     });
   }, [trip, summary, plannedStops]);
+
+  // Auto-geocode pickup & drop-off text addresses via backend proxy endpoint (/api/dispatch/geocode)
+  useEffect(() => {
+    let isMounted = true;
+
+    async function geocodeAddress(rawText: string) {
+      if (!rawText || !rawText.trim()) return null;
+      try {
+        const data = await api<{ latitude: number; longitude: number }>(
+          `/api/dispatch/geocode?q=${encodeURIComponent(rawText)}`,
+          { method: "GET" }
+        );
+        if (data && data.latitude && data.longitude) {
+          return { lat: data.latitude, lon: data.longitude };
+        }
+      } catch (e) {
+        console.warn("Backend geocoding proxy warning:", e);
+      }
+      return null;
+    }
+
+    async function autoGeocodeAll() {
+      const pickupText = plannedStops.pickup?.locationText;
+      const dropoffText = plannedStops.dropoff?.locationText;
+
+      const results: { pickupLat?: number; pickupLon?: number; dropoffLat?: number; dropoffLon?: number } = {};
+
+      if (pickupText && !plannedStops.pickup?.latitude) {
+        const pCoords = await geocodeAddress(pickupText);
+        if (pCoords) {
+          results.pickupLat = pCoords.lat;
+          results.pickupLon = pCoords.lon;
+        }
+      }
+
+      if (dropoffText && !plannedStops.dropoff?.latitude) {
+        const dCoords = await geocodeAddress(dropoffText);
+        if (dCoords) {
+          results.dropoffLat = dCoords.lat;
+          results.dropoffLon = dCoords.lon;
+        }
+      }
+
+      if (isMounted) {
+        setGeocodedCoords(results);
+      }
+    }
+
+    autoGeocodeAll();
+    return () => {
+      isMounted = false;
+    };
+  }, [plannedStops.pickup?.locationText, plannedStops.dropoff?.locationText]);
 
   const resumeFromFailedAttempt = useMemo(() => {
     if (!timeline.length) return null;
@@ -850,7 +906,7 @@ export default function TripDetailPage() {
         }
       />
 
-      <div className="sticky top-0 z-20 -mx-6 border-b border-border/60 bg-background/95 px-6 py-4 backdrop-blur">
+      <div className="sticky top-0 z-40 -mx-6 border-b border-border/60 bg-background/95 px-6 py-4 backdrop-blur">
         <div className="surface-card p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">
@@ -1105,31 +1161,51 @@ export default function TripDetailPage() {
               </div>
             </div>
 
-            {(plannedStops.pickup?.latitude && plannedStops.pickup?.longitude) || 
-             (plannedStops.dropoff?.latitude && plannedStops.dropoff?.longitude) ? (
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                {plannedStops.pickup?.latitude && plannedStops.pickup?.longitude && (
+            {/* Pickup & Dropoff Location Maps (Always Render Container - Pure Dynamic Geocoding) */}
+            {(() => {
+              const pickupLat = plannedStops.pickup?.latitude ?? scheduleForm.pickupLatitude ?? geocodedCoords.pickupLat;
+              const pickupLon = plannedStops.pickup?.longitude ?? scheduleForm.pickupLongitude ?? geocodedCoords.pickupLon;
+              const dropoffLat = plannedStops.dropoff?.latitude ?? scheduleForm.dropoffLatitude ?? geocodedCoords.dropoffLat;
+              const dropoffLon = plannedStops.dropoff?.longitude ?? scheduleForm.dropoffLongitude ?? geocodedCoords.dropoffLon;
+
+              return (
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
                   <div>
-                    <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Pickup Map</h4>
-                    <LocationMap 
-                      latitude={plannedStops.pickup.latitude} 
-                      longitude={plannedStops.pickup.longitude} 
-                      label="Pickup Location" 
-                    />
+                    <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                      Pickup Location Map
+                    </h4>
+                    {pickupLat && pickupLon ? (
+                      <LocationMap 
+                        latitude={pickupLat} 
+                        longitude={pickupLon} 
+                        label={plannedStops.pickup?.locationText || scheduleForm.pickupLocation || "Pickup Location"} 
+                      />
+                    ) : (
+                      <div className="flex h-[300px] flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/20 p-4 text-center">
+                        <p className="text-xs font-medium text-muted-foreground animate-pulse">Resolving Pickup Location Map from address...</p>
+                      </div>
+                    )}
                   </div>
-                )}
-                {plannedStops.dropoff?.latitude && plannedStops.dropoff?.longitude && (
+
                   <div>
-                    <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Dropoff Map</h4>
-                    <LocationMap 
-                      latitude={plannedStops.dropoff.latitude} 
-                      longitude={plannedStops.dropoff.longitude} 
-                      label="Dropoff Location" 
-                    />
+                    <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                      Dropoff Location Map
+                    </h4>
+                    {dropoffLat && dropoffLon ? (
+                      <LocationMap 
+                        latitude={dropoffLat} 
+                        longitude={dropoffLon} 
+                        label={plannedStops.dropoff?.locationText || scheduleForm.dropoffLocation || "Dropoff Location"} 
+                      />
+                    ) : (
+                      <div className="flex h-[300px] flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/20 p-4 text-center">
+                        <p className="text-xs font-medium text-muted-foreground animate-pulse">Resolving Dropoff Location Map from address...</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ) : null}
+                </div>
+              );
+            })()}
 
             {canEditSchedule ? (
               <div className="mt-5 grid gap-4 text-sm md:grid-cols-2">

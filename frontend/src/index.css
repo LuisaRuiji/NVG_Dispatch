@@ -197,4 +197,16 @@
       transition: none;
     }
   }
+
+  /* Prevent Leaflet maps from breaking out of stacking context on scroll */
+  .leaflet-container {
+    isolation: isolate;
+  }
+  .leaflet-top,
+  .leaflet-bottom {
+    z-index: 10 !important;
+  }
+  .leaflet-pane {
+    z-index: 5 !important;
+  }
 }

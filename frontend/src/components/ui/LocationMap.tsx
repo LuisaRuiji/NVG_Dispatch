@@ -32,7 +32,7 @@ export function LocationMap({ latitude, longitude, label, className = "", height
   if (!latitude || !longitude) return null;
 
   return (
-    <div className={`overflow-hidden rounded-md border border-slate-200 dark:border-slate-800 ${className}`} style={{ height, width: "100%" }}>
+    <div className={`relative z-0 overflow-hidden rounded-md border border-slate-200 dark:border-slate-800 [isolation:isolate] ${className}`} style={{ height, width: "100%" }}>
       <MapContainer center={[latitude, longitude]} zoom={15} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

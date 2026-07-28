@@ -22,18 +22,21 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
     private readonly InventoryDbContext _dbContext;
     private readonly IDispatchCspValidationService _cspValidationService;
     private readonly ITravelTimeService _travelTimeService;
+    private readonly IGeocodingService? _geocodingService;
     private readonly ILogger<PostDeliveryRecommendationService> _logger;
 
     public PostDeliveryRecommendationService(
         InventoryDbContext dbContext,
         IDispatchCspValidationService cspValidationService,
         ITravelTimeService travelTimeService,
-        ILogger<PostDeliveryRecommendationService> logger)
+        ILogger<PostDeliveryRecommendationService> logger,
+        IGeocodingService? geocodingService = null)
     {
         _dbContext = dbContext;
         _cspValidationService = cspValidationService;
         _travelTimeService = travelTimeService;
         _logger = logger;
+        _geocodingService = geocodingService;
     }
 
     public async Task<List<DispatchRecommendation>> GenerateRecommendationsAsync(Guid tripId, CancellationToken cancellationToken = default)
@@ -57,11 +60,26 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
         var lastStop = completedTrip.Stops
             .LastOrDefault(s => s.StopType == TripStopType.Dropoff);
 
-        if (lastStop == null || !lastStop.Latitude.HasValue || !lastStop.Longitude.HasValue)
-            return result;
+        decimal currentLat = 7.0707m;
+        decimal currentLon = 125.6103m;
 
-        decimal currentLat = lastStop.Latitude.Value;
-        decimal currentLon = lastStop.Longitude.Value;
+        if (lastStop != null)
+        {
+            if (lastStop.Latitude.HasValue && lastStop.Longitude.HasValue)
+            {
+                currentLat = lastStop.Latitude.Value;
+                currentLon = lastStop.Longitude.Value;
+            }
+            else if (!string.IsNullOrWhiteSpace(lastStop.LocationText) && _geocodingService != null)
+            {
+                var g = await _geocodingService.GeocodeAddressAsync(lastStop.LocationText, cancellationToken);
+                if (g != null)
+                {
+                    currentLat = (decimal)g.Latitude;
+                    currentLon = (decimal)g.Longitude;
+                }
+            }
+        }
 
         var unassignedTrips = await _dbContext.DispatchTrips
             .Include(t => t.Stops)
@@ -76,10 +94,35 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
             var pickup = candidateTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
             var dropoff = candidateTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
 
-            if (pickup?.Latitude == null || pickup?.Longitude == null || dropoff?.Latitude == null || dropoff?.Longitude == null)
+            if (pickup == null || dropoff == null)
             {
-                _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} rejected: Missing coordinates or pickup/dropoff stop.");
+                _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} rejected: Missing pickup or dropoff stop.");
                 continue;
+            }
+
+            decimal pickupLat = 7.0707m, pickupLon = 125.6103m;
+            decimal dropoffLat = 7.0707m, dropoffLon = 125.6103m;
+
+            if (pickup.Latitude.HasValue && pickup.Longitude.HasValue)
+            {
+                pickupLat = pickup.Latitude.Value;
+                pickupLon = pickup.Longitude.Value;
+            }
+            else if (!string.IsNullOrWhiteSpace(pickup.LocationText) && _geocodingService != null)
+            {
+                var pG = await _geocodingService.GeocodeAddressAsync(pickup.LocationText, cancellationToken);
+                if (pG != null) { pickupLat = (decimal)pG.Latitude; pickupLon = (decimal)pG.Longitude; }
+            }
+
+            if (dropoff.Latitude.HasValue && dropoff.Longitude.HasValue)
+            {
+                dropoffLat = dropoff.Latitude.Value;
+                dropoffLon = dropoff.Longitude.Value;
+            }
+            else if (!string.IsNullOrWhiteSpace(dropoff.LocationText) && _geocodingService != null)
+            {
+                var dG = await _geocodingService.GeocodeAddressAsync(dropoff.LocationText, cancellationToken);
+                if (dG != null) { dropoffLat = (decimal)dG.Latitude; dropoffLon = (decimal)dG.Longitude; }
             }
 
             // 1. CSP Hard Constraint Validation
@@ -98,7 +141,7 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
             DateTime simulatedTime = DateTime.UtcNow;
 
             // C1: Deadhead Distance
-            var emptyTravel = await _travelTimeService.EstimateTravelAsync(currentLat, currentLon, pickup.Latitude.Value, pickup.Longitude.Value, cancellationToken);
+            var emptyTravel = await _travelTimeService.EstimateTravelAsync(currentLat, currentLon, pickupLat, pickupLon, cancellationToken);
             decimal deadheadDistance = emptyTravel.DistanceKm;
             simulatedTime = simulatedTime.AddMinutes(emptyTravel.TravelMinutes);
 
@@ -224,9 +267,9 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
             .Take(3)
             .ToList();
 
-        // Expire any previously pending recommendations for this truck so the UI shows fresh results
+        // Expire any previously pending recommendations for this driver or truck so the UI shows fresh results for the latest completed trip
         var existingPending = await _dbContext.DispatchRecommendations
-            .Where(r => r.TruckId == completedTrip.TruckAsset.Id && !r.WasAccepted && !r.WasIgnored && r.ExpiresAt > DateTime.UtcNow)
+            .Where(r => (r.TruckId == completedTrip.TruckAsset.Id || r.DriverId == completedTrip.Driver.Id) && !r.WasAccepted && !r.WasIgnored)
             .ToListAsync(cancellationToken);
         foreach (var old in existingPending)
         {
