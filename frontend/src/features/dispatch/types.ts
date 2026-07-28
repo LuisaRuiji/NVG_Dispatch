@@ -133,8 +133,6 @@ export type DispatchTripStop = {
   id: string;
   stopType: TripStopType;
   locationText: string;
-  latitude?: number | null;
-  longitude?: number | null;
   scheduledAt?: string | null;
   actualAt?: string | null;
   latitude?: number | null;
