@@ -177,11 +177,11 @@ public sealed class DispatchCspValidationService : IDispatchCspValidationService
         {
             var missingCoords = trip.Stops
                 .Where(s => s.StopType == TripStopType.Pickup || s.StopType == TripStopType.Dropoff)
-                .Any(s => !s.Latitude.HasValue || !s.Longitude.HasValue);
+                .Any(s => (!s.Latitude.HasValue || !s.Longitude.HasValue) && string.IsNullOrWhiteSpace(s.LocationText));
 
             if (missingCoords)
             {
-                reasons.Add("Missing pickup/drop-off coordinates");
+                reasons.Add("Missing pickup/drop-off location text or coordinates");
             }
         }
 
@@ -228,7 +228,7 @@ public sealed class DispatchCspValidationService : IDispatchCspValidationService
         }
 
         // 3. Container capability check
-        if (!string.Equals(truck.ContainerCapability, trip.ContainerSize, StringComparison.OrdinalIgnoreCase))
+        if (!IsContainerCompatible(truck.ContainerCapability, trip.ContainerSize))
         {
             reasons.Add("Truck container capability mismatch");
         }
@@ -287,5 +287,42 @@ public sealed class DispatchCspValidationService : IDispatchCspValidationService
         }
 
         return reasons;
+    }
+
+    private static bool IsContainerCompatible(string? truckCapability, string? tripContainerSize)
+    {
+        if (string.IsNullOrWhiteSpace(truckCapability) || string.IsNullOrWhiteSpace(tripContainerSize))
+        {
+            return true;
+        }
+
+        var cap = truckCapability.ToLowerInvariant();
+        var size = tripContainerSize.ToLowerInvariant();
+
+        if (cap.Contains("unknown") || cap.Contains("any") || cap.Contains("all"))
+        {
+            return true;
+        }
+
+        // Non-containerized or standard general cargo trips are compatible with all trucks
+        if (!size.Contains("20") && !size.Contains("40"))
+        {
+            return true;
+        }
+
+        if (size.Contains("20") && cap.Contains("20"))
+        {
+            return true;
+        }
+
+        if (size.Contains("40") && cap.Contains("40"))
+        {
+            return true;
+        }
+
+        var cleanCap = new string(cap.Where(char.IsLetterOrDigit).ToArray());
+        var cleanSize = new string(size.Where(char.IsLetterOrDigit).ToArray());
+
+        return cleanCap.Contains(cleanSize) || cleanSize.Contains(cleanCap);
     }
 }

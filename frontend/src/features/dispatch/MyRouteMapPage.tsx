@@ -25,30 +25,67 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Simplified bulletproof Leaflet icons matching LiveOperationsMap style
-const pickupIcon = L.divIcon({
-  className: "custom-leaflet-icon",
-  html: `<div style="background-color: #10b981; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 16px;">📦</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16]
-});
+// Sleek SVG Pin Icon Generator for Professional Enterprise Driver Maps
+const createDriverPin = (type: "pickup" | "pickupCompleted" | "dropoff" | "truck") => {
+  let bgColor = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+  let shadowColor = "rgba(16, 185, 129, 0.45)";
+  let svgContent = "";
+  let pulseRing = "";
 
-const dropoffIcon = L.divIcon({
-  className: "custom-leaflet-icon",
-  html: `<div style="background-color: #3b82f6; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 16px;">📍</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16]
-});
+  if (type === "pickup") {
+    bgColor = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+    shadowColor = "rgba(16, 185, 129, 0.45)";
+    svgContent = `<path fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 7.5L12 3L4 7.5M20 7.5l-8 4.5m8-4.5v9l-8 4.5m0-9L4 7.5m8 4.5v9M4 7.5v9l8 4.5"/>`;
+  } else if (type === "pickupCompleted") {
+    bgColor = "linear-gradient(135deg, #059669 0%, #047857 100%)";
+    shadowColor = "rgba(5, 150, 105, 0.45)";
+    svgContent = `<path fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6L9 17l-5-5"/>`;
+  } else if (type === "dropoff") {
+    bgColor = "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)";
+    shadowColor = "rgba(59, 130, 246, 0.45)";
+    svgContent = `<path fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6-5.333-6-10a6 6 0 0 1 12 0c0 4.667-6 10-6 10z"/><circle cx="12" cy="11" r="2.5" fill="white"/>`;
+  } else if (type === "truck") {
+    bgColor = "linear-gradient(135deg, #6366f1 0%, #4338ca 100%)";
+    shadowColor = "rgba(99, 102, 241, 0.45)";
+    pulseRing = `<div style="position: absolute; width: 42px; height: 42px; border-radius: 50%; border: 2px solid #6366f1; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.75;"></div>`;
+    svgContent = `<rect x="1" y="3" width="15" height="13" rx="2" fill="none" stroke="white" stroke-width="2"/><path d="M16 8h4l3 3v5h-7V8z" fill="none" stroke="white" stroke-width="2"/><circle cx="5.5" cy="18.5" r="2" fill="white"/><circle cx="18.5" cy="18.5" r="2" fill="white"/>`;
+  }
 
-const truckIcon = L.divIcon({
-  className: "custom-leaflet-icon",
-  html: `<div style="background-color: #6366f1; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 16px;">🚚</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16]
-});
+  const html = `
+    <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 42px; height: 42px;">
+      ${pulseRing}
+      <div style="
+        background: ${bgColor};
+        width: 34px;
+        height: 34px;
+        border-radius: 50% 50% 50% 4px;
+        transform: rotate(-45deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #ffffff;
+        box-shadow: 0 4px 10px ${shadowColor}, 0 2px 4px rgba(0,0,0,0.25);
+      ">
+        <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; transform: rotate(45deg);">
+          ${svgContent}
+        </svg>
+      </div>
+    </div>
+  `;
+
+  return L.divIcon({
+    className: "custom-leaflet-pin-icon",
+    html: html,
+    iconSize: [42, 42],
+    iconAnchor: [21, 38],
+    popupAnchor: [0, -34]
+  });
+};
+
+const pickupIcon = createDriverPin("pickup");
+const completedPickupIcon = createDriverPin("pickupCompleted");
+const dropoffIcon = createDriverPin("dropoff");
+const truckIcon = createDriverPin("truck");
 
 // Helper component to auto-adjust map bounds dynamically based on active trip status
 function MapBoundsUpdater({ pickup, dropoff, truck, isHeadingToPickup }: { pickup: [number, number] | null; dropoff: [number, number] | null; truck: [number, number] | null; isHeadingToPickup: boolean }) {
@@ -225,16 +262,16 @@ export default function MyRouteMapPage() {
                 <div className="flex items-center justify-between p-3 rounded-lg bg-background border border-border">
                   <div className="flex items-center gap-2">
                     <Activity
-                      className={`h-4 w-4 ${trackingActive ? "text-red-500 animate-pulse" : "text-muted-foreground"}`}
+                      className={`h-4 w-4 ${trackingActive ? "text-emerald-500 animate-pulse" : "text-muted-foreground"}`}
                     />
-                    <span className="text-xs font-semibold">GPS Service</span>
+                    <span className="text-xs font-semibold">GPS Tracking</span>
                   </div>
                   <span
                     className={`text-xs font-bold uppercase tracking-wider ${
-                      trackingActive ? "text-red-500" : "text-muted-foreground"
+                      trackingActive ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
                     }`}
                   >
-                    {trackingActive ? "● Live" : "Offline"}
+                    {trackingActive ? "● Active (Auto)" : "Standby"}
                   </span>
                 </div>
 
@@ -243,17 +280,17 @@ export default function MyRouteMapPage() {
                   <button
                     onClick={handleStartTracking}
                     disabled={loading}
-                    className="w-full py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold rounded-lg flex items-center justify-center gap-2 text-sm transition-all active:scale-[0.98]"
+                    className="w-full py-2 bg-secondary hover:bg-secondary/80 disabled:opacity-50 text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 text-xs transition-all"
                   >
-                    <Play className="h-4 w-4" /> Start Tracking
+                    <Play className="h-3.5 w-3.5" /> Resume Tracking
                   </button>
                 ) : (
                   <button
                     onClick={handleStopTracking}
                     disabled={loading}
-                    className="w-full py-2.5 bg-destructive hover:bg-destructive/90 disabled:opacity-50 text-destructive-foreground font-semibold rounded-lg flex items-center justify-center gap-2 text-sm transition-all active:scale-[0.98]"
+                    className="w-full py-2 bg-muted hover:bg-muted/80 disabled:opacity-50 text-muted-foreground font-medium rounded-lg flex items-center justify-center gap-2 text-xs transition-all"
                   >
-                    <Square className="h-4 w-4" /> Stop Tracking
+                    <Square className="h-3.5 w-3.5" /> Pause Tracking
                   </button>
                 )}
 
@@ -333,12 +370,17 @@ export default function MyRouteMapPage() {
                             isHeadingToPickup={isHeadingToPickup}
                           />
 
-                          {/* Render Pickup only if we are still heading to it */}
-                          {isHeadingToPickup && trip.pickupLatitude && trip.pickupLongitude && (
-                            <Marker position={[trip.pickupLatitude, trip.pickupLongitude]} icon={pickupIcon}>
+                          {/* Render Pickup stop always: active 📦 or completed ✅ once loaded */}
+                          {trip.pickupLatitude && trip.pickupLongitude && (
+                            <Marker 
+                              position={[trip.pickupLatitude, trip.pickupLongitude]} 
+                              icon={isHeadingToPickup ? pickupIcon : completedPickupIcon}
+                            >
                               <Popup>
                                 <div className="text-xs space-y-0.5">
-                                  <p className="font-bold text-emerald-600 uppercase tracking-wide">Pickup Stop</p>
+                                  <p className="font-bold text-emerald-600 uppercase tracking-wide">
+                                    {isHeadingToPickup ? "Pickup Stop 📦" : "Pickup Completed ✅"}
+                                  </p>
                                   <p className="font-medium text-foreground">{trip.pickupLocation}</p>
                                 </div>
                               </Popup>

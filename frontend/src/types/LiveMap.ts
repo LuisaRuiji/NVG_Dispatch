@@ -11,9 +11,11 @@ export interface LiveMapTripResponse {
   pickupLocation: string | null;
   pickupLatitude: number | null;
   pickupLongitude: number | null;
+  pickupScheduledAt?: string | null;
   dropoffLocation: string | null;
   dropoffLatitude: number | null;
   dropoffLongitude: number | null;
+  dropoffScheduledAt?: string | null;
   delayFlag: boolean;
 }
 

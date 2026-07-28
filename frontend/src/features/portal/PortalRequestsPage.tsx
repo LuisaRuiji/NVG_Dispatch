@@ -96,37 +96,77 @@ export default function PortalRequestsPage() {
               </tr>
             </thead>
             <tbody>
-              {requests.map((request) => (
-                <tr key={request.id} className="border-t border-border/60">
-                  <td className="px-4 py-3 text-sm font-semibold text-foreground">
-                    <div>{request.id.slice(0, 8)}</div>
-                    <div className="mt-1 text-xs font-normal text-muted-foreground">
-                      {containerSizeLabels[request.containerSize]} / {tripTypeLabels[request.tripType]}
-                    </div>
-                    {request.containerNumber ? (
-                      <div className="mt-0.5 text-xs font-normal text-muted-foreground">
-                        {request.containerNumber}
+              {requests.map((request) => {
+                const rawTime = request.requestedPickupTime;
+                let reqDate: Date | null = null;
+                if (rawTime) {
+                  const clean = rawTime.replace("Z", "");
+                  const [datePart, timePart] = clean.split("T");
+                  if (datePart && timePart) {
+                    const [y, m, d] = datePart.split("-").map(Number);
+                    const [h, min] = timePart.split(":").map(Number);
+                    if (!isNaN(y) && !isNaN(m) && !isNaN(d) && !isNaN(h) && !isNaN(min)) {
+                      reqDate = new Date(y, m - 1, d, h, min);
+                    }
+                  }
+                }
+                const isPastDue = reqDate ? reqDate.getTime() < Date.now() : false;
+                const approvedOverdue = request.status === "APPROVED" && isPastDue;
+                const submittedOverdue = request.status === "SUBMITTED" && isPastDue;
+                return (
+                  <tr key={request.id} className="border-t border-border/60">
+                    <td className="px-4 py-3 text-sm font-semibold text-foreground">
+                      <div>{request.id.slice(0, 8)}</div>
+                      <div className="mt-1 text-xs font-normal text-muted-foreground">
+                        {containerSizeLabels[request.containerSize]} / {tripTypeLabels[request.tripType]}
                       </div>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={request.status} />
-                  </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{request.pickupLocation}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{request.dropoffLocation}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">
-                    {request.requestedPickupTime
-                      ? new Date(request.requestedPickupTime).toLocaleString()
-                      : "Unscheduled"}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{request.documentsCount}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Button variant="outline" size="sm" onClick={() => nav(`/portal/requests/${request.id}`)}>
-                      View
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                      {request.containerNumber ? (
+                        <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                          {request.containerNumber}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={request.status} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{request.pickupLocation}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{request.dropoffLocation}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
+                      <div>
+                        {reqDate
+                          ? reqDate.toLocaleString(undefined, {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                              hour12: true
+                            })
+                          : "Unscheduled"}
+                      </div>
+                      {submittedOverdue ? (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                          Review In Progress (Priority Queue)
+                        </span>
+                      ) : null}
+                      {approvedOverdue ? (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-600 animate-pulse"></span>
+                          Priority Driver Re-allocation
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{request.documentsCount}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Button variant="outline" size="sm" onClick={() => nav(`/portal/requests/${request.id}`)}>
+                        View
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </DataTable>
 

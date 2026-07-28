@@ -102,10 +102,12 @@ export default function RecommendationPanel({ filterByDriverId, className = "" }
       grouped.get(key)!.push(r);
     }
     
-    // Sort groups so that we process them logically (e.g. by time generated)
-    return Array.from(grouped.values()).sort((a, b) => {
-      const aTime = new Date(a[0]?.generatedAt).getTime();
-      const bTime = new Date(b[0]?.generatedAt).getTime();
+    // Sort groups by completed trip delivery time and sort candidates within group by rank (1, 2, 3)
+    return Array.from(grouped.values()).map(items => {
+      return items.sort((a, b) => a.rank - b.rank);
+    }).sort((a, b) => {
+      const aTime = new Date(a[0]?.completedTrip?.deliveredAt || a[0]?.generatedAt).getTime();
+      const bTime = new Date(b[0]?.completedTrip?.deliveredAt || b[0]?.generatedAt).getTime();
       return bTime - aTime;
     });
   }, [recommendations, filterByDriverId]);
@@ -173,9 +175,9 @@ export default function RecommendationPanel({ filterByDriverId, className = "" }
                 </span>
               </div>
 
-              {/* Recommendations List */}
+              {/* Recommendations List (Top 3) */}
               <div className="p-3 flex-1 flex flex-col gap-3">
-                {group.map((rec) => {
+                {group.slice(0, 3).map((rec) => {
                   const target = rec.recommendedTrip;
                   const isTopRank = rec.rank === 1;
                   

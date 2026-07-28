@@ -33,8 +33,15 @@ export function LocationAutocomplete({ value, onChange, placeholder, className }
         setIsOpen(false);
       }
     }
+    function handleScroll() {
+      setIsOpen(false);
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -98,7 +105,7 @@ export function LocationAutocomplete({ value, onChange, placeholder, className }
       </div>
 
       {isOpen && results.length > 0 && (
-        <ul className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg focus:outline-none dark:border-slate-800 dark:bg-slate-950">
+        <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg focus:outline-none dark:border-slate-800 dark:bg-slate-950">
           {results.map((result) => (
             <li
               key={result.place_id}

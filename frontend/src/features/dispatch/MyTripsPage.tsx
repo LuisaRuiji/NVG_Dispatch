@@ -11,8 +11,6 @@ import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import type { DispatchTripListItem, TripStatus } from "./types";
-import RecommendationPanel from "./components/RecommendationPanel";
-import { getMe } from "@/features/auth/authStore";
 import {
   Calendar,
   Clock,
@@ -52,7 +50,6 @@ export default function MyTripsPage() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const me = getMe();
   const [trips, setTrips] = useState<DispatchTripListItem[]>([]);
   const [statusScope, setStatusScope] = useState<StatusScope>("ACTIVE");
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -198,10 +195,7 @@ export default function MyTripsPage() {
         </div>
       </div>
 
-      {/* Driver-specific Recommendation Panel */}
-      {me?.userId && (
-        <RecommendationPanel filterByDriverId={me.userId} />
-      )}
+
 
       {/* KPI summaries */}
       <div className="grid grid-cols-3 gap-4">

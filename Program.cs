@@ -129,6 +129,8 @@ builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipm
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchShipmentReadService, NVGInventory.Modules.Dispatching.Services.DispatchShipmentReadService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchCspValidationService, NVGInventory.Modules.Dispatching.Services.DispatchCspValidationService>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IGeocodingService, NVGInventory.Modules.Dispatching.Services.GeocodingService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ITravelTimeService, NVGInventory.Modules.Dispatching.Services.TravelTimeService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IOptimizationScoringService, NVGInventory.Modules.Dispatching.Services.OptimizationScoringService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ICspTopsisDispatchOptimizationService, NVGInventory.Modules.Dispatching.Services.CspTopsisDispatchOptimizationService>();

@@ -50,15 +50,58 @@ public sealed class DispatchRecommendationController : ControllerBase
     }
 
     [HttpGet("recommendations/pending")]
-    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin},{RoleNames.Driver}")]
     public async Task<ActionResult<IReadOnlyCollection<DispatchRecommendationResponse>>> GetPending(
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var recommendations = await LoadPendingQuery(now)
-            .OrderByDescending(recommendation => recommendation.GeneratedAt)
-            .ThenBy(recommendation => recommendation.Rank)
+
+        // 1. Fetch active delivered trips
+        var activeDeliveredTrips = await _dbContext.DispatchTrips
+            .Include(t => t.StatusHistory)
+            .Where(t => t.Status == TripStatus.Delivered && t.DriverUserId.HasValue)
             .ToListAsync(cancellationToken);
+
+        // 2. Identify ONLY the most recent delivered trip per driver
+        var latestDeliveredTripIds = activeDeliveredTrips
+            .GroupBy(t => t.DriverUserId!.Value)
+            .Select(g => g.OrderByDescending(t => t.StatusHistory
+                .Where(h => h.ToStatus == TripStatus.Delivered)
+                .Select(h => (DateTime?)h.EventAt)
+                .FirstOrDefault() ?? t.UpdatedAt).First().Id)
+            .ToHashSet();
+
+        // 3. Generate fresh recommendations for each driver's latest delivered trip whenever unassigned draft trips exist
+        var hasDraftTrips = await _dbContext.DispatchTrips.AnyAsync(t => t.Status == TripStatus.Draft, cancellationToken);
+        if (hasDraftTrips)
+        {
+            var deliveredTrips = activeDeliveredTrips
+                .Where(t => latestDeliveredTripIds.Contains(t.Id))
+                .ToList();
+
+            foreach (var deliveredTrip in deliveredTrips)
+            {
+                await _recommendationService.GenerateRecommendationsAsync(deliveredTrip.Id, cancellationToken);
+            }
+        }
+
+        // 4. Load pending recommendations ONLY for each driver's latest delivered trip
+        var rawRecs = await LoadPendingQuery(now)
+            .Where(r => latestDeliveredTripIds.Contains(r.CompletedTripId))
+            .OrderByDescending(r => r.GeneratedAt)
+            .ThenBy(r => r.Rank)
+            .ToListAsync(cancellationToken);
+
+        // 5. Deduplicate recommendations by (CompletedTripId, RecommendedTripId)
+        var recommendations = rawRecs
+            .GroupBy(r => new { r.CompletedTripId, r.RecommendedTripId })
+            .Select(g => g.First())
+            .OrderByDescending(r => r.CompletedTrip.StatusHistory
+                .Where(h => h.ToStatus == TripStatus.Delivered)
+                .Select(h => (DateTime?)h.EventAt)
+                .FirstOrDefault() ?? r.CompletedTrip.UpdatedAt)
+            .ThenBy(r => r.Rank)
+            .ToList();
 
         return Ok(recommendations.Select(MapRecommendation).ToList());
     }
@@ -93,15 +136,35 @@ public sealed class DispatchRecommendationController : ControllerBase
         recommendation.ReviewedAt = now;
 
         var recommendedTrip = await _dbContext.DispatchTrips
+            .Include(t => t.Stops)
             .FirstOrDefaultAsync(t => t.Id == recommendation.RecommendedTripId, cancellationToken);
         if (recommendedTrip is null)
         {
             return NotFound("Recommended trip not found.");
         }
 
+        var pickupStop = recommendedTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
+        var dropoffStop = recommendedTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
+
+        var basePickupTime = (pickupStop?.ScheduledAt.HasValue == true && pickupStop.ScheduledAt.Value > now)
+            ? pickupStop.ScheduledAt.Value
+            : now.AddMinutes(30);
+
+        if (pickupStop != null)
+        {
+            pickupStop.ScheduledAt = basePickupTime;
+        }
+
+        if (dropoffStop != null)
+        {
+            dropoffStop.ScheduledAt = basePickupTime.AddHours(1);
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         var siblingRecommendations = await _dbContext.DispatchRecommendations
             .Where(item =>
-                item.CompletedTripId == recommendation.CompletedTripId &&
+                (item.CompletedTripId == recommendation.CompletedTripId || item.RecommendedTripId == recommendation.RecommendedTripId) &&
                 item.Id != recommendation.Id &&
                 !item.WasAccepted &&
                 !item.WasIgnored)
@@ -127,9 +190,15 @@ public sealed class DispatchRecommendationController : ControllerBase
             },
             tripId: recommendation.RecommendedTripId);
 
+        var completedTrip = await _dbContext.DispatchTrips
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == recommendation.CompletedTripId, cancellationToken);
+
+        var driverUserId = completedTrip?.DriverUserId ?? recommendation.DriverId;
+
         var dispatchCommand = new DispatchTripCommand(
             recommendation.RecommendedTripId,
-            recommendation.DriverId,
+            driverUserId,
             recommendation.TruckId,
             "Accepted via Post-Delivery Recommendation",
             recommendedTrip.RowVersion);
@@ -234,7 +303,8 @@ public sealed class DispatchRecommendationController : ControllerBase
             .Where(recommendation =>
                 recommendation.ExpiresAt > now &&
                 !recommendation.WasAccepted &&
-                !recommendation.WasIgnored);
+                !recommendation.WasIgnored &&
+                recommendation.RecommendedTrip.Status == TripStatus.Draft);
     }
 
     private IQueryable<DispatchRecommendation> LoadBaseQuery()
@@ -267,7 +337,7 @@ public sealed class DispatchRecommendationController : ControllerBase
         var completedTrip = recommendation.CompletedTrip;
         var recommendedTrip = recommendation.RecommendedTrip;
         var completedDropoff = completedTrip.Stops
-            .FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff)
+            .LastOrDefault(stop => stop.StopType == TripStopType.Dropoff)
             ?.LocationText;
         var recommendedPickup = recommendedTrip.Stops
             .FirstOrDefault(stop => stop.StopType == TripStopType.Pickup)

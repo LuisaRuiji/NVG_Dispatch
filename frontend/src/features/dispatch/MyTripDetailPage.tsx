@@ -71,9 +71,11 @@ type ActionModal =
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  const isoStr = iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z";
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 const fromLocalInput = (value: string) => {

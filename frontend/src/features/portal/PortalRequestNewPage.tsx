@@ -40,8 +40,7 @@ const tripTypeOptions = Object.entries(tripTypeLabels) as [TripType, string][];
 
 const fromLocalInput = (value: string) => {
   if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  return value.length === 16 ? value + ":00" : value;
 };
 
 export default function PortalRequestNewPage() {

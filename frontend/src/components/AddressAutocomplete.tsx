@@ -34,15 +34,22 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
     }
   }, [value]);
 
-  // Click outside to close
+  // Click outside and scroll listener to close dropdown
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
+    function handleScroll() {
+      setIsOpen(false);
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll);
+    };
   }, []);
 
   // Debounced search with Davao viewbox bias
@@ -162,7 +169,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
       </div>
 
       {isOpen && results.length > 0 && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
           <ul className="py-2">
             {results.map((item) => (
               <li
