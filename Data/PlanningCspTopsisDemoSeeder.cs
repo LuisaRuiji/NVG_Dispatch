@@ -121,14 +121,21 @@ public sealed class PlanningCspTopsisDemoSeeder
         scenarios["CSP-DEMO-010-TOPSIS-WEIGHTS"] = AddScenario(customer, drivers["juan"].Id, now, basePickup.AddDays(8), "CSP-DEMO-010-TOPSIS-WEIGHTS", true, "CSPTOP010", includeAtw: true);
         var readyToDeliver = AddReadyToDeliverTrip(customer, drivers["juan"].Id, trucks["1008"].Id, now);
 
-        // Scenario 2: real driver/truck overlap, plus maintenance, mismatch and unreachable resources in the common pool.
-        AddSupportTrip(customer, drivers["marco"].Id, trucks["1004"].Id, now, basePickup.AddDays(1), "CSP-DEMO-SUPPORT-EXCLUSION-OVERLAP");
+        // Scenario 1: keep one isolated feasible combination (Juan + 1001).
+        // The rest of the fleet is made unavailable in this exact window through real overlapping trips,
+        // maintenance, capability, or reachability constraints.
+        AddSupportTrip(customer, drivers["allan"].Id, trucks["1002"].Id, now, basePickup, "CSP-DEMO-SUPPORT-GOLD-ALLAN");
+        AddSupportTrip(customer, drivers["rene"].Id, trucks["1003"].Id, now, basePickup, "CSP-DEMO-SUPPORT-GOLD-RENE");
+        AddSupportTrip(customer, drivers["marco"].Id, trucks["1004"].Id, now, basePickup, "CSP-DEMO-SUPPORT-GOLD-MARCO");
+        AddSupportTrip(customer, drivers["nilo"].Id, trucks["1005"].Id, now, basePickup, "CSP-DEMO-SUPPORT-GOLD-NILO");
 
-        // Workload is calculated from non-overlapping planned trips.  This makes Juan/1001 materially stronger
-        // than Allan/1002 and Rene/1003 without hard-coding a ranking in the fixture.
-        AddSupportTrip(customer, drivers["allan"].Id, trucks["1004"].Id, now, basePickup.AddHours(5), "CSP-DEMO-SUPPORT-ALLAN-WORKLOAD");
-        AddSupportTrip(customer, drivers["rene"].Id, trucks["1005"].Id, now, basePickup.AddHours(10), "CSP-DEMO-SUPPORT-RENE-WORKLOAD-1");
-        AddSupportTrip(customer, drivers["rene"].Id, trucks["1006"].Id, now, basePickup.AddHours(15), "CSP-DEMO-SUPPORT-RENE-WORKLOAD-2");
+        // Scenario 2: one driver and three compatible trucks produce a deterministic TOPSIS order.
+        // Marco/1004 supplies the explicit overlap rejection; maintenance, mismatch and reachability
+        // exclude the remaining trucks. Allan, Rene and Nilo are unavailable only for this window.
+        AddSupportTrip(customer, drivers["marco"].Id, trucks["1004"].Id, now, basePickup.AddDays(1), "CSP-DEMO-SUPPORT-EXCLUSION-OVERLAP");
+        AddSupportTrip(customer, drivers["allan"].Id, trucks["1004"].Id, now, basePickup.AddDays(1), "CSP-DEMO-SUPPORT-RANKING-ALLAN");
+        AddSupportTrip(customer, drivers["rene"].Id, trucks["1004"].Id, now, basePickup.AddDays(1), "CSP-DEMO-SUPPORT-RANKING-RENE");
+        AddSupportTrip(customer, drivers["nilo"].Id, trucks["1004"].Id, now, basePickup.AddDays(1), "CSP-DEMO-SUPPORT-RANKING-NILO");
 
         // Scenario 6: each normally valid driver/truck is occupied in this exact window.
         var infeasible = basePickup.AddDays(4);
@@ -267,8 +274,8 @@ public sealed class PlanningCspTopsisDemoSeeder
         {
             Console.WriteLine($"{scenario.Key}: trip {scenario.Value.Id}");
         }
-        Console.WriteLine("CSP-DEMO-001: Gold path — expected best assignment: CSP Demo - Juan BestFit + CSP-TRK-1001.");
-        Console.WriteLine("CSP-DEMO-002: exclusions exercise DRIVER_OVERLAP, TRUCK_OVERLAP, TRUCK_MAINTENANCE, EQUIPMENT_INCOMPATIBLE, PICKUP_UNREACHABLE.");
+        Console.WriteLine("CSP-DEMO-001: one valid Gold-path assignment — CSP Demo - Juan BestFit + CSP-TRK-1001.");
+        Console.WriteLine("CSP-DEMO-002: three ranked options — CSP-TRK-1001, CSP-TRK-1002, CSP-TRK-1003; exclusions exercise DRIVER_OVERLAP, TRUCK_OVERLAP, TRUCK_MAINTENANCE, EQUIPMENT_INCOMPATIBLE, PICKUP_UNREACHABLE.");
         Console.WriteLine("CSP-DEMO-003/004: recommendations expected; Ready handoff blocked until ATW/container is resolved.");
         Console.WriteLine("CSP-DEMO-005: booking blocker; resources are not evaluated. CSP-DEMO-006: evaluated with zero feasible combinations.");
         Console.WriteLine($"CSP-DEMO-011-FINISH-DELIVERY: At Dropoff and ready to confirm delivery — trip {readyToDeliver.Id}.");

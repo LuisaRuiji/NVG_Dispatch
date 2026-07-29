@@ -226,14 +226,14 @@ function FeatureMock({ feature }: { feature: FeatureItem }) {
                         { label: "Mark cargo loaded", done: false }
                     ].map((item) => (
                         <div key={item.label} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
-                            <div className={`flex h-7 w-7 items-center justify-center rounded-full ${item.done ? "bg-accent text-white" : "bg-white text-gray-400"} text-xs font-bold`}>
+                            <div className={`flex h-7 w-7 items-center justify-center rounded-full ${item.done ? "bg-primary text-white" : "bg-white text-gray-400"} text-xs font-bold`}>
                                 {item.done ? <CheckCircle2 size={14} /> : "3"}
                             </div>
                             <span className="text-sm font-medium text-gray-700">{item.label}</span>
                         </div>
                     ))}
                 </div>
-                <button type="button" className="mt-5 w-full rounded-xl bg-accent py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20">
+                <button type="button" className="mt-5 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-white">
                     Mark as Loaded
                 </button>
             </div>
@@ -258,7 +258,7 @@ function FeatureMock({ feature }: { feature: FeatureItem }) {
                     <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
                         <div className="rounded-xl bg-gray-50 p-3">
                             <p className="text-gray-400">Seal No.</p>
-                            <p className="mt-1 font-mono font-bold text-primary">NVG-88421</p>
+                            <p className="mt-1 font-mono font-bold text-primary">VAIA-88421</p>
                         </div>
                         <div className="rounded-xl bg-gray-50 p-3">
                             <p className="text-gray-400">Uploaded By</p>
@@ -291,7 +291,7 @@ function FeatureMock({ feature }: { feature: FeatureItem }) {
                 </div>
                 <div className="mt-6">
                     <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-                        <div className="h-full w-3/5 rounded-full bg-accent" />
+                        <div className="h-full w-3/5 rounded-full bg-primary" />
                     </div>
                     <div className="mt-3 grid grid-cols-5 gap-2 text-[10px] font-semibold text-gray-400">
                         {["Submitted", "Dispatched", "Loaded", "Enroute", "Delivered"].map((step, idx) => (
@@ -334,7 +334,7 @@ function FeatureMock({ feature }: { feature: FeatureItem }) {
                         <span className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-bold ${statusBadgeClasses[row.status]}`}>
                             {row.status}
                         </span>
-                        <button type="button" className="rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-accent/20">
+                        <button type="button" className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white">
                             Dispatch
                         </button>
                     </div>
@@ -391,8 +391,8 @@ export default function LandingPage() {
                 <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-12 lg:grid-cols-2">
                     <FadeInSection className="relative z-10 max-w-2xl">
                         <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
-                            <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-                            NVG Logistics Platform
+                            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                            VAIA Logistics Platform
                         </div>
                         <h1 className="mb-6 text-5xl font-extrabold leading-[1.1] text-primary md:text-6xl lg:text-7xl">
                             Run Your Container Dispatch Without Paper
@@ -407,7 +407,7 @@ export default function LandingPage() {
                             <button
                                 type="button"
                                 onClick={openDemo}
-                                className="flex items-center justify-center gap-2 rounded-xl bg-accent px-8 py-4 font-medium text-white shadow-lg shadow-accent/20 transition-all hover:-translate-y-0.5 hover:bg-accent/90 hover:shadow-xl"
+                                className="flex items-center justify-center gap-2 rounded-lg bg-primary px-8 py-4 font-medium text-white transition-colors hover:bg-[#E65300]"
                             >
                                 Request Demo
                                 <ArrowRight size={18} />
@@ -509,7 +509,7 @@ export default function LandingPage() {
 
                     <FadeInSection delay={240} className="mx-auto mt-10 max-w-4xl rounded-2xl border border-gray-100 bg-background p-8 shadow-sm">
                         <blockquote className="text-xl font-medium leading-relaxed text-primary">
-                            "Before NVG Dispatch, we were coordinating everything through WhatsApp and spreadsheets. Now the whole dispatch lifecycle is in one place."
+                            "Before VAIA, we were coordinating everything through WhatsApp and spreadsheets. Now the whole dispatch lifecycle is in one place."
                         </blockquote>
                         <p className="mt-5 text-sm font-semibold text-gray-700">
                             Operations Manager, Container Trucking Company &mdash; Panabo, Davao
@@ -563,7 +563,7 @@ export default function LandingPage() {
             <section id="workflow" ref={workflowRef} className="bg-primary py-24 text-white">
                 <div className="mx-auto max-w-7xl px-6">
                     <FadeInSection className="mb-16 text-center">
-                        <h2 className="mb-4 text-3xl font-bold md:text-5xl">How NVG Dispatch Works</h2>
+                        <h2 className="mb-4 text-3xl font-bold md:text-5xl">How VAIA Works</h2>
                         <p className="text-lg text-muted-foreground">End-to-end logistics operations for container trucking companies.</p>
                     </FadeInSection>
 
@@ -579,7 +579,7 @@ export default function LandingPage() {
                         <div className="grid grid-cols-1 gap-8 md:grid-cols-5">
                             {workflowSteps.map((step, idx) => (
                                 <FadeInSection key={step.title} delay={idx * 100} className="relative z-10 flex flex-col items-center text-center group">
-                                    <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-slate-900 text-accent shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:border-accent group-hover:bg-accent group-hover:text-white">
+                                    <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-lg border border-white/10 bg-slate-900 text-primary transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-white">
                                         <step.icon size={28} />
                                     </div>
                                     <h4 className="mb-2 font-bold text-white">{step.title}</h4>
@@ -628,12 +628,12 @@ export default function LandingPage() {
                                 "Paperless WAYBILL / ATW / POD workflows",
                                 "Customer shipment request portal",
                                 "Full trip history and audit logging",
-                                "Post-delivery heuristic recommendations",
+                                "Trip Chaining suggestions for the next movement",
                                 "Versioned document upload and verification"
                             ].map((point, idx) => (
                                 <li key={point}>
                                     <FadeInSection delay={idx * 60} className="flex items-start gap-4">
-                                        <div className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+                                        <div className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                                             <CheckCircle2 size={16} />
                                         </div>
                                         <span className="font-medium leading-relaxed text-gray-800">{point}</span>
@@ -647,7 +647,7 @@ export default function LandingPage() {
 
             {/* 7. Call To Action */}
             <section className="relative overflow-hidden bg-[#eef1f6] py-32">
-                <div className="absolute inset-0 bg-accent/[0.02]" />
+                <div className="absolute inset-0 bg-primary/[0.02]" />
                 <FadeInSection direction="up" className="relative z-10 mx-auto max-w-4xl px-6 text-center">
                     <h2 className="mb-8 text-4xl font-extrabold text-primary md:text-6xl">
                         Ready to Replace Your WhatsApp Dispatch Board?
@@ -656,7 +656,7 @@ export default function LandingPage() {
                         <button
                             type="button"
                             onClick={openDemo}
-                            className="rounded-xl bg-accent px-8 py-4 text-lg font-medium text-white shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/90 active:scale-95"
+                            className="rounded-lg bg-primary px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-[#E65300]"
                         >
                             Request Demo
                         </button>
@@ -679,7 +679,7 @@ export default function LandingPage() {
                                 <div className="flex h-8 w-8 items-center justify-center rounded bg-white/10 font-bold text-white">
                                     N
                                 </div>
-                                <span className="text-xl font-bold">NVG Dispatch</span>
+                                <span className="text-xl font-bold">VAIA</span>
                             </div>
                             <p className="mb-8 max-w-sm text-sm text-muted-foreground">
                                 Paperless container dispatch for Mindanao trucking companies.
@@ -719,7 +719,7 @@ export default function LandingPage() {
                     </div>
 
                     <div className="flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 text-xs text-muted-foreground md:flex-row">
-                        <p>&copy; {new Date().getFullYear()} NVG Dispatch. All rights reserved.</p>
+                        <p>&copy; {new Date().getFullYear()} VAIA. All rights reserved.</p>
                         <div className="flex gap-6">
                             <a href="#platform" className="hover:text-white transition-colors">Privacy Policy</a>
                             <a href="#workflow" className="hover:text-white transition-colors">Terms of Service</a>

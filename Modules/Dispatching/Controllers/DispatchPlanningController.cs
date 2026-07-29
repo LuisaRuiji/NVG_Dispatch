@@ -77,19 +77,19 @@ public sealed class DispatchPlanningController : ControllerBase
     }
 
     [HttpGet("trips/{tripId:guid}/decision-support")]
-    public async Task<ActionResult<PlanningDecisionSupportResponse>> GetDecisionSupport(
+    public async Task<ActionResult<DispatcherPlanningDecisionSupportResponse>> GetDecisionSupport(
         Guid tripId,
         CancellationToken cancellationToken)
     {
-        return Ok(await _decisionSupportService.GetDecisionSupportAsync(tripId, cancellationToken));
+        return Ok(ToDispatcherResponse(await _decisionSupportService.GetDecisionSupportAsync(tripId, cancellationToken)));
     }
 
     [HttpPost("trips/{tripId:guid}/validate")]
-    public async Task<ActionResult<PlanningDecisionSupportResponse>> ValidateForDispatch(
+    public async Task<ActionResult<DispatcherPlanningDecisionSupportResponse>> ValidateForDispatch(
         Guid tripId,
         CancellationToken cancellationToken)
     {
-        return Ok(await _decisionSupportService.ValidateForDispatchAsync(tripId, cancellationToken));
+        return Ok(ToDispatcherResponse(await _decisionSupportService.ValidateForDispatchAsync(tripId, cancellationToken)));
     }
 
     [HttpPost("trips/{tripId:guid}/ready")]
@@ -113,4 +113,62 @@ public sealed class DispatchPlanningController : ControllerBase
         User.IsInRole(RoleNames.HeadOfFinance),
         User.IsInRole(RoleNames.Ceo),
         User.IsInRole(RoleNames.Admin));
+
+    // The decision-support service retains the complete CSP-TOPSIS diagnostic model for
+    // audit, development, and thesis analysis. Dispatchers receive only the operational
+    // information needed to make and validate an assignment.
+    private static DispatcherPlanningDecisionSupportResponse ToDispatcherResponse(PlanningDecisionSupportResponse response) => new(
+        response.TripId,
+        response.CanMarkReady,
+        response.ResourcesEvaluated,
+        response.BookingChecks.Select(check => new DispatcherPlanningCheck(check.State, check.Message)).ToArray(),
+        response.Recommendations.Count,
+        response.ExcludedResources.Select(resource => new DispatcherExcludedResource(
+            resource.ResourceType,
+            resource.ResourceLabel,
+            resource.Checks
+                .Where(check => check.State != PlanningCheckState.Passed)
+                .Select(check => check.Message)
+                .ToArray())).ToArray(),
+        response.Recommendations.Select(recommendation => new DispatcherAssignmentSuggestion(
+            recommendation.Rank,
+            recommendation.Rank == 1,
+            recommendation.DriverUserId,
+            recommendation.DriverName,
+            recommendation.TruckAssetId,
+            recommendation.TruckCode,
+            recommendation.TrailerAssetId,
+            recommendation.TrailerCode,
+            recommendation.Reasons,
+            recommendation.Warnings)).ToArray(),
+        response.RecommendationToken);
 }
+
+public sealed record DispatcherPlanningCheck(PlanningCheckState State, string Message);
+
+public sealed record DispatcherExcludedResource(
+    string ResourceType,
+    string ResourceLabel,
+    IReadOnlyCollection<string> Reasons);
+
+public sealed record DispatcherAssignmentSuggestion(
+    int SelectionRank,
+    bool IsRecommended,
+    Guid DriverUserId,
+    string DriverName,
+    Guid TruckAssetId,
+    string TruckCode,
+    Guid? TrailerAssetId,
+    string? TrailerCode,
+    IReadOnlyCollection<string> Reasons,
+    IReadOnlyCollection<string> Warnings);
+
+public sealed record DispatcherPlanningDecisionSupportResponse(
+    Guid TripId,
+    bool CanMarkReady,
+    bool ResourcesEvaluated,
+    IReadOnlyCollection<DispatcherPlanningCheck> BookingChecks,
+    int AvailableAssignmentCount,
+    IReadOnlyCollection<DispatcherExcludedResource> ExcludedResources,
+    IReadOnlyCollection<DispatcherAssignmentSuggestion> Recommendations,
+    string RecommendationToken);

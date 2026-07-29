@@ -9,41 +9,47 @@ using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.Dispatching.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.SignalR;
+using NVGInventory.Hubs;
+using NVGInventory.Hubs.Events;
 
 namespace NVGInventory.Modules.Dispatching.Services;
 
-public interface IPostDeliveryRecommendationService
+public interface ITripChainingSuggestionService
 {
-    Task<List<DispatchRecommendation>> GenerateRecommendationsAsync(Guid tripId, CancellationToken cancellationToken = default);
+    Task<List<DispatchRecommendation>> GenerateSuggestionsAsync(Guid tripId, CancellationToken cancellationToken = default);
 }
 
-public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendationService
+public sealed class TripChainingSuggestionService : ITripChainingSuggestionService
 {
     private readonly InventoryDbContext _dbContext;
     private readonly IDispatchCspValidationService _cspValidationService;
     private readonly ITravelTimeService _travelTimeService;
     private readonly IGeocodingService? _geocodingService;
-    private readonly ILogger<PostDeliveryRecommendationService> _logger;
+    private readonly ILogger<TripChainingSuggestionService> _logger;
+    private readonly IHubContext<VaiaDispatchHub, IVaiaDispatchClient>? _hubContext;
 
-    public PostDeliveryRecommendationService(
+    public TripChainingSuggestionService(
         InventoryDbContext dbContext,
         IDispatchCspValidationService cspValidationService,
         ITravelTimeService travelTimeService,
-        ILogger<PostDeliveryRecommendationService> logger,
-        IGeocodingService? geocodingService = null)
+        ILogger<TripChainingSuggestionService> logger,
+        IGeocodingService? geocodingService = null,
+        IHubContext<VaiaDispatchHub, IVaiaDispatchClient>? hubContext = null)
     {
         _dbContext = dbContext;
         _cspValidationService = cspValidationService;
         _travelTimeService = travelTimeService;
         _logger = logger;
         _geocodingService = geocodingService;
+        _hubContext = hubContext;
     }
 
-    public async Task<List<DispatchRecommendation>> GenerateRecommendationsAsync(Guid tripId, CancellationToken cancellationToken = default)
+    public async Task<List<DispatchRecommendation>> GenerateSuggestionsAsync(Guid tripId, CancellationToken cancellationToken = default)
     {
         var result = new List<DispatchRecommendation>();
 
-        _logger.LogWarning($"[REC-DEBUG] Triggered Post-Delivery Recommendation for Trip: {tripId}");
+        _logger.LogDebug("Generating Trip Chaining suggestions for trip {TripId}", tripId);
         
         var completedTrip = await _dbContext.DispatchTrips
             .Include(t => t.Stops)
@@ -53,26 +59,31 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
 
         if (completedTrip == null || completedTrip.TruckAsset == null || completedTrip.Driver == null)
         {
-            _logger.LogWarning($"[REC-DEBUG] Aborting: completedTrip is null ({completedTrip == null}), TruckAsset is null ({completedTrip?.TruckAsset == null}), or Driver is null ({completedTrip?.Driver == null}).");
+            _logger.LogDebug("Trip Chaining skipped for {TripId}: the trip, truck, or driver assignment is missing", tripId);
             return result;
         }
 
-        var lastStop = completedTrip.Stops
-            .LastOrDefault(s => s.StopType == TripStopType.Dropoff);
+        var currentLocationStop = completedTrip.Status == TripStatus.Delivered
+            ? completedTrip.Stops.LastOrDefault(stop => stop.StopType == TripStopType.Dropoff)
+            : completedTrip.Stops
+                .Where(stop => stop.ActualAt.HasValue)
+                .OrderByDescending(stop => stop.ActualAt)
+                .FirstOrDefault()
+              ?? completedTrip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Pickup);
 
         decimal currentLat = 7.0707m;
         decimal currentLon = 125.6103m;
 
-        if (lastStop != null)
+        if (currentLocationStop != null)
         {
-            if (lastStop.Latitude.HasValue && lastStop.Longitude.HasValue)
+            if (currentLocationStop.Latitude.HasValue && currentLocationStop.Longitude.HasValue)
             {
-                currentLat = lastStop.Latitude.Value;
-                currentLon = lastStop.Longitude.Value;
+                currentLat = currentLocationStop.Latitude.Value;
+                currentLon = currentLocationStop.Longitude.Value;
             }
-            else if (!string.IsNullOrWhiteSpace(lastStop.LocationText) && _geocodingService != null)
+            else if (!string.IsNullOrWhiteSpace(currentLocationStop.LocationText) && _geocodingService != null)
             {
-                var g = await _geocodingService.GeocodeAddressAsync(lastStop.LocationText, cancellationToken);
+                var g = await _geocodingService.GeocodeAddressAsync(currentLocationStop.LocationText, cancellationToken);
                 if (g != null)
                 {
                     currentLat = (decimal)g.Latitude;
@@ -90,13 +101,13 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
 
         foreach (var candidateTrip in unassignedTrips)
         {
-            _logger.LogWarning($"[REC-DEBUG] Evaluating candidate draft trip {candidateTrip.Id}");
+            _logger.LogDebug("Evaluating Trip Chaining candidate {CandidateTripId}", candidateTrip.Id);
             var pickup = candidateTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Pickup);
             var dropoff = candidateTrip.Stops.FirstOrDefault(s => s.StopType == TripStopType.Dropoff);
 
             if (pickup == null || dropoff == null)
             {
-                _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} rejected: Missing pickup or dropoff stop.");
+                _logger.LogDebug("Trip Chaining candidate {CandidateTripId} was excluded because a route stop is missing", candidateTrip.Id);
                 continue;
             }
 
@@ -131,11 +142,14 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
 
             if (!validationResult.IsFeasible) 
             {
-                _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} failed CSP Hard Constraints: {string.Join(", ", validationResult.FailureReasons)}");
+                _logger.LogDebug(
+                    "Trip Chaining candidate {CandidateTripId} failed internal assignment checks: {FailureReasons}",
+                    candidateTrip.Id,
+                    string.Join(", ", validationResult.FailureReasons));
                 continue;
             }
 
-            _logger.LogWarning($"[REC-DEBUG] Candidate {candidateTrip.Id} passed CSP constraints! Calculating TOPSIS...");
+            _logger.LogDebug("Trip Chaining candidate {CandidateTripId} passed internal assignment checks", candidateTrip.Id);
 
             // 2. Compute 6 Thesis Criteria
             DateTime simulatedTime = DateTime.UtcNow;
@@ -298,6 +312,20 @@ public sealed class PostDeliveryRecommendationService : IPostDeliveryRecommendat
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (result.Count > 0 && _hubContext is not null)
+        {
+            await _hubContext.Clients
+                .Group(VaiaDispatchHub.DispatchOpsGroup)
+                .TripChainingSuggestionsGenerated(new TripChainingSuggestionsGeneratedEvent(
+                    completedTrip.Id,
+                    completedTrip.Driver.Username ?? "Unassigned driver",
+                    completedTrip.TruckAsset.AssetCode ?? completedTrip.TruckAsset.PlateNo ?? "Unassigned truck",
+                    DateTime.UtcNow,
+                    result.Count,
+                    completedTrip.Status == TripStatus.Delivered ? "Delivery completed" : "Trip cancelled"));
+        }
+
         return result;
     }
 

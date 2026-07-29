@@ -71,6 +71,7 @@ export interface RefreshTokenResponse {
 export interface CurrentUserResponse {
   userId: string;
   username: string;
+  email?: string | null;
   roles: string[];
   mfaEnabled?: boolean;
   mustChangePassword?: boolean;

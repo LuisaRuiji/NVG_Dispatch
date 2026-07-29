@@ -66,7 +66,7 @@ public sealed class DemoDataSeeder
         SupplierService supplierService,
         IHostEnvironment environment,
         IPasswordHashService passwordHashService,
-        NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService recommendationService,
+        NVGInventory.Modules.Dispatching.Services.ITripChainingSuggestionService recommendationService,
         ILogger<DemoDataSeeder> logger)
     {
         _dbContext = dbContext;
@@ -85,7 +85,7 @@ public sealed class DemoDataSeeder
         _logger = logger;
     }
 
-    private readonly NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService _recommendationService;
+    private readonly NVGInventory.Modules.Dispatching.Services.ITripChainingSuggestionService _recommendationService;
 
     public async Task SeedAsync(bool resetDatabase = true, CancellationToken cancellationToken = default)
     {
@@ -997,7 +997,7 @@ public sealed class DemoDataSeeder
             }
 
             var completedTrip = completedTrips[groupIndex];
-            var recs = await _recommendationService.GenerateRecommendationsAsync(completedTrip.Id, cancellationToken);
+            var recs = await _recommendationService.GenerateSuggestionsAsync(completedTrip.Id, cancellationToken);
             var activeForDriver = 0;
 
             foreach (var rec in recs.OrderBy(rec => rec.Rank))

@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import DataTable from "@/components/DataTable";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import EmptyState from "@/components/EmptyState";
 import ToastHost from "@/components/ToastHost";
-import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
@@ -14,11 +13,10 @@ import { getMe } from "@/features/auth/authStore";
 import type {
   DispatchTripDetail,
   DispatchTripListItem,
-  TripDocumentState,
   TripStatus
 } from "./types";
 import { statusLabels } from "./types";
-import { RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDot, FileWarning, Filter, MoreHorizontal, RefreshCw, ShieldAlert, Truck, UserRound, X } from "lucide-react";
 import RecommendationPanel from "./components/RecommendationPanel";
 
 type CustomerOption = { id: string; name: string };
@@ -50,12 +48,164 @@ type ActionModal =
   | { type: "CANCEL"; trip: DispatchTripListItem; remarks: string; eventAt: string }
   | null;
 
-const docStateClasses: Record<TripDocumentState, string> = {
-  MISSING: "border-slate-200 text-slate-500",
-  UPLOADED: "border-amber-200 text-amber-700",
-  VERIFIED: "border-emerald-200 text-emerald-700",
-  REJECTED: "border-rose-200 text-rose-700"
-};
+type FilterOption = { value: string; label: string };
+
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange
+}: {
+  label: string;
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectRef = useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (!selectRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("mousedown", closeOnOutsidePress);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={selectRef} className="relative">
+      <p className="text-xs uppercase text-muted-foreground">{label}</p>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`${label}: ${selected.label}`}
+        onClick={() => setOpen((value) => !value)}
+        className="mt-1.5 flex h-10 w-full items-center justify-between rounded-lg border border-border bg-card px-3 text-left text-sm text-foreground transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="truncate">{selected.label}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div role="listbox" aria-label={label} className="filter-select-menu absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-card p-1">
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex min-h-9 w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors ${isSelected ? "bg-accent font-semibold text-foreground" : "text-foreground hover:bg-muted"}`}
+              >
+                <span className="truncate">{option.label}</span>
+                {isSelected ? <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type PaginationToken = number | "leading-ellipsis" | "trailing-ellipsis";
+
+function getPaginationTokens(page: number, totalPages: number): PaginationToken[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  const tokens: PaginationToken[] = [1];
+  const start = Math.max(2, page - 1);
+  const end = Math.min(totalPages - 1, page + 1);
+
+  if (start > 2) tokens.push("leading-ellipsis");
+  for (let current = start; current <= end; current += 1) tokens.push(current);
+  if (end < totalPages - 1) tokens.push("trailing-ellipsis");
+  tokens.push(totalPages);
+  return tokens;
+}
+
+function TripListPagination({
+  page,
+  totalPages,
+  totalCount,
+  pageSize,
+  loading,
+  onPageChange,
+  onPageSizeChange
+}: {
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  pageSize: number;
+  loading: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  const [jumpPage, setJumpPage] = useState(String(page));
+  const tokens = getPaginationTokens(page, totalPages);
+
+  useEffect(() => setJumpPage(String(page)), [page]);
+
+  const submitJump = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const requestedPage = Number(jumpPage);
+    if (!Number.isInteger(requestedPage)) return;
+    onPageChange(Math.max(1, Math.min(requestedPage, totalPages)));
+  };
+  const firstResult = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastResult = Math.min(page * pageSize, totalCount);
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+      <span aria-live="polite">{loading ? "Loading page..." : `${firstResult}-${lastResult} of ${totalCount.toLocaleString()}`}</span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => onPageChange(page - 1)} aria-label="Previous page"><ChevronLeft className="h-4 w-4" />Previous</Button>
+        <div className="flex items-center gap-1" aria-label="Trip list pages">
+          {tokens.map((token) => typeof token === "number" ? (
+            <button
+              key={token}
+              type="button"
+              disabled={loading}
+              aria-label={`Page ${token}`}
+              aria-current={token === page ? "page" : undefined}
+              onClick={() => onPageChange(token)}
+              className={`grid h-9 min-w-9 place-items-center rounded-lg border px-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 ${token === page ? "border-primary bg-accent text-foreground" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+            >
+              {token}
+            </button>
+          ) : <span key={token} className="grid h-9 w-5 place-items-center text-muted-foreground" aria-hidden="true">...</span>)}
+        </div>
+        <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => onPageChange(page + 1)} aria-label="Next page">Next<ChevronRight className="h-4 w-4" /></Button>
+        <form className="ml-1 flex items-center gap-1.5" onSubmit={submitJump}>
+          <label htmlFor="trip-list-page" className="sr-only">Go to page</label>
+          <input id="trip-list-page" type="number" min={1} max={totalPages} inputMode="numeric" value={jumpPage} onChange={(event) => setJumpPage(event.target.value)} disabled={loading} className="h-9 w-16 rounded-lg border border-border bg-card px-2 text-center text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" />
+          <Button variant="outline" size="sm" type="submit" disabled={loading}>Go to</Button>
+        </form>
+        <label className="ml-1 flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground">
+          <span className="sr-only">Rows per page</span>
+          Rows
+          <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))} disabled={loading} className="bg-transparent text-xs font-semibold text-foreground focus:outline-none disabled:opacity-50">
+            <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
@@ -85,66 +235,79 @@ const formatWindow = (trip: DispatchTripListItem) => {
   return `${startDate} ${startTime}-${endTime}`;
 };
 
-const mobilePrimaryActionLabel = (trip: DispatchTripListItem) => {
-  if (trip.status === "DRAFT") return "Open to Prepare Dispatch";
-  if (trip.status === "DELIVERED" && !trip.closeDocumentReady) return "Open to Resolve Documents";
-  if (trip.status === "DELIVERED" && trip.closeDocumentReady) return "Open to Review Close";
-  if (trip.status === "FAILED_ATTEMPT") return "Open to Resolve Failed";
-  if (trip.status === "ON_HOLD") return "Open to Review Hold";
-  return "Open Trip";
+type ReadinessTone = "alert" | "warning" | "success" | "info" | "neutral";
+
+type TripReadiness = {
+  label: string;
+  detail?: string;
+  tone: ReadinessTone;
+  needsAttention: boolean;
 };
 
-function PodBadge({ trip }: { trip: DispatchTripListItem }) {
-  const state = trip.podState ?? "MISSING";
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-        docStateClasses[state]
-      }`}
-    >
-      {state}
-    </span>
-  );
+function getTripReadiness(trip: DispatchTripListItem): TripReadiness {
+  if (!trip.driverUsername && !trip.truckAssetCode) {
+    return { label: "Blocked", detail: "Driver and truck not assigned", tone: "alert", needsAttention: true };
+  }
+  if (!trip.driverUsername) return { label: "Blocked", detail: "Driver not assigned", tone: "alert", needsAttention: true };
+  if (!trip.truckAssetCode) return { label: "Blocked", detail: "Truck not assigned", tone: "alert", needsAttention: true };
+
+  const documentBlockers = trip.missingRequiredDocumentCount + trip.rejectedRequiredDocumentCount;
+  if (documentBlockers > 0) {
+    return {
+      label: "Blocked",
+      detail: `${documentBlockers} document${documentBlockers === 1 ? "" : "s"} require attention`,
+      tone: "alert",
+      needsAttention: true
+    };
+  }
+  if (trip.podPending || trip.podState === "MISSING" || trip.podState === "REJECTED") {
+    return { label: "At risk", detail: "POD requires review", tone: "warning", needsAttention: true };
+  }
+  if (trip.status === "READY_FOR_DISPATCH" && trip.closeDocumentReady) {
+    return { label: "Ready", detail: "All requirements complete", tone: "success", needsAttention: false };
+  }
+  if (["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP", "LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"].includes(trip.status)) {
+    return { label: "In transit", detail: statusLabels[trip.status], tone: "info", needsAttention: false };
+  }
+  if (trip.status === "ON_HOLD" || trip.status === "FAILED_ATTEMPT") {
+    return { label: statusLabels[trip.status], detail: "Operational recovery required", tone: "warning", needsAttention: true };
+  }
+  return { label: statusLabels[trip.status], detail: "Review current trip state", tone: "neutral", needsAttention: false };
 }
 
-function CloseDocsBadge({ trip }: { trip: DispatchTripListItem }) {
-  const countsText = `${trip.missingRequiredDocumentCount} missing / ${trip.rejectedRequiredDocumentCount} rejected`;
-  const rawReason = trip.closeDocumentBlockReason ?? "";
-  const inlineReason = (() => {
-    if (trip.closeDocumentReady) {
-      return null;
-    }
+function getTripActionLabel(trip: DispatchTripListItem, canOperate: boolean) {
+  if (!canOperate) return "Open trip";
+  const readiness = getTripReadiness(trip);
+  if (!trip.driverUsername || !trip.truckAssetCode) return "Assign assets";
+  if (readiness.label === "Blocked") return "Complete documents";
+  if (readiness.label === "At risk") return "Review trip";
+  return "Open trip";
+}
 
-    if (rawReason.includes("ATW") || rawReason.includes("Waybill")) {
-      return "Required docs incomplete";
-    }
+const readinessStyles: Record<ReadinessTone, string> = {
+  alert: "border-destructive/30 bg-destructive/10 text-destructive",
+  warning: "border-warning/40 bg-warning/15 text-warning-foreground",
+  success: "border-success/35 bg-success/10 text-success",
+  info: "border-info/30 bg-info/10 text-info",
+  neutral: "border-border bg-muted text-muted-foreground"
+};
 
-    return "Document blockers present";
-  })();
+function ReadinessCell({ trip }: { trip: DispatchTripListItem }) {
+  const readiness = getTripReadiness(trip);
+  return <div className="min-w-0"><span className={`inline-flex max-w-full items-center gap-1 truncate rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${readinessStyles[readiness.tone]}`}>{readiness.needsAttention ? <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> : null}<span className="truncate">{readiness.label}</span></span><p className="mt-1.5 line-clamp-2 text-xs leading-4 text-muted-foreground">{readiness.detail}</p></div>;
+}
 
-  if (trip.closeDocumentReady) {
-    return (
-      <div className="flex flex-col items-start gap-1">
-        <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-          Ready
-        </span>
-        <span className="text-[11px] text-muted-foreground">{countsText}</span>
-      </div>
-    );
-  }
+function AssignmentCell({ trip }: { trip: DispatchTripListItem }) {
+  const missingDriver = !trip.driverUsername;
+  const missingTruck = !trip.truckAssetCode;
+  return <div className="min-w-0 space-y-1.5 text-xs"><p className={`flex min-w-0 items-center gap-1.5 ${missingDriver ? "font-semibold text-destructive" : "text-foreground"}`}>{missingDriver ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}<span className="truncate">Driver: {trip.driverUsername ?? "Unassigned"}</span></p><p className={`flex min-w-0 items-center gap-1.5 ${missingTruck ? "font-semibold text-destructive" : "text-foreground"}`}>{missingTruck ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <Truck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}<span className="truncate">Truck: {trip.truckAssetCode ?? "Unassigned"}</span></p></div>;
+}
 
-  return (
-    <div className="flex flex-col items-start gap-1">
-      <span
-        className="rounded-full border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700"
-        title={trip.closeDocumentBlockReason ?? "Document blockers present"}
-      >
-        Blocked
-      </span>
-      <span className="text-[11px] font-medium text-rose-700">{inlineReason}</span>
-      <span className="text-[11px] text-muted-foreground">{countsText}</span>
-    </div>
-  );
+function getRouteLabel(trip: DispatchTripListItem) {
+  const origin = trip.pickupLocation?.trim();
+  const destination = trip.dropoffLocation?.trim();
+  if (origin && destination) return `${origin} to ${destination}`;
+  return origin ?? destination ?? "Route not scheduled";
 }
 
 export default function DispatchTripsPage() {
@@ -157,7 +320,7 @@ export default function DispatchTripsPage() {
 
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
   const [trips, setTrips] = useState<DispatchTripListItem[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -176,6 +339,8 @@ export default function DispatchTripsPage() {
   });
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [actionModal, setActionModal] = useState<ActionModal>(null);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const tripRequestSequence = useRef(0);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / pageSize)), [totalCount, pageSize]);
 
@@ -197,6 +362,7 @@ export default function DispatchTripsPage() {
 
   const loadTrips = async (forcePage?: number) => {
     const targetPage = forcePage ?? page;
+    const requestSequence = ++tripRequestSequence.current;
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -215,14 +381,16 @@ export default function DispatchTripsPage() {
       const result = await api<PagedResult<DispatchTripListItem>>(`/api/dispatch/trips?${params.toString()}`, {
         method: "GET"
       });
+      if (requestSequence !== tripRequestSequence.current) return;
       setTrips(result.items ?? []);
       setTotalCount(result.totalCount ?? 0);
       setPage(result.page ?? targetPage);
     } catch (e: any) {
+      if (requestSequence !== tripRequestSequence.current) return;
       console.error(e);
       show(e?.message ?? "Failed to load trips.", "error");
     } finally {
-      setLoading(false);
+      if (requestSequence === tripRequestSequence.current) setLoading(false);
     }
   };
 
@@ -246,7 +414,7 @@ export default function DispatchTripsPage() {
 
   useEffect(() => {
     loadTrips();
-  }, [page]);
+  }, [page, pageSize]);
 
   useEffect(() => {
     if (!menuOpenId) return;
@@ -257,10 +425,6 @@ export default function DispatchTripsPage() {
 
   const openTrip = (tripId: string) => {
     nav(`/dispatch/trips/${tripId}`);
-  };
-
-  const openTimeline = (tripId: string) => {
-    nav(`/dispatch/trips/${tripId}#trip-timeline`);
   };
 
   const rowClass = (trip: DispatchTripListItem) => {
@@ -339,12 +503,17 @@ export default function DispatchTripsPage() {
     }
   };
 
+  const activeTripCount = trips.filter((trip) => ["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP", "LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"].includes(trip.status)).length;
+  const documentAttentionCount = trips.filter((trip) => !trip.closeDocumentReady || trip.podState === "MISSING" || trip.podState === "REJECTED").length;
+  const exceptionCount = trips.filter((trip) => trip.status === "ON_HOLD" || trip.status === "FAILED_ATTEMPT").length;
+  const activeFilterCount = [filters.status !== "ALL", Boolean(filters.driverId), Boolean(filters.customerId), Boolean(filters.truckId), Boolean(filters.pickupFrom), Boolean(filters.pickupTo), Boolean(filters.deliveredFrom), Boolean(filters.deliveredTo), filters.podStatus !== "ALL"].filter(Boolean).length;
+  const clearFilters = () => setFilters({ status: "ALL", driverId: "", customerId: "", truckId: "", pickupFrom: "", pickupTo: "", deliveredFrom: "", deliveredTo: "", podStatus: "ALL" });
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title="Trip List"
-        description="Filter and manage dispatch trips across the fleet."
+        title="Trip records"
+        description="Review dispatch status, document readiness, and operational exceptions across the fleet."
         breadcrumbs={
           <nav className="flex items-center gap-2" aria-label="Breadcrumb">
             <Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">
@@ -362,77 +531,41 @@ export default function DispatchTripsPage() {
         }
       />
 
-      {canOperate ? <RecommendationPanel /> : null}
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Trip record summary">
+        {[
+          { label: "Loaded trips", value: totalCount, detail: "Matching current filters", icon: Truck, tone: "text-primary", onClick: clearFilters },
+          { label: "In execution", value: activeTripCount, detail: "On this page", icon: CircleDot, tone: "text-info", onClick: () => setFilters((current) => ({ ...current, status: "DISPATCHED" })) },
+          { label: "Need documents", value: documentAttentionCount, detail: "On this page", icon: FileWarning, tone: "text-warning-foreground", onClick: () => setFilters((current) => ({ ...current, podStatus: "PENDING" })) },
+          { label: "Exceptions", value: exceptionCount, detail: "On this page", icon: ShieldAlert, tone: "text-destructive", onClick: () => setFilters((current) => ({ ...current, status: "ON_HOLD" })) }
+        ].map(({ label, value, detail, icon: Icon, tone, onClick }) => (
+          <button key={label} type="button" onClick={onClick} className="operations-kpi text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className={`operations-kpi__icon ${tone}`}><Icon className="h-5 w-5" /></span><span><span className="operations-kpi__value block tabular-nums">{value}</span><span className="operations-kpi__label block">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{detail}</span></span>
+          </button>
+        ))}
+      </section>
 
-      <div className="surface-card p-6">
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
-          <div>
-            <label className="text-xs uppercase text-muted-foreground">Status</label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value as FilterState["status"] }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              <option value="ALL">All</option>
-              {Object.entries(statusLabels).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
+      <section className="surface-card relative z-20 overflow-visible" aria-labelledby="trip-filter-title">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+          <div><h2 id="trip-filter-title" className="text-sm font-semibold text-foreground">Filter trip records</h2><p className="mt-0.5 text-xs text-muted-foreground">Narrow the list by assignment, status, and time window.</p></div>
+          <div className="flex items-center gap-2">
+            {activeFilterCount > 0 ? <span className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-foreground">{activeFilterCount} active</span> : null}
+            {activeFilterCount > 0 ? <Button variant="ghost" size="sm" onClick={clearFilters}><X className="h-4 w-4" />Clear</Button> : null}
+            <Button variant="outline" size="sm" onClick={() => setAdvancedFiltersOpen((open) => !open)}><Filter className="h-4 w-4" />{advancedFiltersOpen ? "Fewer filters" : "More filters"}</Button>
           </div>
-          <div>
-            <label className="text-xs uppercase text-muted-foreground">Driver</label>
-            <select
-              value={filters.driverId}
-              onChange={(e) => setFilters((prev) => ({ ...prev, driverId: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              <option value="">All drivers</option>
-              {drivers.map((driver) => (
-                <option key={driver.id} value={driver.id}>
-                  {driver.username}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs uppercase text-muted-foreground">Customer</label>
-            <select
-              value={filters.customerId}
-              onChange={(e) => setFilters((prev) => ({ ...prev, customerId: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              <option value="">All customers</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs uppercase text-muted-foreground">Truck</label>
-            <select
-              value={filters.truckId}
-              onChange={(e) => setFilters((prev) => ({ ...prev, truckId: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              <option value="">All trucks</option>
-              {trucks.map((truck) => (
-                <option key={truck.id} value={truck.id}>
-                  {truck.assetCode}
-                </option>
-              ))}
-            </select>
-          </div>
+        </div>
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5">
+          <FilterSelect label="Status" value={filters.status} onChange={(value) => setFilters((prev) => ({ ...prev, status: value as FilterState["status"] }))} options={[{ value: "ALL", label: "All" }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
+          <FilterSelect label="Driver" value={filters.driverId} onChange={(value) => setFilters((prev) => ({ ...prev, driverId: value }))} options={[{ value: "", label: "All drivers" }, ...drivers.map((driver) => ({ value: driver.id, label: driver.username }))]} />
+          <FilterSelect label="Customer" value={filters.customerId} onChange={(value) => setFilters((prev) => ({ ...prev, customerId: value }))} options={[{ value: "", label: "All customers" }, ...customers.map((customer) => ({ value: customer.id, label: customer.name }))]} />
+          <FilterSelect label="Truck" value={filters.truckId} onChange={(value) => setFilters((prev) => ({ ...prev, truckId: value }))} options={[{ value: "", label: "All trucks" }, ...trucks.map((truck) => ({ value: truck.id, label: truck.assetCode }))]} />
+          {advancedFiltersOpen ? <>
           <div>
             <label className="text-xs uppercase text-muted-foreground">Pickup From</label>
             <input
               type="datetime-local"
               value={filters.pickupFrom}
               onChange={(e) => setFilters((prev) => ({ ...prev, pickupFrom: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              className="mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
             />
           </div>
           <div>
@@ -441,7 +574,7 @@ export default function DispatchTripsPage() {
               type="datetime-local"
               value={filters.pickupTo}
               onChange={(e) => setFilters((prev) => ({ ...prev, pickupTo: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              className="mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
             />
           </div>
           <div>
@@ -450,7 +583,7 @@ export default function DispatchTripsPage() {
               type="datetime-local"
               value={filters.deliveredFrom}
               onChange={(e) => setFilters((prev) => ({ ...prev, deliveredFrom: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              className="mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
             />
           </div>
           <div>
@@ -459,156 +592,88 @@ export default function DispatchTripsPage() {
               type="datetime-local"
               value={filters.deliveredTo}
               onChange={(e) => setFilters((prev) => ({ ...prev, deliveredTo: e.target.value }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              className="mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
             />
           </div>
-          <div>
-            <label className="text-xs uppercase text-muted-foreground">POD Status</label>
-            <select
-              value={filters.podStatus}
-              onChange={(e) => setFilters((prev) => ({ ...prev, podStatus: e.target.value as FilterState["podStatus"] }))}
-              className="mt-2 h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              <option value="ALL">All</option>
-              <option value="VERIFIED">Verified</option>
-              <option value="PENDING">Pending</option>
-            </select>
-          </div>
+          <FilterSelect label="POD status" value={filters.podStatus} onChange={(value) => setFilters((prev) => ({ ...prev, podStatus: value as FilterState["podStatus"] }))} options={[{ value: "ALL", label: "All" }, { value: "VERIFIED", label: "Verified" }, { value: "PENDING", label: "Pending" }]} />
+          </> : null}
         </div>
-      </div>
+      </section>
 
       {loading && trips.length === 0 ? (
         <LoadingSkeleton rows={6} />
       ) : trips.length === 0 ? (
         <EmptyState title="No trips" description="No trips match the current filters." />
       ) : (
-        <div className="surface-card p-3 md:p-6">
-          <div className="grid gap-3 md:hidden">
+        <section className="surface-card overflow-hidden" aria-labelledby="trip-records-title">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+            <div><h2 id="trip-records-title" className="text-lg font-bold text-foreground">Trip list</h2><p className="mt-0.5 text-xs text-muted-foreground">{totalCount.toLocaleString()} matching trip{totalCount === 1 ? "" : "s"}</p></div>
+            <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span></div>
+          </header>
+          <div className="grid gap-3 p-4 md:hidden">
             {trips.map((trip) => (
-              <button
+              <article
                 key={trip.id}
-                type="button"
-                className={`rounded-2xl border border-border bg-card p-4 text-left shadow-card transition-all duration-200 active:scale-[0.99] ${rowClass(trip)}`}
-                onClick={() => openTrip(trip.id)}
+                className={`rounded-lg border border-border bg-card p-4 ${rowClass(trip)}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Container</p>
-                    <p className="mt-1 font-mono text-lg font-semibold text-foreground">
-                      {trip.containerNumber ?? "Container pending"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">Trip {trip.id.slice(0, 8)}</p>
+                  <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Trip</p>
+                      <p className="mt-1 font-mono text-base font-bold text-foreground">{trip.containerNumber ?? trip.id.slice(0, 8).toUpperCase()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{trip.customer?.name ?? "Customer pending"}</p>
                   </div>
-                  <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
+                  <ReadinessCell trip={trip} />
                 </div>
-                <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-sm">
-                  <p className="font-medium text-foreground">{trip.pickupLocation ?? "Pickup not set"}</p>
-                  <p className="mt-1 text-muted-foreground">{trip.dropoffLocation ?? "Dropoff not set"}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">{formatWindow(trip)}</p>
+                <div className="mt-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm">
+                  <p className="font-medium text-foreground">{getRouteLabel(trip)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatWindow(trip)}</p>
                 </div>
-                <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-                  <p>Driver: {trip.driverUsername ?? "Unassigned"}</p>
-                  <p>Truck: {trip.truckAssetCode ?? "Unassigned"}</p>
-                  <p>Customer: {trip.customer?.name ?? "-"}</p>
-                </div>
-                <div className="mt-3 flex flex-wrap items-start gap-2">
-                  <PodBadge trip={trip} />
-                  <CloseDocsBadge trip={trip} />
-                </div>
-                <div className="mt-4 flex h-12 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground">
-                  {mobilePrimaryActionLabel(trip)}
-                </div>
-              </button>
+                <div className="mt-3"><AssignmentCell trip={trip} /></div>
+                <Button className="mt-4 w-full" onClick={() => openTrip(trip.id)}>{getTripActionLabel(trip, canOperate)}<ArrowRight className="h-4 w-4" /></Button>
+              </article>
             ))}
           </div>
           <div className="hidden md:block">
-          <DataTable>
-            <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
+          <DataTable className="rounded-none border-0" tableClassName="table-fixed">
+            <thead className="sticky top-0 z-10 bg-muted text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
               <tr>
-                <th className="px-6 py-4 text-left">Trip</th>
-                <th className="px-6 py-4 text-left">Customer</th>
-                <th className="px-6 py-4 text-left">Driver</th>
-                <th className="px-6 py-4 text-left">Truck</th>
-                <th className="px-6 py-4 text-left">Status</th>
-                <th className="px-6 py-4 text-left">Window</th>
-                <th className="px-6 py-4 text-left">POD Status</th>
-                <th className="px-6 py-4 text-left">Close Docs</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="w-[12%] px-3 py-3 text-left">Trip</th>
+                <th className="w-[25%] px-3 py-3 text-left">Customer and route</th>
+                <th className="w-[16%] px-3 py-3 text-left">Schedule</th>
+                <th className="w-[19%] px-3 py-3 text-left">Assignments</th>
+                <th className="w-[14%] px-3 py-3 text-left">Readiness</th>
+                <th className="w-[14%] px-3 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/50">
-              {trips.map((trip) => (
+            <tbody className="divide-y divide-border">
+              {trips.map((trip) => {
+                const readiness = getTripReadiness(trip);
+                const hasSecondaryActions = canHold(trip) || canResolveFailed(trip) || canCancel(trip);
+                return (
                 <tr
                   key={trip.id}
-                  className={`cursor-pointer text-sm hover:bg-muted/30 ${rowClass(trip)}`}
+                  className={`cursor-pointer text-sm transition-colors hover:bg-muted/70 ${readiness.needsAttention ? "border-l-[3px] border-l-destructive" : ""}`}
                   onClick={() => openTrip(trip.id)}
                 >
-                  <td className="px-6 py-4 font-medium text-foreground">{trip.id.slice(0, 8)}</td>
-                  <td className="px-6 py-4">{trip.customer?.name ?? "-"}</td>
-                  <td className="px-6 py-4">{trip.driverUsername ?? "-"}</td>
-                  <td className="px-6 py-4">{trip.truckAssetCode ?? "-"}</td>
-                  <td className="px-6 py-4">
-                    <button
-                      className="inline-flex"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openTimeline(trip.id);
-                      }}
-                    >
-                      <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 text-xs text-muted-foreground">
-                    <div>{formatWindow(trip)}</div>
-                    {typeof trip.plannedDurationMinutes === "number" ? (
-                      <div className="text-[11px] text-muted-foreground/80">{trip.plannedDurationMinutes} min</div>
-                    ) : null}
-                  </td>
-                  <td className="px-6 py-4">
-                    <PodBadge trip={trip} />
-                  </td>
-                  <td className="px-6 py-4">
-                    <CloseDocsBadge trip={trip} />
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openTrip(trip.id);
-                        }}
-                      >
-                        Open
-                      </Button>
-                      {canHold(trip) ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActionModal({
-                              type: "HOLD",
-                              trip,
-                              remarks: "",
-                              eventAt: toLocalInput(new Date().toISOString())
-                            });
-                          }}
-                        >
-                          On Hold
-                        </Button>
-                      ) : null}
-                      {canResolveFailed(trip) || canCancel(trip) ? (
-                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 py-3.5"><p className="truncate font-mono text-sm font-bold text-foreground">{trip.containerNumber ?? trip.id.slice(0, 8).toUpperCase()}</p><p className="mt-1 truncate text-xs text-muted-foreground">{statusLabels[trip.status]}</p></td>
+                  <td className="px-3 py-3.5"><p className="truncate font-semibold text-foreground">{trip.customer?.name ?? "Customer pending"}</p><p className="mt-1 truncate text-xs text-muted-foreground" title={getRouteLabel(trip)}>{getRouteLabel(trip)}</p></td>
+                  <td className="px-3 py-3.5"><p className={`line-clamp-2 text-xs font-medium ${trip.latePickup || trip.lateDelivery ? "text-destructive" : "text-foreground"}`}>{formatWindow(trip)}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{trip.latePickup || trip.lateDelivery ? "Schedule risk" : typeof trip.plannedDurationMinutes === "number" ? `${trip.plannedDurationMinutes} min window` : "Schedule pending"}</p></td>
+                  <td className="px-3 py-3.5"><AssignmentCell trip={trip} /></td>
+                  <td className="px-3 py-3.5"><ReadinessCell trip={trip} /></td>
+                  <td className="px-3 py-3.5 text-right">
+                    <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
+                      <Button size="sm" className="min-w-0 flex-1 px-2 text-xs" onClick={() => openTrip(trip.id)}><span className="truncate">{getTripActionLabel(trip, canOperate)}</span><ArrowRight className="h-3.5 w-3.5 shrink-0" /></Button>
+                      {hasSecondaryActions ? (
+                      <div className="relative shrink-0">
                           <button
-                            className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
+                            type="button"
+                            className="grid h-9 w-8 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                             onClick={() => setMenuOpenId((prev) => (prev === trip.id ? null : trip.id))}
-                          >
-                            ...
-                          </button>
+                            aria-label={`More actions for trip ${trip.containerNumber ?? trip.id.slice(0, 8)}`}
+                          ><MoreHorizontal className="h-4 w-4" /></button>
                           {menuOpenId === trip.id ? (
-                            <div className="absolute right-0 z-20 mt-2 w-44 rounded-md border border-border bg-white p-1 shadow-lg">
+                            <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border border-border bg-card p-1">
+                              {canHold(trip) ? <button className="w-full rounded-md px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-muted" onClick={() => { setMenuOpenId(null); setActionModal({ type: "HOLD", trip, remarks: "", eventAt: toLocalInput(new Date().toISOString()) }); }}>Place on hold</button> : null}
                               {canResolveFailed(trip) ? (
                                 <button
                                   className="w-full rounded px-3 py-2 text-left text-xs hover:bg-muted"
@@ -638,36 +703,21 @@ export default function DispatchTripsPage() {
                               ) : null}
                             </div>
                           ) : null}
-                        </div>
-                      ) : null}
+                      </div>
+                    ) : null}
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </DataTable>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </div>
+          <TripListPagination page={page} totalPages={totalPages} totalCount={totalCount} pageSize={pageSize} loading={loading} onPageChange={setPage} onPageSizeChange={(nextPageSize) => { setPageSize(nextPageSize); setPage(1); }} />
+        </section>
       )}
+
+      {canOperate ? <RecommendationPanel /> : null}
 
       {actionModal ? (
         <div

@@ -40,19 +40,27 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))"
-        }
+        },
+        success: "hsl(var(--success))",
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))"
+        },
+        info: "hsl(var(--info))",
+        progress: "hsl(var(--progress))"
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)"
+        sm: "calc(var(--radius) - 4px)",
+        xl: "10px"
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular"]
       },
       boxShadow: {
-        card: "0 12px 24px -18px rgba(15, 23, 42, 0.25)"
+        card: "none"
       }
     }
   },

@@ -8,24 +8,29 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: 216 33% 97%;
-    --foreground: 0 0% 10%;
+    --background: 210 40% 98%;
+    --foreground: 215 57% 17%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
-    --primary: 215 51% 25%;
+    --card-foreground: 215 57% 17%;
+    --primary: 22 100% 50%;
     --primary-foreground: 0 0% 100%;
     --secondary: 214 32% 91%;
-    --secondary-foreground: 0 0% 10%;
+    --secondary-foreground: 215 36% 26%;
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
-    --accent: 9 76% 57%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 22 100% 96%;
+    --accent-foreground: 20 92% 38%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 221 83% 53%;
-    --radius: 0.9rem;
+    --ring: 22 100% 50%;
+    --success: 158 65% 24%;
+    --warning: 43 96% 56%;
+    --warning-foreground: 30 74% 29%;
+    --info: 220 75% 45%;
+    --progress: 243 75% 59%;
+    --radius: 0.5rem;
   }
 
   .dark {
@@ -57,6 +62,7 @@
     @apply bg-background text-foreground;
     font-feature-settings: "ss01" on, "ss02" on;
     min-height: 100vh;
+    font-family: Inter, system-ui, sans-serif;
   }
 }
 
@@ -92,11 +98,19 @@
 
 @layer components {
   .surface-card {
-    @apply rounded-2xl border border-border bg-card shadow-card transition-all duration-200;
+    @apply rounded-xl border border-border bg-card transition-colors duration-150;
   }
 
   .surface-soft {
-    @apply rounded-2xl border border-border bg-muted/70 transition-all duration-200;
+    @apply rounded-xl border border-border bg-muted/70 transition-colors duration-150;
+  }
+
+  /* A data table may overflow horizontally on narrower workspaces, but the page
+     remains the only vertical scroller. This prevents a table from creating an
+     empty vertical scroll frame after its last row. */
+  .data-table-scroll {
+    overflow-x: auto;
+    overflow-y: clip;
   }
 
   .chip {
@@ -264,5 +278,146 @@
   }
   .leaflet-pane {
     z-index: 5 !important;
+  }
+}
+
+@layer base {
+  .vaia-density-compact .vaia-shell main > div {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .vaia-font-small {
+    font-size: 15px;
+  }
+
+  .vaia-font-large {
+    font-size: 18px;
+  }
+
+  .vaia-reduce-motion *,
+  .vaia-reduce-motion *::before,
+  .vaia-reduce-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes filter-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* The authenticated product is a single light, high-density operations workspace.
+   These guardrails make legacy route classes inherit the canonical VAIA surface
+   treatment while each route retains its existing data and interaction logic. */
+@layer components {
+  .shadow,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl,
+  .shadow-card,
+  .shadow-primary,
+  .shadow-accent {
+    box-shadow: none !important;
+  }
+
+  .vaia-shell {
+    background: #F8FAFC;
+    color: #243447;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .vaia-shell .shadow,
+  .vaia-shell .shadow-sm,
+  .vaia-shell .shadow-md,
+  .vaia-shell .shadow-lg,
+  .vaia-shell .shadow-xl,
+  .vaia-shell .shadow-2xl,
+  .vaia-shell .shadow-card,
+  .vaia-shell .shadow-primary,
+  .vaia-shell .shadow-accent {
+    box-shadow: none !important;
+  }
+
+  .vaia-shell .glass {
+    background: #FFFFFF !important;
+    backdrop-filter: none;
+  }
+
+  .vaia-shell .bg-nvg-gradient,
+  .vaia-shell .bg-gradient-to-br,
+  .vaia-shell .bg-gradient-to-r {
+    background-image: none !important;
+  }
+
+  .vaia-shell .hover-lift:hover,
+  .vaia-shell .nav-link-shift:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .vaia-shell .rounded-2xl,
+  .vaia-shell .rounded-3xl {
+    border-radius: 10px;
+  }
+
+  .operations-kpi {
+    display: flex;
+    min-height: 92px;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    background: #FFFFFF;
+    padding: 16px;
+  }
+
+  .operations-kpi__icon {
+    display: grid;
+    height: 22px;
+    width: 22px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: #FD5D01;
+  }
+
+  .operations-kpi__label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #64748B;
+  }
+
+  .operations-kpi__value {
+    margin-top: 2px;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    color: #122442;
+  }
+
+  .filter-select-menu {
+    transform-origin: top center;
+    animation: filter-menu-in 160ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .filter-select-menu {
+      animation: none;
+    }
   }
 }

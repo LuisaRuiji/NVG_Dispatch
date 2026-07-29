@@ -130,7 +130,7 @@ builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.PlanningDec
 builder.Services.AddSingleton<NVGInventory.Modules.Dispatching.Services.PlanningRecommendationSnapshotStore>();
 builder.Services.AddSingleton<NVGInventory.Modules.Dispatching.Services.IPlanningAvailabilityNotifier, NVGInventory.Modules.Dispatching.Services.PlanningAvailabilityNotifier>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IGeneratedWaybillService, NVGInventory.Modules.Dispatching.Services.GeneratedWaybillService>();
-builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IPostDeliveryRecommendationService, NVGInventory.Modules.Dispatching.Services.PostDeliveryRecommendationService>();
+builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.ITripChainingSuggestionService, NVGInventory.Modules.Dispatching.Services.TripChainingSuggestionService>();
 builder.Services.AddScoped<NVGInventory.Modules.ShipmentRequests.Services.IShipmentRequestTripDispatchGateway, NVGInventory.Modules.Dispatching.Services.DispatchShipmentRequestTripDispatchGateway>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.IDispatchShipmentReadService, NVGInventory.Modules.Dispatching.Services.DispatchShipmentReadService>();
 builder.Services.AddScoped<NVGInventory.Modules.Dispatching.Services.DispatchCustomerService>();

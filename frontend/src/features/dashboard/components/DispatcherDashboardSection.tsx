@@ -55,6 +55,9 @@ export default function DispatcherDashboardSection({ kpis, loading }: Props) {
     onRecommendationGenerated: () => {
       window.dispatchEvent(new Event("nvg:recommendations-refresh"));
     },
+    onTripChainingSuggestionsGenerated: () => {
+      window.dispatchEvent(new Event("nvg:recommendations-refresh"));
+    },
     onTripStatusChanged: () => {
       clearDashboardKpiCache();
     },
@@ -66,7 +69,7 @@ export default function DispatcherDashboardSection({ kpis, loading }: Props) {
   return (
     <DashboardSection
       title="Dispatch operations"
-      description="Review active trips, resolve assignment blockers, and confirm next-job recommendations."
+      description="Review active trips, resolve assignment blockers, and confirm recommended next movements."
       loading={loading && dispatch === null}
       empty={dispatch === null}
       actions={[]}

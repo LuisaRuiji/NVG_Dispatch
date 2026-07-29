@@ -217,6 +217,18 @@ public sealed class DispatchTripQueryService
         return await ExecuteTripListQueryAsync(query, requiredTypes, page, pageSize, cancellationToken);
     }
 
+    public async Task<PagedQueryResult<DispatchTripListItem>> GetReadyForDispatchTripsAsync(
+        int page,
+        int pageSize,
+        DispatchActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMonitoringAccess(actor);
+        var requiredTypes = DispatchDocumentRules.GetRequiredDocumentTypes(_options).ToArray();
+        var query = _builder.ReadyForDispatch(_builder.Base(actor));
+        return await ExecuteTripListQueryAsync(query, requiredTypes, page, pageSize, cancellationToken);
+    }
+
     public async Task<PagedQueryResult<DispatchTripListItem>> GetOnHoldTripsAsync(
         int page,
         int pageSize,

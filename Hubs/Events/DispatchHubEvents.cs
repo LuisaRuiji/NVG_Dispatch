@@ -30,6 +30,14 @@ public sealed record RecommendationGeneratedEvent(
     string DeliveredAt,
     int RecommendationCount);
 
+public sealed record TripChainingSuggestionsGeneratedEvent(
+    Guid CurrentTripId,
+    string DriverName,
+    string TruckPlate,
+    DateTime AvailableAt,
+    int SuggestionCount,
+    string AvailabilityReason);
+
 public sealed record DriverLocationUpdatedEvent(
     Guid TripId,
     Guid DriverId,

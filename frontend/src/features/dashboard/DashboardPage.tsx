@@ -110,7 +110,7 @@ export default function DashboardPage() {
       <ToastHost toasts={toasts} />
       <PageHeader
         title={dashboardRole === "Dispatcher" ? "Dispatcher Dashboard" : "Dashboard"}
-        description={dashboardRole === "Dispatcher" ? "Review active trips, assignment blockers, and next-job recommendations." : "Role-aware operations snapshot across your current responsibilities."}
+        description={dashboardRole === "Dispatcher" ? "Review active trips, assignment blockers, and Trip Chaining suggestions." : "Role-aware operations snapshot across your current responsibilities."}
         actions={
           <>
             <Badge variant="outline" className="text-[10px] animate-pulse">LIVE</Badge>

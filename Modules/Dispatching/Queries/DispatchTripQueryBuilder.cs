@@ -135,8 +135,15 @@ public sealed class DispatchTripQueryBuilder
 
     public IQueryable<Trip> Active(IQueryable<Trip> query)
     {
-        return query.Where(t => t.Status != TripStatus.Closed && t.Status != TripStatus.Cancelled);
+        return query.Where(t =>
+            t.Status != TripStatus.Draft &&
+            t.Status != TripStatus.ReadyForDispatch &&
+            t.Status != TripStatus.Closed &&
+            t.Status != TripStatus.Cancelled);
     }
+
+    public IQueryable<Trip> ReadyForDispatch(IQueryable<Trip> query) =>
+        query.Where(t => t.Status == TripStatus.ReadyForDispatch);
 
     public IQueryable<Trip> OnHold(IQueryable<Trip> query)
     {

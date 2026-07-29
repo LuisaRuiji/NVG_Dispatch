@@ -60,6 +60,8 @@ import {
 import ChangePasswordPage from "@/features/auth/ChangePasswordPage";
 import RoleGate, { getSafeReturnRoute } from "@/components/RoleGate";
 import { initTheme } from "@/lib/theme";
+import { initializeSettingsPreferences } from "@/features/settings/preferences";
+import SettingsPage from "@/features/settings/SettingsPage";
 
 setUnauthorizedHandler(async () => {
   if (await refreshSession()) {
@@ -74,6 +76,7 @@ setUnauthorizedHandler(async () => {
 });
 
 initTheme();
+initializeSettingsPreferences();
 
 function MustChangePasswordGuard({ children }: { children: React.ReactNode }) {
   const me = getMe();
@@ -116,6 +119,14 @@ function App() {
         <Route path="/login" element={<LandingPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route element={<AppLayout />}>
+          <Route
+            path="/settings"
+            element={
+              <RoleGate roles={["SuperAdmin", "Admin", "Dispatcher", "Manager", "HeadOfFinance", "Driver", "Customer", "InventoryOfficer", "CEO", "Owner"]}>
+                <SettingsPage />
+              </RoleGate>
+            }
+          />
           <Route
             path="/dispatch"
             element={
@@ -377,7 +388,7 @@ function App() {
           <Route
             path="/admin/customers"
             element={
-              <RoleGate roles={["Manager", "Dispatcher", "Admin", "SuperAdmin"]}>
+              <RoleGate roles={["Manager", "Admin", "SuperAdmin"]}>
                 <AdminCustomersPage />
               </RoleGate>
             }

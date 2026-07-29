@@ -24,6 +24,7 @@ export function applyTheme(theme: Theme) {
 }
 
 export function initTheme() {
-  const stored = getStoredTheme();
-  applyTheme(stored ?? "light");
+  // Settings intentionally exposes only the documented light workspace until
+  // every authenticated surface has complete dark-theme semantic parity.
+  applyTheme("light");
 }

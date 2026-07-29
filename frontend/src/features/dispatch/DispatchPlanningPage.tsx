@@ -3,15 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarDays,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
   CircleDashed,
   Clock3,
   ClipboardCheck,
-  FileCheck2,
-  MapPin,
+  Filter,
   Medal,
+  MoreHorizontal,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -20,7 +21,6 @@ import {
 } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
-import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,9 +103,12 @@ type PlanningBoard = {
 };
 
 type PlanningCheck = { code: string; state: "Passed" | "Warning" | "Blocked"; message: string };
-type PlanningExcludedResource = { resourceType: string; resourceId: string; resourceLabel: string; checks: PlanningCheck[] };
-type PlanningContribution = { criterion: string; direction: string; weight: number; rawValue: number; weightedValue: number; explanation: string };
+type PlanningExcludedResource = { resourceType: string; resourceId: string; resourceLabel: string; reasons: string[]; checks: PlanningCheck[] };
 type PlanningRecommendation = {
+  selectionRank: number;
+  isRecommended: boolean;
+  // Diagnostic fields are retained only for the internal, non-rendered legacy branch
+  // until the client contract transition is complete.
   rank: number;
   driverUserId: string;
   driverName: string;
@@ -114,7 +117,7 @@ type PlanningRecommendation = {
   trailerAssetId?: string | null;
   trailerCode?: string | null;
   score: number;
-  criteriaContributions: PlanningContribution[];
+  criteriaContributions: { criterion: string; weight: number; explanation: string }[];
   reasons: string[];
   warnings: string[];
 };
@@ -123,7 +126,7 @@ type PlanningDecisionSupport = {
   canMarkReady: boolean;
   resourcesEvaluated: boolean;
   bookingChecks: PlanningCheck[];
-  feasibleCombinationCount: number;
+  availableAssignmentCount: number;
   excludedResources: PlanningExcludedResource[];
   recommendations: PlanningRecommendation[];
   recommendationToken: string;
@@ -165,6 +168,20 @@ type PlanForm = {
 };
 
 const emptyResources: ResourceSnapshot = { drivers: [], trucks: [], trailers: [] };
+const emptyDecisionSupport: PlanningDecisionSupport = {
+  tripId: "",
+  canMarkReady: false,
+  resourcesEvaluated: false,
+  bookingChecks: [],
+  availableAssignmentCount: 0,
+  excludedResources: [],
+  recommendations: [],
+  recommendationToken: "",
+  generatedAt: "",
+  expiresAt: "",
+  criteriaWeightVersion: "",
+  availabilityVersion: 0
+};
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "Unscheduled";
@@ -197,55 +214,149 @@ const defaultFutureTime = () => {
   return toLocalInput(date.toISOString());
 };
 
-function BookingCard({ booking, onStart, busy }: { booking: ApprovedBooking; onStart: (booking: ApprovedBooking) => void; busy: boolean }) {
+type QueueFilter = "all" | "attention" | "due" | "planning" | "ready";
+type QueuePriority = "high" | "medium" | "low";
+type PlanningQueueItem =
+  | { kind: "booking"; id: string; booking: ApprovedBooking; priority: QueuePriority; needsAttention: boolean; dueSoon: boolean }
+  | { kind: "trip"; id: string; trip: PlanningTrip; priority: QueuePriority; needsAttention: boolean; dueSoon: boolean };
+
+const isDueSoon = (value?: string | null) => {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  const now = Date.now();
+  return !Number.isNaN(time) && time >= now && time <= now + 2 * 60 * 60 * 1000;
+};
+
+const isPastDue = (value?: string | null) => {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return !Number.isNaN(time) && time < Date.now();
+};
+
+const bookingNeedsAttention = (booking: ApprovedBooking) => !booking.hasAtw || isPastDue(booking.requestedPickupTime);
+const tripNeedsAttention = (trip: PlanningTrip) => trip.status !== "READY_FOR_DISPATCH" && (trip.conflicts.length > 0 || trip.missingRequirements.length > 0 || trip.atwState !== "VERIFIED" || isPastDue(trip.pickupScheduledAt));
+
+const priorityForBooking = (booking: ApprovedBooking): QueuePriority =>
+  bookingNeedsAttention(booking) ? "high" : isDueSoon(booking.requestedPickupTime) ? "medium" : "low";
+
+const priorityForTrip = (trip: PlanningTrip): QueuePriority => {
+  if (tripNeedsAttention(trip)) return "high";
+  if (isDueSoon(trip.pickupScheduledAt)) return "medium";
+  return "low";
+};
+
+function Requirement({ label, ready, optional = false }: { label: string; ready: boolean; optional?: boolean }) {
+  const status = ready ? "Ready" : optional ? "Optional" : "Missing";
   return (
-    <article className="rounded-xl border border-border bg-background p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{booking.bookingNumber || `Request ${booking.requestId.slice(0, 8).toUpperCase()}`}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{booking.customerName}</p>
-        </div>
-        <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">APPROVED</span>
-      </div>
-      <div className="mt-4 space-y-2 text-sm">
-        <p className="truncate font-medium"><MapPin className="mr-1 inline h-3.5 w-3.5 text-muted-foreground" />{booking.pickupLocation}</p>
-        <p className="truncate pl-[18px] text-muted-foreground">to {booking.dropoffLocation}</p>
-        <p className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{formatDateTime(booking.requestedPickupTime)}</p>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
-        <span>{formatContainer(booking.containerSize)}</span><span>·</span><span>{formatTripType(booking.tripType)}</span>
-        <span className={`ml-auto inline-flex items-center gap-1 font-semibold ${booking.hasAtw ? "text-success" : "text-warning-foreground"}`}>
-          {booking.hasAtw ? <FileCheck2 className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />} {booking.hasAtw ? "ATW attached" : "ATW missing"}
-        </span>
-      </div>
-      <Button className="mt-4 w-full" size="sm" onClick={() => onStart(booking)} disabled={busy}>Start planning <ChevronRight className="h-4 w-4" /></Button>
-    </article>
+    <div className="flex min-w-0 items-center gap-1.5 text-xs">
+      {ready ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" /> : optional ? <CircleDashed className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />}
+      <span className="truncate text-muted-foreground">{label}</span>
+      <span className={`ml-auto shrink-0 font-medium ${ready ? "text-emerald-700 dark:text-emerald-300" : optional ? "text-muted-foreground" : "text-destructive"}`}>{status}</span>
+    </div>
   );
 }
 
-function TripPlanCard({ trip, onOpen }: { trip: PlanningTrip; onOpen: (tripId: string) => void }) {
-  const isReady = trip.status === "READY_FOR_DISPATCH";
+function PlanningQueueRow({
+  item,
+  busy,
+  onStart,
+  onOpen,
+  onView
+}: {
+  item: PlanningQueueItem;
+  busy: boolean;
+  onStart: (booking: ApprovedBooking) => void;
+  onOpen: (tripId: string) => void;
+  onView: (tripId: string) => void;
+}) {
+  const isBooking = item.kind === "booking";
+  const booking = isBooking ? item.booking : null;
+  const trip = isBooking ? null : item.trip;
+  const priorityStyles = {
+    high: { rail: "bg-[#991B1B]", text: "text-[#991B1B]", action: "border-[#FECACA] bg-[#FEE2E2]" },
+    medium: { rail: "bg-[#92400E]", text: "text-[#92400E]", action: "border-[#FDE68A] bg-[#FEF3C7]" },
+    low: { rail: "bg-[#065F46]", text: "text-[#065F46]", action: "border-[#A7F3D0] bg-[#D1FAE5]" }
+  }[item.priority];
+
+  const identifier = booking?.bookingNumber || trip?.bookingNumber || `${isBooking ? "Request" : "Trip"} ${item.id.slice(0, 8).toUpperCase()}`;
+  const customer = booking?.customerName || trip?.customerName || "Customer pending";
+  const pickup = booking?.pickupLocation || trip?.pickupLocation || "Pickup pending";
+  const dropoff = booking?.dropoffLocation || trip?.dropoffLocation || "Drop-off pending";
+  const pickupTime = booking?.requestedPickupTime || trip?.pickupScheduledAt;
+  const dropoffTime = trip?.dropoffScheduledAt;
+  const isReady = trip?.status === "READY_FOR_DISPATCH";
+
+  const nextAction = (() => {
+    if (booking) {
+      if (!booking.hasAtw) return { message: "ATW still needs review", label: "Start planning" };
+      if (isPastDue(booking.requestedPickupTime)) return { message: "Confirm a future pickup time", label: "Set schedule" };
+      return { message: "Ready to build a trip plan", label: "Start planning" };
+    }
+    if (!trip) return { message: "Review plan details", label: "Open trip" };
+    if (trip.conflicts.length > 0) return { message: "Resolve assignment conflict", label: "Resolve conflict" };
+    if (!trip.driverUserId) return { message: "Driver assignment required", label: "Assign driver" };
+    if (!trip.truckAssetId) return { message: "Truck assignment required", label: "Assign truck" };
+    if (!trip.containerNumber) return { message: "Container number required", label: "Add container" };
+    if (trip.atwState !== "VERIFIED") return { message: "ATW verification required", label: "Review documents" };
+    if (isReady) return { message: "All dispatch gates have passed", label: "Review ready plan" };
+    return { message: "Schedule and assignments need review", label: "Complete plan" };
+  })();
+
+  const handleAction = () => {
+    if (booking) onStart(booking);
+    if (trip) onOpen(trip.tripId);
+  };
+
   return (
-    <article className={`rounded-xl border bg-background p-4 shadow-sm ${trip.conflicts.length > 0 ? "border-destructive/35" : isReady ? "border-success/35" : "border-border"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{trip.bookingNumber || `Trip ${trip.tripId.slice(0, 8).toUpperCase()}`}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{trip.customerName}</p>
+    <article className="relative grid min-w-[1080px] grid-cols-[78px_minmax(130px,0.85fr)_minmax(200px,1.35fr)_minmax(175px,1fr)_220px_40px] items-center gap-3 overflow-hidden rounded-xl border border-border bg-card p-4">
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${priorityStyles.rail}`} />
+      <div className="pl-3">
+        <p className={`text-[11px] font-bold uppercase tracking-[0.08em] ${priorityStyles.text}`}>{item.priority}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{isBooking ? "New booking" : isReady ? "Ready plan" : "Trip plan"}</p>
+      </div>
+
+      <div className="min-w-0 border-l border-border pl-3">
+        <p className="truncate font-mono text-sm font-bold text-foreground">{identifier}</p>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{customer}</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{formatContainer(booking?.containerSize || trip?.containerSize)}</span>
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{formatTripType(booking?.tripType || trip?.tripType)}</span>
         </div>
-        {trip.conflicts.length > 0 ? <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] font-semibold text-destructive"><AlertTriangle className="h-3 w-3" /> CONFLICT</span> : isReady ? <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-1 text-[10px] font-semibold text-success"><CheckCircle2 className="h-3 w-3" /> READY</span> : <span className="rounded-full border border-border bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">PLANNING</span>}
       </div>
-      <div className="mt-4 space-y-2 text-sm">
-        <p className="truncate font-medium"><MapPin className="mr-1 inline h-3.5 w-3.5 text-muted-foreground" />{trip.pickupLocation || "Pickup pending"}</p>
-        <p className="truncate pl-[18px] text-muted-foreground">to {trip.dropoffLocation || "Dropoff pending"}</p>
-        <p className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{formatDateTime(trip.pickupScheduledAt)}–{trip.dropoffScheduledAt ? formatDateTime(trip.dropoffScheduledAt) : "end pending"}</p>
+
+      <div className="grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-l border-border pl-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">{pickup}</p>
+          <p className={`mt-1 text-xs ${isPastDue(pickupTime) ? "font-medium text-destructive" : isDueSoon(pickupTime) ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Pickup · {formatDateTime(pickupTime)}</p>
+        </div>
+        <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">{dropoff}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Drop-off · {formatDateTime(dropoffTime)}</p>
+        </div>
       </div>
-      <dl className="mt-4 grid grid-cols-3 gap-2 border-y border-border py-3 text-xs">
-        <div className="min-w-0"><dt className="text-muted-foreground">Driver</dt><dd className="mt-1 truncate font-semibold">{trip.driverUsername || "Unassigned"}</dd></div>
-        <div className="min-w-0"><dt className="text-muted-foreground">Truck</dt><dd className="mt-1 truncate font-semibold">{trip.truckAssetCode || "Unassigned"}</dd></div>
-        <div className="min-w-0"><dt className="text-muted-foreground">Trailer</dt><dd className="mt-1 truncate font-semibold">{trip.trailerAssetCode || "Optional"}</dd></div>
-      </dl>
-      {!isReady && trip.missingRequirements.length > 0 ? <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">Next: {trip.missingRequirements.slice(0, 2).join(" · ")}</p> : null}
-      <Button className="mt-4 w-full" variant={isReady ? "default" : "outline"} size="sm" onClick={() => onOpen(trip.tripId)}>{isReady ? "Review ready plan" : "Continue planning"} <ChevronRight className="h-4 w-4" /></Button>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-l border-border pl-3">
+        <Requirement label="Driver" ready={Boolean(trip?.driverUserId)} />
+        <Requirement label="Truck" ready={Boolean(trip?.truckAssetId)} />
+        <Requirement label="Trailer" ready={Boolean(trip?.trailerAssetId)} optional />
+        <Requirement label="ATW" ready={booking ? booking.hasAtw : trip?.atwState === "VERIFIED"} />
+      </div>
+
+      <div className={`rounded-lg border p-3 ${priorityStyles.action}`}>
+        <p className={`text-xs font-semibold ${priorityStyles.text}`}>{nextAction.message}</p>
+        <Button
+          className={`planning-action mt-2 w-full ${isReady ? "bg-[#065F46] text-white hover:bg-[#064E3B]" : ""}`}
+          size="sm"
+          onClick={handleAction}
+          disabled={busy && isBooking}
+        >
+          {busy && isBooking ? "Starting…" : nextAction.label}
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {trip ? <button type="button" className="planning-icon-action grid h-10 w-10 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onView(trip.tripId)} aria-label={`Open ${identifier} details`} title={`Open ${identifier} details`}><MoreHorizontal className="h-4 w-4" /></button> : <span aria-hidden="true" />}
     </article>
   );
 }
@@ -270,7 +381,7 @@ function ResourceSelect({
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}{optional ? " (optional)" : ""}</Label>
-      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm">
         <option value="">{optional ? `No ${label.toLowerCase()}` : `Select ${label.toLowerCase()}`}</option>
         {options.map((option) => (
           <option key={option.id} value={option.id} disabled={!option.isAvailable && option.id !== value && !isManager}>
@@ -297,7 +408,7 @@ function PlanningDrawer({
   const [trip, setTrip] = useState<DispatchTripDetail | null>(null);
   const [form, setForm] = useState<PlanForm | null>(null);
   const [resources, setResources] = useState<ResourceSnapshot>(emptyResources);
-  const [decisionSupport, setDecisionSupport] = useState<PlanningDecisionSupport | null>(null);
+  const [decisionSupport, setDecisionSupport] = useState<PlanningDecisionSupport>(emptyDecisionSupport);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -446,7 +557,7 @@ function PlanningDrawer({
   const markReady = async () => {
     if (!trip || !form || !decisionSupport) return;
     if (!decisionSupport.canMarkReady) return showToast("Resolve all dispatch blockers before marking the trip ready.", "error");
-    if (!selectedRecommendation && !form.remarks.trim()) return showToast("Add an override reason for a valid manual assignment outside the ranked list.", "error");
+    if (!selectedRecommendation && !form.remarks.trim()) return showToast("Add an override reason for a valid manual assignment outside the current suggestions.", "error");
     setSaving(true);
     try {
       await api(`/api/dispatch/planning/trips/${trip.id}/ready`, {
@@ -454,7 +565,7 @@ function PlanningDrawer({
         body: JSON.stringify({
           rowVersion: trip.rowVersion,
           recommendationToken: decisionSupport.recommendationToken,
-          selectedRank: selectedRecommendation?.rank ?? null,
+          selectedRank: selectedRecommendation?.selectionRank ?? null,
           overrideReason: selectedRecommendation ? null : form.remarks.trim()
         })
       });
@@ -492,30 +603,39 @@ function PlanningDrawer({
               </section>
 
               <section aria-labelledby="booking-validation-heading">
-                <div className="flex items-center justify-between gap-3"><h3 id="booking-validation-heading" className="text-sm font-semibold">Booking pre-validation</h3><span className="text-xs text-muted-foreground">Server-verified gates</span></div>
+                <div className="flex items-center justify-between gap-3"><h3 id="booking-validation-heading" className="text-sm font-semibold">Booking checks</h3><span className="text-xs text-muted-foreground">Required before dispatch</span></div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {(decisionSupport?.bookingChecks ?? []).map((check) => <div key={check.code} className={`flex items-start gap-2 border-b py-2 text-sm ${check.state === "Blocked" ? "border-destructive/30" : "border-border"}`}>{check.state === "Passed" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" /> : check.state === "Warning" ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}<div><p className="font-medium">{check.code.replace(/_/g, " ")}</p><p className="mt-0.5 text-xs text-muted-foreground">{check.message}</p></div></div>)}
+                  {(decisionSupport?.bookingChecks ?? []).map((check) => <div key={check.message} className={`flex items-start gap-2 border-b py-2 text-sm ${check.state === "Blocked" ? "border-destructive/30" : "border-border"}`}>{check.state === "Passed" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" /> : check.state === "Warning" ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />}<p className="font-medium">{check.message}</p></div>)}
                 </div>
               </section>
 
-              <section aria-labelledby="csp-heading">
-                <div className="flex items-center justify-between gap-3"><div><h3 id="csp-heading" className="text-sm font-semibold">CSP feasibility summary</h3><p className="mt-1 text-xs text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Resources were not evaluated because a booking-level requirement is blocked." : "Only combinations that pass availability, overlap, equipment, capacity, document, and reachability constraints are ranked."}</p></div><span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Not evaluated" : `${decisionSupport?.feasibleCombinationCount ?? 0} valid`}</span></div>
+              <section aria-labelledby="assignment-check-heading">
+                <div className="flex items-center justify-between gap-3"><div><h3 id="assignment-check-heading" className="text-sm font-semibold">Assignment check</h3><p className="mt-1 text-xs text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Complete the booking checks before reviewing available resources." : "Availability, schedule, and equipment requirements are checked for this plan."}</p></div><span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Not ready" : decisionSupport?.availableAssignmentCount ? `${decisionSupport.availableAssignmentCount} options` : "Needs attention"}</span></div>
               </section>
 
               <section aria-labelledby="recommendations-heading">
+                {decisionSupport && false ? <>
                 <div className="flex items-center justify-between gap-3"><div><h3 id="recommendations-heading" className="text-sm font-semibold">TOPSIS ranked assignments</h3><p className="mt-1 text-xs text-muted-foreground">{decisionSupport ? `Generated ${formatDateTime(decisionSupport.generatedAt)} · expires ${formatDateTime(decisionSupport.expiresAt)} · ${decisionSupport.criteriaWeightVersion}` : "Loading ranked combinations…"}</p></div><Medal className="h-5 w-5 text-warning-foreground" /></div>
                 <div className="mt-3 space-y-3">
                   {decisionSupport?.recommendations.length ? decisionSupport.recommendations.map((recommendation) => <article key={`${recommendation.driverUserId}-${recommendation.truckAssetId}-${recommendation.trailerAssetId ?? "none"}`} className={`rounded-xl border p-3 ${selectedRecommendation?.rank === recommendation.rank ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">Rank {recommendation.rank} · {recommendation.driverName} + {recommendation.truckCode}{recommendation.trailerCode ? ` + ${recommendation.trailerCode}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">Score {Math.round(recommendation.score * 100)}% · {recommendation.reasons[0]}</p></div><Button type="button" variant="outline" size="sm" onClick={() => form && setForm({ ...form, driverUserId: recommendation.driverUserId, truckAssetId: recommendation.truckAssetId, trailerAssetId: recommendation.trailerAssetId ?? "" })}>Use rank {recommendation.rank}</Button></div><div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">{recommendation.criteriaContributions.map((item) => <p key={item.criterion}>{item.criterion} ({Math.round(item.weight * 100)}%): {item.explanation}</p>)}</div>{recommendation.warnings.length ? <p className="mt-2 text-xs text-warning-foreground">Warning: {recommendation.warnings.join(" · ")}</p> : null}</article>) : <p className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "No TOPSIS ranking was generated: resources were not evaluated." : "Resources were evaluated, but no valid combination remains to rank."}</p>}
                 </div>
+                </> : <>
+                  <div><h3 id="recommendations-heading" className="text-sm font-semibold">Recommended assignment</h3><p className="mt-1 text-xs text-muted-foreground">Choose the suggested resource set or review a viable alternative.</p></div>
+                  <div className="mt-3 space-y-3">
+                    {decisionSupport?.recommendations.length ? decisionSupport.recommendations.map((recommendation) => <article key={`${recommendation.driverUserId}-${recommendation.truckAssetId}-${recommendation.trailerAssetId ?? "none"}`} className={`rounded-xl border p-3 ${selectedRecommendation?.selectionRank === recommendation.selectionRank ? "border-primary bg-primary/5" : recommendation.isRecommended ? "border-primary/35 bg-primary/5" : "border-border bg-muted/20"}`}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{recommendation.isRecommended ? "Recommended" : "Alternative"}</p><p className="mt-1 text-sm font-semibold">{recommendation.driverName} + {recommendation.truckCode}{recommendation.trailerCode ? ` + ${recommendation.trailerCode}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{recommendation.reasons.join("; ")}</p></div><Button type="button" variant={recommendation.isRecommended ? "default" : "outline"} size="sm" onClick={() => form && setForm({ ...form, driverUserId: recommendation.driverUserId, truckAssetId: recommendation.truckAssetId, trailerAssetId: recommendation.trailerAssetId ?? "" })}>{recommendation.isRecommended ? "Use recommended" : "Use alternative"}</Button></div>{recommendation.warnings.length ? <p className="mt-2 text-xs text-warning-foreground">Warning: {recommendation.warnings.join("; ")}</p> : null}</article>) : <p className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Complete the booking checks before resource suggestions can be made." : "No valid resource combination is available for this schedule. Review the assignment issues below."}</p>}
+                  </div>
+                </>}
               </section>
 
               <section aria-labelledby="excluded-heading">
-                <div className="flex items-center justify-between gap-3"><h3 id="excluded-heading" className="text-sm font-semibold">Excluded resources and reasons</h3><span className="text-xs text-muted-foreground">Hard CSP exclusions</span></div>
+                <div className="flex items-center justify-between gap-3"><h3 id="excluded-heading" className="text-sm font-semibold">Assignment issues</h3><span className="text-xs text-muted-foreground">Unavailable resources</span></div>
+                {decisionSupport && false ? <>
                 <div className="mt-3 space-y-2">{decisionSupport?.excludedResources.length ? decisionSupport.excludedResources.map((resource) => <div key={`${resource.resourceType}-${resource.resourceId}`} className="border-b border-border pb-2 text-sm"><p className="font-medium">{resource.resourceType} · {resource.resourceLabel}</p><p className="mt-1 text-xs text-muted-foreground">{resource.checks.filter((check) => check.state === "Blocked").map((check) => check.message).join(" · ")}</p></div>) : <p className="text-sm text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Not applicable: resources were not evaluated." : "No resources are excluded for the saved schedule."}</p>}</div>
+                </> : <div className="mt-3 space-y-2">{decisionSupport?.excludedResources.length ? decisionSupport.excludedResources.map((resource) => <div key={`${resource.resourceType}-${resource.resourceLabel}`} className="border-b border-border pb-2 text-sm"><p className="font-medium">{resource.resourceType}: {resource.resourceLabel}</p><p className="mt-1 text-xs text-muted-foreground">{resource.reasons.join("; ")}</p></div>) : <p className="text-sm text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Complete the booking checks first." : "No assignment issues were found for the saved schedule."}</p>}</div>}
               </section>
 
               <section aria-labelledby="resources-heading">
-                <div className="flex items-center justify-between gap-3"><h3 id="resources-heading" className="text-sm font-semibold">Manual assignment controls</h3><span className="text-xs text-muted-foreground">Only valid CSP options can be saved</span></div>
+                <div className="flex items-center justify-between gap-3"><h3 id="resources-heading" className="text-sm font-semibold">Resource assignment</h3><span className="text-xs text-muted-foreground">Availability shown for this schedule</span></div>
                 <div className="mt-3 grid gap-4 sm:grid-cols-3">
                   <ResourceSelect id="driver" label="Driver" value={form.driverUserId} options={resources.drivers} isManager={false} onChange={(value) => setForm({ ...form, driverUserId: value })} />
                   <ResourceSelect id="truck" label="Truck" value={form.truckAssetId} options={resources.trucks} isManager={false} onChange={(value) => setForm({ ...form, truckAssetId: value })} />
@@ -525,7 +645,7 @@ function PlanningDrawer({
                   <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
                     <p className="flex items-center gap-2 text-sm font-semibold text-destructive"><AlertTriangle className="h-4 w-4" /> Assignment conflict</p>
                     <ul className="mt-2 space-y-1 text-sm text-foreground">{selectedConflicts.map((resource) => <li key={resource.id}>{resource.label} is busy on Trip {resource.conflictTripReference} until {formatDateTime(resource.busyUntil)}.</li>)}</ul>
-                    <p className="mt-2 text-xs text-muted-foreground">Choose another resource. Overlapping assignments cannot pass Planning CSP validation.</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Choose another resource. This schedule has an overlapping resource assignment.</p>
                   </div>
                 ) : null}
               </section>
@@ -536,13 +656,13 @@ function PlanningDrawer({
                   <div className="space-y-2"><Label htmlFor="container-number">Container number</Label><Input id="container-number" value={form.containerNumber} onChange={(event) => setForm({ ...form, containerNumber: event.target.value })} placeholder="Required before dispatch" /></div>
                   <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm"><p className="text-xs text-muted-foreground">Equipment requirement</p><p className="mt-1 font-semibold">{formatContainer(trip.containerSize)} · {formatTripType(trip.tripType)}</p></div>
                   <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-notes">Planning notes</Label><Textarea id="planning-notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Port cutoffs, handling notes, or dispatch instructions" /></div>
-                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-override-reason">Manual assignment override reason</Label><Textarea id="planning-override-reason" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} placeholder="Required only when choosing a valid CSP combination outside the ranked recommendations." /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-override-reason">Manual assignment reason</Label><Textarea id="planning-override-reason" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} placeholder="Required only when choosing a valid assignment outside the current suggestions." /></div>
                 </div>
               </section>
 
               <section aria-labelledby="readiness-heading">
                 <div className="flex items-center justify-between gap-3"><div><h3 id="readiness-heading" className="text-sm font-semibold">Final Dispatch Validation</h3><p className="mt-1 text-xs text-muted-foreground">Validation does not change Trip state. Mark Ready reruns every constraint atomically.</p></div><ClipboardCheck className="h-5 w-5 text-primary" /></div>
-                <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-sm"><p className="font-medium">{decisionSupport?.canMarkReady ? "All mandatory gates currently pass." : "Resolve blocked checks and select a valid assignment before handoff."}</p>{selectedRecommendation ? <p className="mt-1 text-xs text-muted-foreground">Selected rank: {selectedRecommendation.rank}.</p> : form.driverUserId && form.truckAssetId ? <p className="mt-1 text-xs text-warning-foreground">Manual selection requires a reason if it is outside the ranked list.</p> : null}</div>
+                <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-sm"><p className="font-medium">{decisionSupport?.canMarkReady ? "All required checks currently pass." : "Resolve blocked checks and select a valid assignment before handoff."}</p>{selectedRecommendation ? <p className="mt-1 text-xs text-muted-foreground">{selectedRecommendation.isRecommended ? "Recommended assignment selected." : "Alternative assignment selected."}</p> : form.driverUserId && form.truckAssetId ? <p className="mt-1 text-xs text-warning-foreground">Manual selection requires a reason if it is outside the current suggestions.</p> : null}</div>
                 {atw?.state !== "VERIFIED" ? <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate(`/dispatch/trips/${trip.id}`)}>Open trip document checklist <ArrowRight className="h-4 w-4" /></Button> : null}
               </section>
             </div>
@@ -574,6 +694,7 @@ function RescheduleDialog({ booking, onClose, onConfirm, busy }: { booking: Appr
 }
 
 export default function DispatchPlanningPage() {
+  const navigate = useNavigate();
   const { toasts, show } = useToast();
   const [board, setBoard] = useState<PlanningBoard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -581,6 +702,8 @@ export default function DispatchPlanningPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [day, setDay] = useState("");
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [editorTripId, setEditorTripId] = useState<string | null>(null);
   const [rescheduleBooking, setRescheduleBooking] = useState<ApprovedBooking | null>(null);
 
@@ -607,8 +730,55 @@ export default function DispatchPlanningPage() {
 
   useEffect(() => { void loadBoard(); }, [search, day]);
 
-  const inPlanning = useMemo(() => board?.draftTrips ?? [], [board]);
-  const ready = useMemo(() => board?.readyTrips ?? [], [board]);
+  const queueItems = useMemo<PlanningQueueItem[]>(() => {
+    const items: PlanningQueueItem[] = [
+      ...(board?.approvedBookings ?? []).map((booking) => ({
+        kind: "booking" as const,
+        id: booking.requestId,
+        booking,
+        priority: priorityForBooking(booking),
+        needsAttention: bookingNeedsAttention(booking),
+        dueSoon: isDueSoon(booking.requestedPickupTime)
+      })),
+      ...(board?.draftTrips ?? []).map((trip) => ({
+        kind: "trip" as const,
+        id: trip.tripId,
+        trip,
+        priority: priorityForTrip(trip),
+        needsAttention: tripNeedsAttention(trip),
+        dueSoon: isDueSoon(trip.pickupScheduledAt)
+      })),
+      ...(board?.readyTrips ?? []).map((trip) => ({
+        kind: "trip" as const,
+        id: trip.tripId,
+        trip,
+        priority: priorityForTrip(trip),
+        needsAttention: false,
+        dueSoon: isDueSoon(trip.pickupScheduledAt)
+      }))
+    ];
+    const rank = { high: 0, medium: 1, low: 2 } as const;
+    return items.sort((left, right) => {
+      const priorityDifference = rank[left.priority] - rank[right.priority];
+      if (priorityDifference) return priorityDifference;
+      const leftTime = new Date(left.kind === "booking" ? left.booking.requestedPickupTime ?? 0 : left.trip.pickupScheduledAt ?? 0).getTime();
+      const rightTime = new Date(right.kind === "booking" ? right.booking.requestedPickupTime ?? 0 : right.trip.pickupScheduledAt ?? 0).getTime();
+      return leftTime - rightTime;
+    });
+  }, [board]);
+  const attentionCount = useMemo(() => queueItems.filter((item) => item.needsAttention).length, [queueItems]);
+  const dueSoonCount = useMemo(() => queueItems.filter((item) => item.dueSoon).length, [queueItems]);
+  const visibleQueue = useMemo(() => queueItems.filter((item) => {
+    if (queueFilter === "attention") return item.needsAttention;
+    if (queueFilter === "due") return item.dueSoon;
+    if (queueFilter === "planning") return item.kind === "trip" && item.trip.status === "DRAFT";
+    if (queueFilter === "ready") return item.kind === "trip" && item.trip.status === "READY_FOR_DISPATCH";
+    return true;
+  }), [queueFilter, queueItems]);
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  }, []);
 
   const convert = async (booking: ApprovedBooking, override?: string) => {
     const requested = booking.requestedPickupTime ? new Date(booking.requestedPickupTime).getTime() : null;
@@ -633,34 +803,76 @@ export default function DispatchPlanningPage() {
   return (
     <div className="space-y-5">
       <ToastHost toasts={toasts} />
-      <PageHeader title="Dispatch Planning" description="Turn approved bookings into conflict-free, dispatch-ready trip plans." breadcrumbs={<nav className="flex items-center gap-2" aria-label="Breadcrumb"><Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">Dispatch</Link><span className="text-muted-foreground">/</span><span>Planning</span></nav>} actions={<Button variant="outline" size="sm" onClick={() => void loadBoard()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>} />
+      <header className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><CalendarClock className="h-5 w-5" /></div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{greeting}</p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-foreground">Dispatch planning</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Review bookings, resolve blockers, and prepare the next trips for dispatch.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="flex h-10 items-center gap-2 rounded-lg border border-input bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => {
+              const input = dateInputRef.current;
+              if (!input) return;
+              input.showPicker?.();
+              input.focus();
+            }}
+          >
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            <span>{day ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${day}T12:00:00`)) : "All planning dates"}</span>
+          </button>
+          <input ref={dateInputRef} aria-label="Planning date" type="date" value={day} onChange={(event) => setDay(event.target.value)} className="sr-only" />
+          {day ? <Button className="planning-action" variant="outline" size="sm" onClick={() => setDay("")}>Show all</Button> : null}
+          <Button className="planning-action" variant="outline" size="sm" onClick={() => void loadBoard()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
+        </div>
+      </header>
 
-      <section className="surface-card overflow-hidden" aria-label="Planning controls">
-        <div className="grid gap-4 border-b border-border p-4 sm:p-5 lg:grid-cols-[minmax(260px,1fr)_210px_auto] lg:items-end">
-          <div className="space-y-2"><Label htmlFor="planning-search">Find a booking or trip</Label><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="planning-search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Customer, booking, container, or route" className="pl-9" /></div></div>
-          <div className="space-y-2"><Label htmlFor="planning-day">Planning date</Label><Input id="planning-day" type="date" value={day} onChange={(event) => setDay(event.target.value)} /></div>
-          {day ? <Button variant="ghost" onClick={() => setDay("")}>Show all dates</Button> : <p className="pb-2 text-sm text-muted-foreground">All waiting work is visible</p>}
-        </div>
-        <div className="grid divide-y divide-border sm:grid-cols-4 sm:divide-x sm:divide-y-0">
-          {[{ label: "Approved bookings", value: board?.approvedTotalCount ?? 0, icon: CalendarClock }, { label: "In planning", value: board?.draftTotalCount ?? 0, icon: CircleDashed }, { label: "Ready for dispatch", value: board?.readyCount ?? 0, icon: CheckCircle2 }, { label: "Plans with conflicts", value: board?.conflictCount ?? 0, icon: AlertTriangle }].map((item) => <div key={item.label} className="flex items-center gap-3 px-4 py-3 sm:px-5"><item.icon className="h-4 w-4 text-muted-foreground" /><div><p className="text-xl font-semibold tabular-nums">{item.value}</p><p className="text-xs text-muted-foreground">{item.label}</p></div></div>)}
-        </div>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Planning summary">
+        {[
+          { label: "Total bookings", value: (board?.approvedTotalCount ?? 0) + (board?.draftTotalCount ?? 0) + (board?.readyCount ?? 0), hint: "Across the planning queue", icon: CalendarClock, filter: "all" as const, tone: "text-primary bg-primary/10" },
+          { label: "Need attention", value: attentionCount, hint: "Blocking setup or ATW", icon: AlertTriangle, filter: "attention" as const, tone: "text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60" },
+          { label: "Due within 2 hrs", value: dueSoonCount, hint: "Upcoming pickups", icon: Clock3, filter: "due" as const, tone: "text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60" },
+          { label: "In planning", value: board?.draftTotalCount ?? 0, hint: "Schedules and assignments", icon: CircleDashed, filter: "planning" as const, tone: "text-indigo-700 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-950/60" },
+          { label: "Ready to dispatch", value: board?.readyCount ?? 0, hint: "All gates passed", icon: CheckCircle2, filter: "ready" as const, tone: "text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/60" }
+        ].map((item) => <button key={item.label} type="button" onClick={() => setQueueFilter(item.filter)} className={`operations-kpi text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${queueFilter === item.filter ? "border-primary" : "border-border"}`}>
+          <span className={`operations-kpi__icon ${item.tone.replace(" bg-primary/10", "").replace(" bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60", "").replace(" bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-950/60", "").replace(" bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/60", "")}`}><item.icon className="h-5 w-5" /></span><div><p className="operations-kpi__value tabular-nums">{item.value}</p><p className="operations-kpi__label">{item.label}</p><p className="mt-1 text-xs text-muted-foreground">{item.hint}</p></div>
+        </button>)}
       </section>
 
       {loading && !board ? <LoadingSkeleton rows={8} /> : !board || (board.approvedBookings.length === 0 && board.draftTrips.length === 0 && board.readyTrips.length === 0) ? <div className="surface-card p-8"><EmptyState title="Planning workspace is clear" description="Approved bookings and Draft trip plans will appear here." /></div> : (
-        <div className="grid gap-4 xl:grid-cols-3">
-          <section className="min-w-0 rounded-2xl border border-border bg-muted/20" aria-labelledby="approved-lane">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">01 · Intake</p><h2 id="approved-lane" className="mt-1 text-base font-semibold">Approved bookings</h2></div><span className="rounded-full bg-background px-2.5 py-1 text-xs font-semibold">{board.approvedBookings.length}</span></div>
-            <div className="space-y-3 p-3">{board.approvedBookings.length === 0 ? <p className="px-2 py-8 text-center text-sm text-muted-foreground">No approved bookings waiting.</p> : board.approvedBookings.map((booking) => <BookingCard key={booking.requestId} booking={booking} onStart={(item) => void convert(item)} busy={busy} />)}</div>
-          </section>
-          <section className="min-w-0 rounded-2xl border border-border bg-muted/20" aria-labelledby="planning-lane">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">02 · Build plan</p><h2 id="planning-lane" className="mt-1 text-base font-semibold">Scheduling and assignments</h2></div><span className="rounded-full bg-background px-2.5 py-1 text-xs font-semibold">{inPlanning.length}</span></div>
-            <div className="space-y-3 p-3">{inPlanning.length === 0 ? <p className="px-2 py-8 text-center text-sm text-muted-foreground">No incomplete plans.</p> : inPlanning.map((trip) => <TripPlanCard key={trip.tripId} trip={trip} onOpen={setEditorTripId} />)}</div>
-          </section>
-          <section className="min-w-0 rounded-2xl border border-success/25 bg-success/5" aria-labelledby="ready-lane">
-            <div className="flex items-center justify-between border-b border-success/20 px-4 py-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-success">03 · Handoff</p><h2 id="ready-lane" className="mt-1 text-base font-semibold">Ready for dispatch</h2></div><span className="rounded-full bg-background px-2.5 py-1 text-xs font-semibold">{ready.length}</span></div>
-            <div className="space-y-3 p-3">{ready.length === 0 ? <p className="px-2 py-8 text-center text-sm text-muted-foreground">Plans appear here after every dispatch gate passes.</p> : ready.map((trip) => <TripPlanCard key={trip.tripId} trip={trip} onOpen={setEditorTripId} />)}</div>
-          </section>
-        </div>
+        <section aria-labelledby="dispatch-queue-heading">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2"><h2 id="dispatch-queue-heading" className="text-xl font-bold text-foreground">Dispatch queue</h2>{attentionCount > 0 ? <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">{attentionCount} need attention</span> : null}</div>
+              <p className="mt-1 text-sm text-muted-foreground">Prioritized by dispatch blockers, pickup urgency, and readiness.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 sm:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="planning-search" aria-label="Find a booking or trip" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Booking, customer, or route" className="h-10 rounded-lg bg-card pl-9" /></div>
+              <span className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground"><Filter className="h-4 w-4" />Priority order</span>
+            </div>
+          </div>
+
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Queue filters">
+            {[
+              { value: "all" as const, label: "All", count: queueItems.length },
+              { value: "attention" as const, label: "Attention", count: attentionCount },
+              { value: "due" as const, label: "Due soon", count: dueSoonCount },
+              { value: "planning" as const, label: "In planning", count: board.draftTotalCount },
+              { value: "ready" as const, label: "Ready", count: board.readyCount }
+            ].map((tab) => <button key={tab.value} type="button" aria-pressed={queueFilter === tab.value} onClick={() => setQueueFilter(tab.value)} className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${queueFilter === tab.value ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}>{tab.label} <span className="ml-1 tabular-nums">({tab.count})</span></button>)}
+          </div>
+
+          <div className="mt-3 overflow-x-auto pb-2">
+            <div className="min-w-[1080px] space-y-3">
+              {visibleQueue.length === 0 ? <div className="rounded-xl border border-dashed border-border bg-card px-5 py-10"><EmptyState title="No plans match this filter" description="Try another queue filter or clear the search to see more planning work." /></div> : visibleQueue.map((item) => <PlanningQueueRow key={item.id} item={item} busy={busy} onStart={(booking) => void convert(booking)} onOpen={setEditorTripId} onView={(tripId) => navigate(`/dispatch/trips/${tripId}`)} />)}
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm"><p className="text-muted-foreground"><Truck className="mr-2 inline h-4 w-4" />Ready for Dispatch is an explicit, reserved pre-execution state on the existing Draft trip.</p><Link to="/dispatch/board" className="hidden items-center gap-2 font-semibold text-primary sm:inline-flex">Go to execution <ArrowRight className="h-4 w-4" /></Link></div>

@@ -77,7 +77,9 @@ public sealed class PlanningDecisionSupportService
 {
     public const string CriteriaWeightVersion = "planning-topsis-v1";
     private const decimal MaxPickupReachabilityKm = 450m;
-    private const int RecommendationLimit = 10;
+    // Planning keeps the choice focused: one recommended assignment and up to two
+    // viable alternatives. The full ranked diagnostic remains in the service snapshot.
+    private const int RecommendationLimit = 3;
     private static readonly IReadOnlyDictionary<string, decimal> Weights = new Dictionary<string, decimal>
     {
         ["Pickup proximity"] = 0.40m,
@@ -589,9 +591,18 @@ public sealed class PlanningDecisionSupportService
         var cap = capability.ToUpperInvariant();
         var size = containerSize.ToUpperInvariant();
         return cap.Contains("ANY") || cap.Contains("ALL") || cap.Contains("UNKNOWN") ||
-               (size.Contains("20") && cap.Contains("20")) ||
-               (size.Contains("40") && cap.Contains("40"));
+               (RequiresTwentyFootContainer(size) && cap.Contains("20")) ||
+               (RequiresFortyFootContainer(size) && cap.Contains("40"));
     }
+
+    // Shipment requests persist ContainerSize as enum text (for example, FortyFt),
+    // while fleet capabilities are operator-entered text (for example, 40ft capable).
+    // Support both forms so planning evaluates the same operational requirement.
+    private static bool RequiresTwentyFootContainer(string size) =>
+        size.Contains("20") || size.Contains("TWENTY");
+
+    private static bool RequiresFortyFootContainer(string size) =>
+        size.Contains("40") || size.Contains("FORTY");
 
     private static decimal EquipmentFit(string? capability) => string.IsNullOrWhiteSpace(capability) || capability.Contains("ANY", StringComparison.OrdinalIgnoreCase) ? 0.85m : 1m;
 

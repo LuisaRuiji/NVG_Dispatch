@@ -531,7 +531,7 @@ public sealed class DispatchReportsController : ControllerBase
             .ToListAsync(cancellationToken);
         var rows = new List<string[]>
         {
-            new[] { "Date", "Driver", "CompletedTripId", "RecommendedTripId", "Score", "Rank", "Action", "ReviewedBy" }
+            new[] { "Date", "Driver", "CurrentMovementId", "SuggestedNextMovementId", "Action", "ReviewedBy" }
         };
 
         foreach (var item in items.OrderByDescending(item => item.GeneratedAt).ThenBy(item => item.Rank))
@@ -543,14 +543,12 @@ public sealed class DispatchReportsController : ControllerBase
                 mapped.Driver,
                 mapped.CompletedTripId.ToString(),
                 mapped.RecommendedTripId.ToString(),
-                mapped.Score.ToString(CultureInfo.InvariantCulture),
-                mapped.Rank.ToString(CultureInfo.InvariantCulture),
-                mapped.Action,
+                mapped.Action == "Accepted" ? "Confirmed" : mapped.Action == "Ignored" ? "Dismissed" : mapped.Action,
                 mapped.ReviewedBy ?? string.Empty
             });
         }
 
-        return File(Encoding.UTF8.GetBytes(BuildCsv(rows)), "text/csv", "dispatch-recommendations.csv");
+        return File(Encoding.UTF8.GetBytes(BuildCsv(rows)), "text/csv", "trip-chaining-history.csv");
     }
 
     private async Task RecordFinancialAccessAsync(

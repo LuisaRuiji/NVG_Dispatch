@@ -154,7 +154,7 @@ export default function DispatchReportsPage() {
     if (canSeeManagerReports) tabs.push({ key: "delivery-time", label: "Delivery Time Analysis" });
     if (canSeeDocumentProcessing) tabs.push({ key: "document-processing", label: "Document Processing" });
     if (canSeeFinancialSummary) tabs.push({ key: "financial-summary", label: "Financial Summary" });
-    if (canSeeRecommendations) tabs.push({ key: "recommendations", label: "Recommendations" });
+    if (canSeeRecommendations) tabs.push({ key: "recommendations", label: "Trip Chaining" });
     return tabs;
   }, [canSeeDocumentProcessing, canSeeFinancialSummary, canSeeManagerReports, canSeeRecommendations, canSeeTripSummary]);
 
@@ -325,7 +325,7 @@ export default function DispatchReportsPage() {
       setRecommendationPage(result.recentHistory.page);
     } catch (e: any) {
       console.error(e);
-      show(e?.message ?? "Failed to load recommendation report.", "error");
+      show(e?.message ?? "Failed to load Trip Chaining history.", "error");
     } finally {
       setRecommendationLoading(false);
     }
@@ -484,7 +484,7 @@ export default function DispatchReportsPage() {
               page={recommendationPage}
               totalPages={recommendationTotalPages}
               onPage={loadRecommendations}
-              onExport={() => exportCsv("/api/reports/dispatch/recommendations.csv", "dispatch-recommendations.csv")}
+              onExport={() => exportCsv("/api/reports/dispatch/recommendations.csv", "trip-chaining-history.csv")}
             />
           ) : null}
         </>
@@ -807,34 +807,31 @@ function RecommendationsTab({
 
   return (
     <section className="mt-6 space-y-6">
-      <SectionHeader title="Recommendations" onExport={onExport} loading={loading} />
+      <SectionHeader title="Trip Chaining" onExport={onExport} loading={loading} />
       {loading && !report ? (
         <LoadingSkeleton rows={5} />
       ) : !report ? (
-        <EmptyState title="No recommendation report data." />
+        <EmptyState title="No Trip Chaining history." />
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <KpiCard title="Generated" value={report.kpis.totalGenerated.toLocaleString()} subtitle="Recommendations created" />
-            <KpiCard title="Accepted" value={report.kpis.totalAccepted.toLocaleString()} subtitle="Dispatcher accepted" />
-            <KpiCard title="Ignored" value={report.kpis.totalIgnored.toLocaleString()} subtitle="Skipped or superseded" />
-            <KpiCard title="Acceptance Rate" value={formatPercent(report.kpis.acceptanceRatePercent)} subtitle="Accepted out of generated" />
-            <KpiCard title="Avg Accepted Score" value={formatNumber(report.kpis.averageAcceptedScore)} subtitle="Accepted recommendation score" />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <KpiCard title="Suggested" value={report.kpis.totalGenerated.toLocaleString()} subtitle="Next movements identified" />
+            <KpiCard title="Confirmed" value={report.kpis.totalAccepted.toLocaleString()} subtitle="Dispatcher confirmed" />
+            <KpiCard title="Dismissed" value={report.kpis.totalIgnored.toLocaleString()} subtitle="Dismissed or superseded" />
+            <KpiCard title="Confirmation Rate" value={formatPercent(report.kpis.acceptanceRatePercent)} subtitle="Confirmed out of suggested" />
           </div>
 
           <RecommendationAcceptanceBar data={report.weekly} loading={loading} />
 
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Recent recommendation history</h2>
+            <h2 className="text-lg font-semibold">Recent Trip Chaining history</h2>
             <DataTable>
               <thead className="sticky top-0 bg-muted/40 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Driver</th>
-                  <th className="px-4 py-3 text-left">Completed Trip</th>
-                  <th className="px-4 py-3 text-left">Recommended Trip</th>
-                  <th className="px-4 py-3 text-right">Score</th>
-                  <th className="px-4 py-3 text-right">Rank</th>
+                  <th className="px-4 py-3 text-left">Current Movement</th>
+                  <th className="px-4 py-3 text-left">Suggested Next Movement</th>
                   <th className="px-4 py-3 text-left">Action</th>
                   <th className="px-4 py-3 text-left">Reviewed By</th>
                 </tr>
@@ -846,15 +843,13 @@ function RecommendationsTab({
                     <td className="px-4 py-3 text-sm">{row.driver}</td>
                     <td className="px-4 py-3 text-sm font-mono">{row.completedTripId.slice(0, 8).toUpperCase()}</td>
                     <td className="px-4 py-3 text-sm font-mono">{row.recommendedTripId.slice(0, 8).toUpperCase()}</td>
-                    <td className="px-4 py-3 text-right text-sm">{formatNumber(row.score)}</td>
-                    <td className="px-4 py-3 text-right text-sm">{row.rank}</td>
-                    <td className="px-4 py-3 text-sm">{row.action}</td>
+                    <td className="px-4 py-3 text-sm">{row.action === "Accepted" ? "Confirmed" : row.action === "Ignored" ? "Dismissed" : row.action}</td>
                     <td className="px-4 py-3 text-sm">{row.reviewedBy ?? "-"}</td>
                   </tr>
                 ))}
               </tbody>
             </DataTable>
-            {rows.length === 0 ? <EmptyState title="No recommendation history." /> : null}
+            {rows.length === 0 ? <EmptyState title="No Trip Chaining history." /> : null}
             <Pager page={page} totalPages={totalPages} loading={loading} onPage={onPage} />
           </div>
         </>

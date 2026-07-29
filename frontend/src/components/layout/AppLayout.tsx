@@ -3,9 +3,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { getMe, logout } from "@/features/auth/authStore";
 import { resolvePrimaryRole, type UserRole } from "@/features/auth/roles";
 import { cn } from "@/lib/utils";
-import nvgLogo from "@/assets/nvg-logo.png";
+import vaiaLogo from "@/assets/755802620_1034371329178362_4911076349972347238_n.png";
 import ToastHost from "@/components/ToastHost";
-import AccountSettingsModal from "@/components/AccountSettingsModal";
 import { useToast } from "@/lib/useToast";
 import { onToast } from "@/lib/toastBus";
 import { onMaintenance } from "@/lib/maintenanceBus";
@@ -25,7 +24,8 @@ import {
   Bell,
   Sliders,
   Map as MapIcon,
-  CalendarClock
+  CalendarClock,
+  LogOut
 } from "lucide-react";
 import { TrackingProvider } from "@/features/dispatch/TrackingContext";
 
@@ -93,7 +93,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Admin",
     items: [
-      { label: "Customers", to: "/admin/customers", roles: ["Manager", "Dispatcher"], icon: User, moduleKey: "users" },
+      { label: "Customers", to: "/admin/customers", roles: ["Manager", "Admin", "SuperAdmin"], icon: User, moduleKey: "users" },
       { label: "Modules", to: "/admin/modules", roles: ["SuperAdmin"], icon: Settings },
       { label: "Audit Logs", to: "/admin/audit-logs", roles: ["SuperAdmin", "Admin", "Manager", "Dispatcher", "HeadOfFinance", "InventoryOfficer"], icon: FileText, moduleKey: "reports" },
       { label: "Auth Logs", to: "/admin/auth-events", roles: ["Admin", "SuperAdmin"], icon: FileText, moduleKey: "reports" },
@@ -109,9 +109,6 @@ export default function AppLayout() {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const { toasts, show } = useToast();
-  const [accountOpen, setAccountOpen] = useState(false);
-  const accountRef = useRef<HTMLDivElement | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationSummaryOpen, setNotificationSummaryOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement | null>(null);
@@ -276,23 +273,16 @@ export default function AppLayout() {
   }, [notificationSummaryOpen, unreadKeys]);
 
   useEffect(() => {
-    if (!accountOpen && !notificationsOpen) return;
+    if (!notificationsOpen) return;
     const handler = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (
-        accountRef.current &&
-        target &&
-        !accountRef.current.contains(target) &&
-        notificationRef.current &&
-        !notificationRef.current.contains(target)
-      ) {
-        setAccountOpen(false);
+      if (notificationRef.current && target && !notificationRef.current.contains(target)) {
         setNotificationsOpen(false);
       }
     };
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
-  }, [accountOpen, notificationsOpen]);
+  }, [notificationsOpen]);
 
   if (!me) {
     nav("/login");
@@ -301,25 +291,25 @@ export default function AppLayout() {
 
   return (
     <TrackingProvider>
-      <div className="flex h-screen w-full bg-slate-50 text-slate-900">
+      <div className="vaia-shell fixed inset-0 flex min-h-0 w-full overflow-hidden bg-background text-foreground">
         <ToastHost toasts={toasts} />
-      <aside className="group hidden h-full w-16 flex-col overflow-hidden border-r border-border bg-white/80 backdrop-blur-xl transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:w-64 md:flex dark:bg-black/60 shadow-sm z-10">
-        <div className="px-2 py-6">
-          <div className="flex items-center justify-center group-hover:justify-start">
-            <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-2xl bg-white shadow-sm">
-              <img src={nvgLogo} alt="NVG" className="h-8 w-8 object-contain" />
+      <aside className="hidden h-full w-60 flex-col overflow-hidden border-r border-border bg-card lg:flex">
+        <div className="px-5 py-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-lg bg-black">
+              <img src={vaiaLogo} alt="VAIA emblem" className="h-full w-full object-contain" />
             </div>
-            <div className="ml-3 hidden flex-col opacity-0 transition-opacity duration-200 group-hover:flex group-hover:opacity-100">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">NVG</p>
-              <p className="text-lg font-semibold text-slate-900">ERP Portal</p>
+            <div className="flex flex-col">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Operations</p>
+              <p className="text-lg font-bold text-foreground">VAIA</p>
             </div>
           </div>
         </div>
 
-        <nav className="sidebar-nav flex-1 min-h-0 space-y-6 overflow-y-auto overflow-x-hidden">
+        <nav className="sidebar-nav flex-1 min-h-0 space-y-5 overflow-y-auto px-3 pb-5">
           {filteredSections.map((section) => (
             <div key={section.title}>
-              <p className="mb-2 px-6 text-[11px] uppercase tracking-[0.2em] text-slate-400 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {section.title}
               </p>
               <div className="space-y-1">
@@ -329,10 +319,10 @@ export default function AppLayout() {
                     to={item.to}
                     className={({ isActive }) =>
                       cn(
-                        "mx-3 my-1 flex h-10 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-200 nav-link-shift group-hover:justify-start",
+                        "relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors duration-150",
                         isActive
-                          ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                          : "text-muted-foreground hover:bg-muted/80 hover:text-foreground hover:shadow-sm"
+                          ? "bg-accent text-[#122442] before:absolute before:-left-3 before:h-6 before:w-[3px] before:rounded-r before:bg-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       )
                     }
                   >
@@ -340,13 +330,11 @@ export default function AppLayout() {
                       <>
                         <item.icon
                           className={cn(
-                            "h-5 w-5 shrink-0 transition-colors duration-200",
-                            isActive ? "text-primary-foreground" : "text-primary/70"
+                            "h-5 w-5 shrink-0",
+                            isActive ? "text-primary" : "text-muted-foreground"
                           )}
                         />
-                        <span className="hidden whitespace-nowrap opacity-0 transition-opacity duration-200 group-hover:inline group-hover:opacity-100">
-                          {item.label}
-                        </span>
+                        <span className="whitespace-nowrap">{item.label}</span>
                       </>
                     )}
                   </NavLink>
@@ -356,26 +344,32 @@ export default function AppLayout() {
           ))}
         </nav>
 
-        <div className="h-6" />
+        <div className="m-3 flex items-center gap-1 border-t border-border pt-3">
+          <button type="button" onClick={() => nav("/settings")} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-muted">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-muted text-xs font-bold text-foreground">{me.username.slice(0, 1).toUpperCase()}</span>
+            <span className="min-w-0"><span className="block truncate text-sm font-semibold text-foreground">{me.username}</span><span className="block text-xs text-muted-foreground">{primaryRole}</span></span>
+          </button>
+          <button type="button" onClick={() => { logout(); nav("/login"); }} className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Log out" title="Log out"><LogOut className="h-4 w-4" /></button>
+        </div>
       </aside>
 
-      <div className="flex flex-1 flex-col h-screen overflow-y-auto">
-        <header className="h-16 border-b border-slate-200 bg-white px-8 flex items-center justify-between">
-          <div className="flex items-center gap-3 md:hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-[72px] items-center justify-between border-b border-border bg-card px-4 md:px-6">
+          <div className="flex items-center gap-3 lg:hidden">
             <button
-              className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white"
+              className="grid h-10 w-10 place-items-center overflow-hidden rounded-lg border border-border bg-black"
               onClick={() => setOpen(true)}
               aria-label="Open navigation"
             >
-              <img src={nvgLogo} alt="NVG" className="h-5 w-5 object-contain" />
+              <img src={vaiaLogo} alt="VAIA" className="h-full w-full object-contain" />
             </button>
           </div>
           {canSeeSearch ? (
-            <div className="hidden items-center gap-3 md:flex">
-              <div className="relative group/search">
+            <div className="hidden items-center gap-3 lg:flex">
+              <div className="relative">
                 <input
-                  placeholder="Search by request / PO id"
-                  className="h-9 w-72 rounded-full border border-border bg-muted/30 px-4 text-sm transition-all duration-200 hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-background shadow-sm"
+                  placeholder="Search operations"
+                  className="h-10 w-72 rounded-lg border border-border bg-card px-3 text-sm transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
                 <kbd className="pointer-events-none absolute right-2.5 top-2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex text-muted-foreground">
                   <span className="text-xs">⌘</span>K
@@ -384,15 +378,15 @@ export default function AppLayout() {
             </div>
           ) : null}
 
-          <div className="ml-auto flex items-center gap-4 text-sm">
-            <div className="hidden items-center gap-2 md:flex">
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            <div className="hidden items-center gap-2 lg:flex">
               {me.username.toLowerCase() !== primaryRole.toLowerCase() ? (
                 <span className="text-slate-500">{me.username}</span>
               ) : null}
               <div className="relative" ref={notificationRef}>
                 <button
                   type="button"
-                  className="grid h-9 w-9 place-items-center rounded-full border border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+                  className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={() => {
                     setNotificationSummaryOpen(false);
                     setNotificationsOpen((value) => !value);
@@ -405,12 +399,12 @@ export default function AppLayout() {
                   ) : null}
                 </button>
                 {notificationSummaryOpen && !notificationsOpen && unreadCount > 0 ? (
-                  <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-card z-50 fade-in">
+                  <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground fade-in">
                     You have {unreadCount} notification{unreadCount === 1 ? "" : "s"}.
                   </div>
                 ) : null}
                 {notificationsOpen ? (
-                  <div className="absolute right-0 mt-2 w-72 rounded-xl border border-border bg-card p-3 shadow-card z-50 fade-in glass">
+                  <div className="absolute right-0 z-50 mt-2 w-72 rounded-xl border border-border bg-card p-3 fade-in">
                     <div className="flex items-center justify-between">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Notifications</p>
                       <div className="flex items-center gap-2">
@@ -557,59 +551,26 @@ export default function AppLayout() {
                   </div>
                 ) : null}
               </div>
-              <div className="relative" ref={accountRef}>
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
-                  onClick={() => setAccountOpen((value) => !value)}
-                >
-                  {primaryRole}
-                </button>
-                {accountOpen ? (
-                  <div className="absolute right-0 mt-2 w-48 rounded-xl border border-border bg-card p-2 shadow-card z-50 fade-in glass">
-                    <button
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-primary"
-                      onClick={() => {
-                        setAccountOpen(false);
-                        setSettingsOpen(true);
-                      }}
-                    >
-                      Settings
-                    </button>
-                    <div className="my-1 h-px bg-border/50" />
-                    <button
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-                      onClick={() => {
-                        setAccountOpen(false);
-                        logout();
-                        nav("/login");
-                      }}
-                    >
-                      Logout
-                    </button>
-                  </div>
-                ) : null}
-              </div>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col h-screen overflow-y-auto">
-          <div key={location.pathname} className="px-8 py-8 fade-up">
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+          <div key={location.pathname} className="px-4 py-5 md:px-6 md:py-6">
             <Outlet />
           </div>
         </main>
       </div>
 
       {open ? (
-        <div className="fixed inset-0 z-50 bg-black/40 md:hidden fade-in">
-          <div className="absolute left-0 top-0 h-full w-72 bg-white p-6 shadow-lg fade-up">
+        <div className="fixed inset-0 z-50 bg-[#122442]/35 lg:hidden fade-in">
+          <div className="absolute left-0 top-0 h-full w-60 border-r border-border bg-card p-5 fade-in">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-nvg-gradient" />
+                <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg bg-black"><img src={vaiaLogo} alt="VAIA emblem" className="h-full w-full object-contain" /></div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">NVG</p>
-                  <p className="text-base font-semibold">ERP Portal</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Operations</p>
+                  <p className="text-base font-bold">VAIA</p>
                 </div>
               </div>
               <button onClick={() => setOpen(false)} className="text-sm text-muted-foreground">
@@ -630,9 +591,9 @@ export default function AppLayout() {
                         onClick={() => setOpen(false)}
                         className={({ isActive }) =>
                           cn(
-                            "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition nav-link-shift",
+                            "flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors",
                             isActive
-                              ? "bg-primary/10 text-primary"
+                              ? "bg-accent text-foreground"
                               : "hover:bg-muted hover:text-foreground"
                           )
                         }
@@ -644,19 +605,19 @@ export default function AppLayout() {
                 </div>
               ))}
             </nav>
+            <div className="mt-4 flex items-center gap-1 border-t border-border pt-3">
+              <button
+                type="button"
+                onClick={() => { setOpen(false); nav("/settings"); }}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-muted"
+              >
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-muted text-xs font-bold text-foreground">{me.username.slice(0, 1).toUpperCase()}</span>
+                <span className="min-w-0"><span className="block truncate text-sm font-semibold text-foreground">{me.username}</span><span className="block text-xs text-muted-foreground">{primaryRole}</span></span>
+              </button>
+              <button type="button" onClick={() => { logout(); nav("/login"); }} className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Log out"><LogOut className="h-4 w-4" /></button>
+            </div>
           </div>
         </div>
-      ) : null}
-
-      {me ? (
-        <AccountSettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          username={me.username}
-          userId={me.userId}
-          roles={roles}
-          primaryRole={primaryRole}
-        />
       ) : null}
     </div>
     </TrackingProvider>

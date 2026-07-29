@@ -102,7 +102,7 @@ export default function DemoRequestModal({ open, onClose }: DemoRequestModalProp
                 <div className="flex items-start justify-between gap-4">
                     <div>
                         <p className="text-xs uppercase tracking-[0.25em] text-gray-400">Request Demo</p>
-                        <h2 className="mt-2 text-2xl font-semibold text-primary">See NVG Dispatch in action</h2>
+                        <h2 className="mt-2 text-2xl font-semibold text-primary">See VAIA in action</h2>
                     </div>
                     <button
                         type="button"
@@ -202,7 +202,7 @@ export default function DemoRequestModal({ open, onClose }: DemoRequestModalProp
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-70"
+                            className="rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-[#E65300] disabled:opacity-70"
                         >
                             {submitting ? "Sending..." : "Send demo request"}
                         </button>

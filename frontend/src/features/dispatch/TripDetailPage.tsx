@@ -223,8 +223,10 @@ export default function TripDetailPage() {
   const [linkKey, setLinkKey] = useState<string | null>(null);
   const [assignmentConflict, setAssignmentConflict] = useState<AssignmentConflictState | null>(null);
   const [updatedJustNow, setUpdatedJustNow] = useState(false);
+  const [documentMutationId, setDocumentMutationId] = useState<string | null>(null);
   const [geocodedCoords, setGeocodedCoords] = useState<{ pickupLat?: number; pickupLon?: number; dropoffLat?: number; dropoffLon?: number }>({});
   const updatedTimerRef = useRef<number | null>(null);
+  const pendingDocumentMutationTypesRef = useRef<Set<TripDocumentType>>(new Set());
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
     customerId: "",
     pickupLocation: "",
@@ -293,6 +295,25 @@ export default function TripDetailPage() {
     }, 3000);
   };
 
+  const refreshSummary = async () => {
+    if (!id) return;
+    try {
+      setSummary(await api<DispatchTripSummary>(`/api/dispatch/trips/${id}/summary`, { method: "GET" }));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const applyDocumentUpdate = (updatedDocument: DispatchTripDocument) => {
+    setDocuments((current) => current.map((document) => document.id === updatedDocument.id ? updatedDocument : document));
+    setTrip((current) => current
+      ? { ...current, documents: current.documents.map((document) => document.id === updatedDocument.id ? updatedDocument : document) }
+      : current);
+    markUpdatedJustNow();
+    void refreshSummary();
+    window.setTimeout(() => pendingDocumentMutationTypesRef.current.delete(updatedDocument.type), 2000);
+  };
+
   useDispatchHub({
     onTripStatusChanged: (event) => {
       if (isCurrentTripEvent(event.tripId)) {
@@ -309,6 +330,10 @@ export default function TripDetailPage() {
     onDocumentVerified: (event) => {
       if (isCurrentTripEvent(event.tripId)) {
         markUpdatedJustNow();
+        const documentType = event.documentType as TripDocumentType;
+        if (pendingDocumentMutationTypesRef.current.delete(documentType)) {
+          return;
+        }
         void fetchTrip();
       }
     }
@@ -763,34 +788,40 @@ export default function TripDetailPage() {
 
   const handleVerifyDoc = async (docId: string) => {
     if (!tripId) return;
+    const documentType = documents.find((document) => document.id === docId)?.type;
     try {
-      setActionLoading(true);
-      await api(`/api/dispatch/trips/${tripId}/documents/${docId}/verify`, { method: "POST" });
+      if (documentType) pendingDocumentMutationTypesRef.current.add(documentType);
+      setDocumentMutationId(docId);
+      const updatedDocument = await api<DispatchTripDocument>(`/api/dispatch/trips/${tripId}/documents/${docId}/verify`, { method: "POST" });
+      applyDocumentUpdate(updatedDocument);
       show("Document verified.", "success");
-      await fetchTrip();
     } catch (e: any) {
+      if (documentType) pendingDocumentMutationTypesRef.current.delete(documentType);
       console.error(e);
       show(e?.message ?? "Failed to verify document.", "error");
     } finally {
-      setActionLoading(false);
+      setDocumentMutationId(null);
     }
   };
 
   const handleRejectDoc = async (docId: string, remarks: string) => {
     if (!tripId) return;
+    const documentType = documents.find((document) => document.id === docId)?.type;
     try {
-      setActionLoading(true);
-      await api(`/api/dispatch/trips/${tripId}/documents/${docId}/reject`, {
+      if (documentType) pendingDocumentMutationTypesRef.current.add(documentType);
+      setDocumentMutationId(docId);
+      const updatedDocument = await api<DispatchTripDocument>(`/api/dispatch/trips/${tripId}/documents/${docId}/reject`, {
         method: "POST",
         body: JSON.stringify({ remarks })
       });
+      applyDocumentUpdate(updatedDocument);
       show("Document rejected.", "success");
-      await fetchTrip();
     } catch (e: any) {
+      if (documentType) pendingDocumentMutationTypesRef.current.delete(documentType);
       console.error(e);
       show(e?.message ?? "Failed to reject document.", "error");
     } finally {
-      setActionLoading(false);
+      setDocumentMutationId(null);
     }
   };
 
@@ -1337,17 +1368,17 @@ export default function TripDetailPage() {
                                   size="sm"
                                   variant="outline"
                                   className="gap-1"
-                                  disabled={actionLoading}
+                                  disabled={actionLoading || documentMutationId === doc.id}
                                   onClick={() => handleVerifyDoc(doc.id)}
                                 >
                                   <Check className="h-4 w-4" />
-                                  Verify
+                                  {documentMutationId === doc.id ? "Verifying…" : "Verify"}
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   className="gap-1"
-                                  disabled={actionLoading}
+                                  disabled={actionLoading || documentMutationId === doc.id}
                                   onClick={() =>
                                     setModal({ type: "DOC_REJECT", docId: doc.id, remarks: "" })
                                   }

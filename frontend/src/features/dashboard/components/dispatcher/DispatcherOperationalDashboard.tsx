@@ -45,9 +45,9 @@ type Props = {
 type MetricTone = "neutral" | "info" | "attention";
 
 const metricToneClasses: Record<MetricTone, string> = {
-  neutral: "bg-muted text-muted-foreground",
-  info: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  attention: "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+  neutral: "text-[#475569]",
+  info: "text-[#1D4ED8]",
+  attention: "text-[#92400E]"
 };
 
 const alertToneClasses: Record<DispatcherAlertTone, string> = {
@@ -137,21 +137,21 @@ function OperationalStrip({ kpis }: { kpis: DispatchDashboardKpis }) {
   ];
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-card" aria-label="Dispatch workload summary">
-      <div className="grid grid-cols-2 divide-x divide-y divide-border lg:grid-cols-4 lg:divide-y-0">
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Dispatch workload summary">
+      <div className="contents">
         {metrics.map((metric) => (
           <Link
             key={metric.label}
             to={metric.to}
-            className="group grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 p-4 transition-colors duration-200 hover:bg-muted/50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none sm:p-5"
+            className="operations-kpi group min-w-0 transition-colors hover:bg-muted/50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
           >
-            <div className={cn("row-span-2 flex h-9 w-9 items-center justify-center rounded-full", metricToneClasses[metric.tone])}>
-              <metric.icon className="h-4 w-4" aria-hidden="true" />
+            <div className={cn("operations-kpi__icon", metricToneClasses[metric.tone])}>
+              <metric.icon className="h-5 w-5" aria-hidden="true" />
             </div>
-            <p className="font-mono text-2xl font-semibold leading-none tabular-nums text-foreground">{metric.value.toLocaleString()}</p>
-            <div className="mt-1 min-w-0">
-              <p className="text-xs font-semibold leading-4 text-foreground" title={metric.label}>{metric.label}</p>
-              <p className="mt-0.5 hidden truncate text-[11px] text-muted-foreground sm:block">{metric.hint}</p>
+            <div className="min-w-0">
+              <p className="operations-kpi__value font-mono tabular-nums">{metric.value.toLocaleString()}</p>
+              <p className="operations-kpi__label" title={metric.label}>{metric.label}</p>
+              <p className="mt-1 truncate text-[11px] text-muted-foreground">{metric.hint}</p>
             </div>
           </Link>
         ))}

@@ -1,687 +1,274 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import PageHeader from "@/components/PageHeader";
-import DataTable from "@/components/DataTable";
-import LoadingSkeleton from "@/components/LoadingSkeleton";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CircleDot,
+  Clock3,
+  LocateFixed,
+  RefreshCw,
+  Route,
+  Send,
+  ShieldAlert,
+  Truck,
+  UserRound,
+  Wifi
+} from "lucide-react";
 import EmptyState from "@/components/EmptyState";
-import ToastHost from "@/components/ToastHost";
+import LoadingSkeleton from "@/components/LoadingSkeleton";
+import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import ToastHost from "@/components/ToastHost";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/lib/useToast";
+import { getMe } from "@/features/auth/authStore";
+import { useDispatchHub } from "@/hooks/useDispatchHub";
 import { api } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
-import { getMe } from "@/features/auth/authStore";
-import type {
-  DispatchTripDocument,
-  DispatchTripListItem,
-  TripDocumentState,
-  TripStatus
-} from "./types";
-import { statusLabels } from "./types";
-import { ArrowUpRight, RefreshCw } from "lucide-react";
+import { useToast } from "@/lib/useToast";
+import type { DispatchTripListItem, TripStatus } from "./types";
 
-type PanelState = {
+type QueueState = {
   items: DispatchTripListItem[];
   totalCount: number;
   loading: boolean;
 };
 
-type DocQueueItem = {
-  trip: DispatchTripListItem;
-  doc: DispatchTripDocument;
+const readyPageSize = 16;
+const activePageSize = 10;
+const issuePageSize = 8;
+
+const emptyQueue: QueueState = { items: [], totalCount: 0, loading: true };
+
+const nextActionByStatus: Partial<Record<TripStatus, string>> = {
+  DISPATCHED: "Driver to begin pickup approach",
+  ENROUTE_PICKUP: "Await port arrival",
+  AT_PICKUP: "Await loading confirmation",
+  LOADED: "Driver to begin dropoff approach",
+  ENROUTE_DROPOFF: "Await dropoff arrival",
+  AT_DROPOFF: "Await delivery confirmation",
+  DELIVERED: "Verify closeout documents",
+  ON_HOLD: "Resolve the operational hold",
+  FAILED_ATTEMPT: "Recover the failed attempt"
 };
 
-const docStateClasses: Record<TripDocumentState, string> = {
-  MISSING: "border-slate-200 text-slate-500",
-  UPLOADED: "border-amber-200 text-amber-700",
-  VERIFIED: "border-emerald-200 text-emerald-700",
-  REJECTED: "border-rose-200 text-rose-700"
-};
+function formatDateTime(value?: string | null) {
+  if (!value) return "Schedule pending";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
 
-const upcomingHours = 4;
-const exceptionPageSize = 5;
-const activePageSize = 12;
-const upcomingPageSize = 8;
+function formatLocation(value?: string | null) {
+  return value?.trim() || "Location pending";
+}
 
-function PodBadge({ trip }: { trip: DispatchTripListItem }) {
-  const state = trip.podState ?? "MISSING";
+function isLocationLive(trip: DispatchTripListItem) {
+  const location = trip.latestDriverLocation;
+  return Boolean(location && Date.now() - new Date(location.recordedAt).getTime() <= 5 * 60_000);
+}
+
+function LocationState({ trip }: { trip: DispatchTripListItem }) {
+  const location = trip.latestDriverLocation;
+  if (!location) return <span className="text-xs text-muted-foreground">Location unavailable</span>;
+
+  const live = isLocationLive(trip);
   return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-        docStateClasses[state]
-      }`}
-    >
-      POD {state}
+    <span className={`inline-flex items-center gap-1.5 text-xs ${live ? "text-success" : "text-muted-foreground"}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-success" : "bg-muted-foreground/50"}`} />
+      {live ? "Live location" : `Last seen ${formatDateTime(location.recordedAt)}`}
     </span>
   );
 }
 
-function CloseDocsBadge({ trip }: { trip: DispatchTripListItem }) {
-  const countsText = `${trip.missingRequiredDocumentCount} missing / ${trip.rejectedRequiredDocumentCount} rejected`;
-  const rawReason = trip.closeDocumentBlockReason ?? "";
-  const inlineReason = (() => {
-    if (trip.closeDocumentReady) {
-      return null;
-    }
-
-    if (rawReason.includes("ATW") || rawReason.includes("Waybill")) {
-      return "Required docs incomplete";
-    }
-
-    return "Document blockers present";
-  })();
-
-  if (trip.closeDocumentReady) {
-    return (
-      <div className="flex flex-col items-start gap-1">
-        <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-          Ready
-        </span>
-        <span className="text-[11px] text-muted-foreground">{countsText}</span>
-      </div>
-    );
-  }
-
+function RouteSummary({ trip }: { trip: DispatchTripListItem }) {
   return (
-    <div className="flex flex-col items-start gap-1">
-      <span
-        className="rounded-full border border-rose-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700"
-        title={trip.closeDocumentBlockReason ?? "Document blockers present"}
-      >
-        Blocked
-      </span>
-      <span className="text-[11px] font-medium text-rose-700">{inlineReason}</span>
-      <span className="text-[11px] text-muted-foreground">{countsText}</span>
+    <div className="min-w-0">
+      <p className="truncate text-sm font-semibold text-foreground">{formatLocation(trip.pickupLocation)}</p>
+      <p className="mt-1 truncate text-xs text-muted-foreground">to {formatLocation(trip.dropoffLocation)}</p>
     </div>
   );
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
+function ExecutionTripRow({ trip, onOpen }: { trip: DispatchTripListItem; onOpen: () => void }) {
+  const delay = trip.latePickup || trip.lateDelivery;
+  const documentSummary = trip.status === "DELIVERED"
+    ? trip.closeDocumentReady ? "Closeout documents complete" : `${trip.missingRequiredDocumentCount + trip.rejectedRequiredDocumentCount} closeout document blocker${trip.missingRequiredDocumentCount + trip.rejectedRequiredDocumentCount === 1 ? "" : "s"}`
+    : `${trip.uploadedDocumentCount}/${trip.requiredDocumentCount} documents uploaded`;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group grid w-full gap-4 border-b border-border px-4 py-4 text-left transition-colors hover:bg-muted/40 last:border-b-0 md:grid-cols-[minmax(180px,1.35fr)_minmax(140px,0.9fr)_minmax(150px,0.9fr)_minmax(160px,0.9fr)_auto] md:items-center"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs font-semibold text-foreground">{trip.containerNumber || `TRIP-${trip.id.slice(0, 8).toUpperCase()}`}</span>
+          <StatusBadge status={trip.status} />
+        </div>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{trip.customer?.name || "Customer pending"}</p>
+      </div>
+      <RouteSummary trip={trip} />
+      <div className="space-y-1 text-xs">
+        <p className="inline-flex items-center gap-1.5 text-foreground"><UserRound className="h-3.5 w-3.5 text-muted-foreground" />{trip.driverUsername || "Driver pending"}</p>
+        <p className="inline-flex items-center gap-1.5 text-muted-foreground"><Truck className="h-3.5 w-3.5" />{trip.truckAssetCode || "Truck pending"}</p>
+      </div>
+      <div className="space-y-1 text-xs">
+        <p className={`font-medium ${delay ? "text-destructive" : "text-foreground"}`}>{delay ? "Schedule risk" : nextActionByStatus[trip.status] || "Monitor trip progress"}</p>
+        <p className="text-muted-foreground">{formatDateTime(trip.pickupScheduledAt)}</p>
+        <LocationState trip={trip} />
+      </div>
+      <div className="flex items-center justify-between gap-3 md:justify-end">
+        <span className={`text-xs ${trip.status === "DELIVERED" && !trip.closeDocumentReady ? "text-warning-foreground" : "text-muted-foreground"}`}>{documentSummary}</span>
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:text-primary" aria-hidden="true"><ArrowRight className="h-4 w-4" /></span>
+      </div>
+    </button>
+  );
 }
 
-function formatWindow(trip: DispatchTripListItem) {
-  const startRaw = trip.plannedStart ?? trip.pickupScheduledAt;
-  const endRaw = trip.plannedEnd ?? trip.dropoffScheduledAt;
-  if (!startRaw || !endRaw) return "-";
-
-  const start = new Date(startRaw);
-  const end = new Date(endRaw);
-  const startDate = start.toLocaleDateString();
-  const startTime = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const endTime = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `${startDate} ${startTime}-${endTime}`;
-}
-
-function getStopLabel(status: TripStatus) {
-  if (["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP"].includes(status)) return "Pickup";
-  if (["LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF", "DELIVERED"].includes(status)) return "Dropoff";
-  return "-";
-}
-
-function startOfToday() {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return now;
-}
-
-function endOfToday() {
-  const now = new Date();
-  now.setHours(23, 59, 59, 999);
-  return now;
+function IssueQueue({ title, description, items, loading, onOpen }: { title: string; description: string; items: DispatchTripListItem[]; loading: boolean; onOpen: (id: string) => void }) {
+  return (
+    <section className="min-w-0" aria-label={title}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div><p className="text-xs text-muted-foreground">{description}</p><h2 className="mt-1 text-sm font-semibold">{title}</h2></div>
+        <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums">{items.length}</span>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {loading && items.length === 0 ? <div className="p-4"><LoadingSkeleton rows={3} /></div> : items.length === 0 ? <p className="p-5 text-sm text-muted-foreground">No current exceptions.</p> : items.map((trip) => <button key={trip.id} type="button" onClick={() => onOpen(trip.id)} className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-muted/40"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs font-semibold">{trip.containerNumber || trip.id.slice(0, 8).toUpperCase()}</span><StatusBadge status={trip.status} /></div><p className="mt-1 truncate text-xs text-muted-foreground">{trip.driverUsername || "Driver pending"} · {formatLocation(trip.pickupLocation)}</p></div><ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" /></button>)}</div>
+    </section>
+  );
 }
 
 export default function DispatchBoardPage() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toasts, show } = useToast();
-  const me = getMe();
-  const roles = me?.roles ?? [];
-  const canVerifyDocs = roles.includes("Manager") || roles.includes("HeadOfFinance");
+  const roles = getMe()?.roles ?? [];
+  const canDispatch = roles.includes("Dispatcher") || roles.includes("Manager");
+  const [readyTrips, setReadyTrips] = useState<QueueState>(emptyQueue);
+  const [activeTrips, setActiveTrips] = useState<QueueState>(emptyQueue);
+  const [onHoldTrips, setOnHoldTrips] = useState<QueueState>(emptyQueue);
+  const [failedTrips, setFailedTrips] = useState<QueueState>(emptyQueue);
+  const [dispatchingTripId, setDispatchingTripId] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const activePageParam = Number(searchParams.get("executionPage"));
+  const activePage = Number.isInteger(activePageParam) && activePageParam > 0 ? activePageParam : 1;
+  const activeTotalPages = Math.max(1, Math.ceil(activeTrips.totalCount / activePageSize));
 
-  const [activeTrips, setActiveTrips] = useState<PanelState>({
-    items: [],
-    totalCount: 0,
-    loading: true
-  });
-  const [onHoldTrips, setOnHoldTrips] = useState<PanelState>({
-    items: [],
-    totalCount: 0,
-    loading: true
-  });
-  const [failedTrips, setFailedTrips] = useState<PanelState>({
-    items: [],
-    totalCount: 0,
-    loading: true
-  });
-  const [podPendingTrips, setPodPendingTrips] = useState<PanelState>({
-    items: [],
-    totalCount: 0,
-    loading: true
-  });
-  const [upcomingTrips, setUpcomingTrips] = useState<PanelState>({
-    items: [],
-    totalCount: 0,
-    loading: true
-  });
-  const [deliveredTodayCount, setDeliveredTodayCount] = useState(0);
-  const [deliveredTodayLoading, setDeliveredTodayLoading] = useState(true);
-  const [docQueue, setDocQueue] = useState<{ items: DocQueueItem[]; loading: boolean }>(
-    {
-      items: [],
-      loading: true
-    }
-  );
-  const loadPanel = async (
-    endpoint: string,
-    setter: React.Dispatch<React.SetStateAction<PanelState>>,
-    pageSize: number
-  ) => {
-    setter((prev) => ({ ...prev, loading: true }));
+  const setActivePage = (nextPage: number) => {
+    const next = new URLSearchParams(searchParams);
+    const resolvedPage = Math.max(1, Math.min(nextPage, activeTotalPages));
+    if (resolvedPage === 1) next.delete("executionPage");
+    else next.set("executionPage", String(resolvedPage));
+    setSearchParams(next, { replace: true });
+  };
+
+  const loadQueue = async (endpoint: string, page: number, pageSize: number, setter: React.Dispatch<React.SetStateAction<QueueState>>) => {
+    setter((current) => ({ ...current, loading: true }));
     try {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("pageSize", pageSize.toString());
-      const result = await api<PagedResult<DispatchTripListItem>>(`${endpoint}?${params.toString()}`, {
-        method: "GET"
-      });
-      const items = result.items ?? [];
-      setter({
-        items,
-        totalCount: result.totalCount ?? 0,
-        loading: false
-      });
-      return items;
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to load dispatch data.", "error");
-      setter((prev) => ({ ...prev, loading: false }));
-      return [] as DispatchTripListItem[];
+      const result = await api<PagedResult<DispatchTripListItem>>(`${endpoint}?page=${page}&pageSize=${pageSize}`, { method: "GET" });
+      setter({ items: result.items ?? [], totalCount: result.totalCount ?? 0, loading: false });
+    } catch (error: any) {
+      setter((current) => ({ ...current, loading: false }));
+      show(error?.message ?? "Unable to load the execution workspace. Refresh and try again.", "error");
     }
   };
 
-  const loadActive = () => loadPanel("/api/dispatch/trips/active", setActiveTrips, activePageSize);
-  const loadOnHold = () => loadPanel("/api/dispatch/trips/on-hold", setOnHoldTrips, exceptionPageSize);
-  const loadFailed = () =>
-    loadPanel("/api/dispatch/trips/failed-attempts", setFailedTrips, exceptionPageSize);
-  const loadPodPending = () =>
-    loadPanel("/api/dispatch/trips/pod-pending", setPodPendingTrips, exceptionPageSize);
-
-  const loadUpcoming = async () => {
-    setUpcomingTrips((prev) => ({ ...prev, loading: true }));
-    try {
-      const from = new Date();
-      const to = new Date(from.getTime() + upcomingHours * 60 * 60 * 1000);
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("pageSize", upcomingPageSize.toString());
-      params.set("from", from.toISOString());
-      params.set("to", to.toISOString());
-      const result = await api<PagedResult<DispatchTripListItem>>(`/api/dispatch/trips?${params.toString()}`,
-        { method: "GET" }
-      );
-      setUpcomingTrips({
-        items: result.items ?? [],
-        totalCount: result.totalCount ?? 0,
-        loading: false
-      });
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to load upcoming schedule.", "error");
-      setUpcomingTrips((prev) => ({ ...prev, loading: false }));
-    }
-  };
-
-  const loadDeliveredToday = async () => {
-    setDeliveredTodayLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("pageSize", "1");
-      params.set("deliveredFrom", startOfToday().toISOString());
-      params.set("deliveredTo", endOfToday().toISOString());
-      const result = await api<PagedResult<DispatchTripListItem>>(`/api/dispatch/trips?${params.toString()}`,
-        { method: "GET" }
-      );
-      setDeliveredTodayCount(result.totalCount ?? 0);
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to load delivered count.", "error");
-    } finally {
-      setDeliveredTodayLoading(false);
-    }
-  };
-
-  const loadDocQueue = async (trips: DispatchTripListItem[]) => {
-    setDocQueue((prev) => ({ ...prev, loading: true }));
-    try {
-      if (trips.length === 0) {
-        setDocQueue({ items: [], loading: false });
-        return;
-      }
-      const candidates = trips.slice(0, exceptionPageSize);
-      const results = await Promise.all(
-        candidates.map(async (trip) => {
-          try {
-            const docs = await api<DispatchTripDocument[]>(`/api/dispatch/trips/${trip.id}/documents`, {
-              method: "GET"
-            });
-            return { trip, docs: docs ?? [] };
-          } catch (e) {
-            console.error(e);
-            return { trip, docs: [] };
-          }
-        })
-      );
-      const items: DocQueueItem[] = [];
-      results.forEach(({ trip, docs }) => {
-        docs
-          .filter((doc) => doc.state === "UPLOADED")
-          .forEach((doc) => items.push({ trip, doc }));
-      });
-      setDocQueue({ items, loading: false });
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to load verification queue.", "error");
-      setDocQueue((prev) => ({ ...prev, loading: false }));
-    }
-  };
-
-  const refreshAll = async () => {
-    const [activeItems, onHoldItems, failedItems, podPendingItems] = await Promise.all([
-      loadActive(),
-      loadOnHold(),
-      loadFailed(),
-      loadPodPending()
+  const refreshAll = async (targetActivePage = activePage) => {
+    await Promise.all([
+      loadQueue("/api/dispatch/trips/ready", 1, readyPageSize, setReadyTrips),
+      loadQueue("/api/dispatch/trips/active", targetActivePage, activePageSize, setActiveTrips),
+      loadQueue("/api/dispatch/trips/on-hold", 1, issuePageSize, setOnHoldTrips),
+      loadQueue("/api/dispatch/trips/failed-attempts", 1, issuePageSize, setFailedTrips)
     ]);
-    void loadUpcoming();
-    void loadDeliveredToday();
-    void loadDocQueue(podPendingItems.length ? podPendingItems : [...onHoldItems, ...failedItems]);
-    return activeItems;
+    setLastUpdatedAt(new Date());
   };
+
+  useEffect(() => { void refreshAll(activePage); }, [activePage]);
 
   useEffect(() => {
-    refreshAll();
-  }, []);
+    if (!activeTrips.loading && activePage > activeTotalPages) setActivePage(activeTotalPages);
+  }, [activePage, activeTotalPages, activeTrips.loading]);
 
-  const metrics = useMemo(
-    () => [
-      {
-        label: "Active Trips",
-        value: activeTrips.totalCount,
-        loading: activeTrips.loading
-      },
-      {
-        label: "Trips On Hold",
-        value: onHoldTrips.totalCount,
-        loading: onHoldTrips.loading
-      },
-      {
-        label: "Failed Attempts",
-        value: failedTrips.totalCount,
-        loading: failedTrips.loading
-      },
-      {
-        label: "Delivered Today",
-        value: deliveredTodayCount,
-        loading: deliveredTodayLoading
-      },
-      {
-        label: "POD Pending",
-        value: podPendingTrips.totalCount,
-        loading: podPendingTrips.loading
-      }
-    ],
-    [
-      activeTrips.totalCount,
-      activeTrips.loading,
-      onHoldTrips.totalCount,
-      onHoldTrips.loading,
-      failedTrips.totalCount,
-      failedTrips.loading,
-      deliveredTodayCount,
-      deliveredTodayLoading,
-      podPendingTrips.totalCount,
-      podPendingTrips.loading
-    ]
-  );
+  useDispatchHub({
+    onTripStatusChanged: () => { void refreshAll(); },
+    onDriverLocationUpdated: () => { void refreshAll(); },
+    onPlanningInvalidated: () => { void refreshAll(); }
+  });
 
-  const handleVerifyDoc = async (tripId: string, docId: string) => {
-    try {
-      await api(`/api/dispatch/trips/${tripId}/documents/${docId}/verify`, { method: "POST" });
-      show("Document verified.", "success");
-      refreshAll();
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to verify document.", "error");
+  const dispatchTrip = async (trip: DispatchTripListItem) => {
+    if (!canDispatch) return;
+    if (!trip.driverUserId || !trip.truckAssetId) {
+      show("This ready plan is missing an assignment. Return it to Planning before dispatching.", "error");
+      return;
     }
-  };
-
-  const handleRejectDoc = async (tripId: string, docId: string) => {
-    const remarks = window.prompt("Reason for rejection?");
-    if (!remarks) return;
+    setDispatchingTripId(trip.id);
     try {
-      await api(`/api/dispatch/trips/${tripId}/documents/${docId}/reject`, {
+      await api(`/api/dispatch/trips/${trip.id}/dispatch`, {
         method: "POST",
-        body: JSON.stringify({ remarks })
+        body: JSON.stringify({ driverUserId: trip.driverUserId, truckAssetId: trip.truckAssetId, rowVersion: trip.rowVersion, remarks: null })
       });
-      show("Document rejected.", "success");
-      refreshAll();
-    } catch (e: any) {
-      console.error(e);
-      show(e?.message ?? "Failed to reject document.", "error");
+      show("Trip dispatched. The driver can now begin the pickup workflow.", "success");
+      await refreshAll();
+    } catch (error: any) {
+      show(error?.message ?? "Dispatch failed because the trip changed. Refresh and try again.", "error");
+      await refreshAll();
+    } finally {
+      setDispatchingTripId(null);
     }
   };
+
+  const metrics = useMemo(() => [
+    { label: "Ready to dispatch", value: readyTrips.totalCount, icon: Send, tone: "text-primary", detail: "Validated trip plans" },
+    { label: "In execution", value: activeTrips.totalCount, icon: CircleDot, tone: "text-info", detail: "Trips moving now" },
+    { label: "Operational issues", value: onHoldTrips.totalCount + failedTrips.totalCount, icon: AlertTriangle, tone: "text-destructive", detail: "Require resolution" },
+    { label: "Live drivers", value: activeTrips.items.filter(isLocationLive).length, icon: Wifi, tone: "text-success", detail: "Location reporting" }
+  ], [activeTrips.items, activeTrips.totalCount, failedTrips.totalCount, onHoldTrips.totalCount, readyTrips.totalCount]);
+
+  const issues = [...onHoldTrips.items, ...failedTrips.items];
+  const isLoading = readyTrips.loading || activeTrips.loading || onHoldTrips.loading || failedTrips.loading;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title="Dispatch Dashboard"
-        description="Operational overview of active trips and exceptions."
-        breadcrumbs={
-          <nav className="flex items-center gap-2" aria-label="Breadcrumb">
-            <Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">
-              Dispatch
-            </Link>
-            <span className="text-muted-foreground">/</span>
-            <span className="text-foreground">Dashboard</span>
-          </nav>
-        }
-        actions={
-          <Button variant="outline" size="sm" className="gap-2" onClick={refreshAll}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        }
+        title="Dispatch execution"
+        description="Release validated trips, monitor live work, and resolve operational exceptions."
+        breadcrumbs={<nav className="flex items-center gap-2" aria-label="Breadcrumb"><Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">Dispatch</Link><span className="text-muted-foreground">/</span><span>Execution</span></nav>}
+        actions={<Button variant="outline" size="sm" onClick={() => void refreshAll()} disabled={isLoading}><RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh</Button>}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="surface-card p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{metric.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">
-              {metric.loading ? "..." : metric.value}
-            </p>
-          </div>
-        ))}
-      </div>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Execution summary">
+        {metrics.map(({ label, value, icon: Icon, tone, detail }) => <div key={label} className="operations-kpi"><span className={`operations-kpi__icon ${tone}`}><Icon className="h-5 w-5" /></span><div><p className="operations-kpi__value tabular-nums">{isLoading ? "…" : value}</p><p className="operations-kpi__label">{label}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div></div>)}
+      </section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {[
-          {
-            title: "Trips On Hold",
-            subtitle: "Paused trips requiring attention",
-            state: onHoldTrips,
-            emptyTitle: "No trips on hold",
-            emptyDescription: "Operational holds will appear here."
-          },
-          {
-            title: "Failed Attempts",
-            subtitle: "Trips needing recovery action",
-            state: failedTrips,
-            emptyTitle: "No failed attempts",
-            emptyDescription: "All trips are moving smoothly."
-          },
-          {
-            title: "POD Pending",
-            subtitle: "Delivered but not closable",
-            state: podPendingTrips,
-            emptyTitle: "No POD pending trips",
-            emptyDescription: "All delivered trips are closable."
-          }
-        ].map((panel) => (
-          <div key={panel.title} className="surface-card p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{panel.subtitle}</p>
-                <h3 className="text-sm font-semibold text-foreground">{panel.title}</h3>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => nav("/dispatch/trips")}>View all</Button>
-            </div>
-            {panel.state.loading && panel.state.items.length === 0 ? (
-              <LoadingSkeleton rows={3} />
-            ) : panel.state.items.length === 0 ? (
-              <EmptyState title={panel.emptyTitle} description={panel.emptyDescription} />
-            ) : (
-              <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-white">
-                {panel.state.items.map((trip) => (
-                  <button
-                    key={trip.id}
-                    type="button"
-                    className="group grid w-full gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(0,1fr)_auto]"
-                    onClick={() => nav(`/dispatch/trips/${trip.id}`)}
-                  >
-                    <div className="min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span className="font-mono text-sm font-semibold text-foreground">{trip.id.slice(0, 8)}</span>
-                        <span className="text-sm font-medium text-foreground">{trip.customer?.name ?? "-"}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Driver: {trip.driverUsername ?? "-"}</span>
-                        <span>Stop: {getStopLabel(trip.status)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 sm:justify-end">
-                      <span className="text-xs text-muted-foreground">
-                        {formatDateTime(trip.updatedAt ?? trip.createdAt)}
-                      </span>
-                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:text-primary">
-                        <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      <section className="surface-card overflow-hidden" aria-labelledby="ready-queue-heading">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Execution handoff</p><h2 id="ready-queue-heading" className="mt-1 text-lg font-semibold">Ready queue</h2><p className="mt-1 text-sm text-muted-foreground">These trips passed Planning validation and are ready to release to their assigned driver.</p></div>
+          <Link to="/dispatch/planning"><Button variant="outline" size="sm">Open Planning <ArrowRight className="h-4 w-4" /></Button></Link>
+        </div>
+        {readyTrips.loading && readyTrips.items.length === 0 ? <div className="p-5"><LoadingSkeleton rows={4} /></div> : readyTrips.items.length === 0 ? <div className="p-5"><EmptyState title="No trips ready to dispatch" description="Complete final validation in Planning to create the next execution handoff." /></div> : <div className="divide-y divide-border">{readyTrips.items.map((trip) => <article key={trip.id} className="grid gap-4 p-4 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_auto] md:items-center md:px-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-semibold">{trip.containerNumber || `TRIP-${trip.id.slice(0, 8).toUpperCase()}`}</span><StatusBadge status={trip.status} /></div><p className="mt-1 text-xs text-muted-foreground">{trip.customer?.name || "Customer pending"} · Pickup {formatDateTime(trip.pickupScheduledAt)}</p><div className="mt-3"><RouteSummary trip={trip} /></div></div><div className="grid gap-2 text-sm sm:grid-cols-2 md:grid-cols-1"><p className="inline-flex items-center gap-2"><UserRound className="h-4 w-4 text-muted-foreground" />{trip.driverUsername || "Driver missing"}</p><p className="inline-flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" />{trip.truckAssetCode || "Truck missing"}</p></div><div className="flex flex-col gap-2 sm:flex-row md:flex-col md:items-stretch"><Button variant="outline" size="sm" onClick={() => navigate(`/dispatch/trips/${trip.id}`)}>Review</Button>{canDispatch ? <Button size="sm" onClick={() => void dispatchTrip(trip)} disabled={dispatchingTripId === trip.id}>{dispatchingTripId === trip.id ? "Dispatching…" : "Dispatch trip"}<Send className="h-4 w-4" /></Button> : <p className="max-w-[180px] text-xs text-muted-foreground">View-only access. A dispatcher or manager releases the trip.</p>}</div></article>)}</div>}
+      </section>
 
-      <div className="surface-card p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Trips currently in progress</p>
-            <h3 className="text-sm font-semibold text-foreground">Active Trips</h3>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => nav("/dispatch/trips")}>View all</Button>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.8fr)]">
+        <div className="surface-card overflow-hidden" aria-labelledby="active-trips-heading">
+          <div className="flex items-center justify-between gap-3 border-b border-border p-4 sm:p-5"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Live operations</p><h2 id="active-trips-heading" className="mt-1 text-lg font-semibold">Trips in execution</h2></div><span className="inline-flex items-center gap-2 text-xs text-muted-foreground"><LocateFixed className="h-3.5 w-3.5" />{lastUpdatedAt ? `Updated ${formatDateTime(lastUpdatedAt.toISOString())}` : "Loading live state"}</span></div>
+          {activeTrips.loading && activeTrips.items.length === 0 ? <div className="p-5"><LoadingSkeleton rows={activePageSize} /></div> : activeTrips.items.length === 0 ? <div className="p-5"><EmptyState title="No trips in execution" description="Dispatch a ready trip when the next movement is due." /></div> : <><div>{activeTrips.items.map((trip) => <ExecutionTripRow key={trip.id} trip={trip} onOpen={() => navigate(`/dispatch/trips/${trip.id}`)} />)}</div><div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5"><span>{(activePage - 1) * activePageSize + 1}-{Math.min(activePage * activePageSize, activeTrips.totalCount)} of {activeTrips.totalCount} active trips</span><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={activePage <= 1 || activeTrips.loading} onClick={() => setActivePage(activePage - 1)}>Previous</Button><span className="whitespace-nowrap">Page {activePage} of {activeTotalPages}</span><Button variant="outline" size="sm" disabled={activePage >= activeTotalPages || activeTrips.loading} onClick={() => setActivePage(activePage + 1)}>Next</Button></div></div></>}
         </div>
 
-        {activeTrips.loading && activeTrips.items.length === 0 ? (
-          <LoadingSkeleton rows={4} />
-        ) : activeTrips.items.length === 0 ? (
-          <EmptyState title="No active trips" description="All trips are closed or cancelled." />
-        ) : (
-          <DataTable>
-            <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
-              <tr>
-                <th className="px-6 py-4 text-left">Trip</th>
-                <th className="px-6 py-4 text-left">Customer</th>
-                <th className="px-6 py-4 text-left">Driver</th>
-                <th className="px-6 py-4 text-left">Truck</th>
-                <th className="px-6 py-4 text-left">Status</th>
-                <th className="px-6 py-4 text-left">Window</th>
-                <th className="px-6 py-4 text-left">POD</th>
-                <th className="px-6 py-4 text-left">Close Docs</th>
-                <th className="px-6 py-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {activeTrips.items.map((trip) => (
-                <tr
-                  key={trip.id}
-                  className="cursor-pointer text-sm hover:bg-muted/30"
-                  onClick={() => nav(`/dispatch/trips/${trip.id}`)}
-                >
-                  <td className="px-6 py-4 font-medium text-foreground">{trip.id.slice(0, 8)}</td>
-                  <td className="px-6 py-4">{trip.customer?.name ?? "-"}</td>
-                  <td className="px-6 py-4">{trip.driverUsername ?? "-"}</td>
-                  <td className="px-6 py-4">{trip.truckAssetCode ?? "-"}</td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-                  </td>
-                  <td className="px-6 py-4 text-xs text-muted-foreground">
-                    <div>{formatWindow(trip)}</div>
-                    {typeof trip.plannedDurationMinutes === "number" ? (
-                      <div className="text-[11px] text-muted-foreground/80">{trip.plannedDurationMinutes} min</div>
-                    ) : null}
-                  </td>
-                  <td className="px-6 py-4">
-                    <PodBadge trip={trip} />
-                  </td>
-                  <td className="px-6 py-4">
-                    <CloseDocsBadge trip={trip} />
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        nav(`/dispatch/trips/${trip.id}`);
-                      }}
-                    >
-                      View
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        )}
-      </div>
+        <aside className="surface-card p-4 sm:p-5" aria-labelledby="issues-heading">
+          <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-destructive">Needs attention</p><h2 id="issues-heading" className="mt-1 text-lg font-semibold">Resolve exceptions</h2><p className="mt-1 text-sm text-muted-foreground">Holds and failed attempts are kept separate from the normal execution flow.</p></div><ShieldAlert className="h-5 w-5 text-destructive" /></div>
+          <div className="mt-5 space-y-6"><IssueQueue title="On hold" description="Paused work" items={onHoldTrips.items} loading={onHoldTrips.loading} onOpen={(id) => navigate(`/dispatch/trips/${id}`)} /><IssueQueue title="Failed attempts" description="Recovery required" items={failedTrips.items} loading={failedTrips.loading} onOpen={(id) => navigate(`/dispatch/trips/${id}`)} /></div>
+          {issues.length === 0 && !onHoldTrips.loading && !failedTrips.loading ? <p className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground"><Route className="mr-1.5 inline h-3.5 w-3.5" />No exceptional trips require dispatcher action right now.</p> : null}
+        </aside>
+      </section>
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-        <div className="surface-card p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Pickups in the next {upcomingHours} hours
-              </p>
-              <h3 className="text-sm font-semibold text-foreground">Upcoming Schedule</h3>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => nav("/dispatch/trips")}>View all</Button>
-          </div>
-
-          {upcomingTrips.loading && upcomingTrips.items.length === 0 ? (
-            <LoadingSkeleton rows={3} />
-          ) : upcomingTrips.items.length === 0 ? (
-            <EmptyState title="No upcoming pickups" description="No trips scheduled in the next few hours." />
-          ) : (
-            <DataTable>
-              <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
-                <tr>
-                  <th className="px-4 py-3 text-left">Trip</th>
-                  <th className="px-4 py-3 text-left">Customer</th>
-                  <th className="px-4 py-3 text-left">Driver</th>
-                  <th className="px-4 py-3 text-left">Truck</th>
-                  <th className="px-4 py-3 text-left">Pickup</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {upcomingTrips.items.map((trip) => (
-                  <tr
-                    key={trip.id}
-                    className="cursor-pointer text-sm hover:bg-muted/30"
-                    onClick={() => nav(`/dispatch/trips/${trip.id}`)}
-                  >
-                    <td className="px-4 py-3 font-medium text-foreground">{trip.id.slice(0, 8)}</td>
-                    <td className="px-4 py-3">{trip.customer?.name ?? "-"}</td>
-                    <td className="px-4 py-3">{trip.driverUsername ?? "-"}</td>
-                    <td className="px-4 py-3">{trip.truckAssetCode ?? "-"}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {formatDateTime(trip.pickupScheduledAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={statusLabels[trip.status] ?? trip.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
-          )}
-        </div>
-
-        <div className="surface-card p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Documents awaiting verification
-              </p>
-              <h3 className="text-sm font-semibold text-foreground">Verification Queue</h3>
-            </div>
-          </div>
-
-          {docQueue.loading && docQueue.items.length === 0 ? (
-            <LoadingSkeleton rows={3} />
-          ) : docQueue.items.length === 0 ? (
-            <EmptyState title="No documents pending" description="No uploaded documents require verification." />
-          ) : (
-            <DataTable>
-              <thead className="bg-muted/30 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
-                <tr>
-                  <th className="px-4 py-3 text-left">Trip</th>
-                  <th className="px-4 py-3 text-left">Driver</th>
-                  <th className="px-4 py-3 text-left">Document</th>
-                  <th className="px-4 py-3 text-left">Uploaded</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {docQueue.items.map(({ trip, doc }) => (
-                  <tr
-                    key={`${trip.id}-${doc.id}`}
-                    className="cursor-pointer text-sm hover:bg-muted/30"
-                    onClick={() => nav(`/dispatch/trips/${trip.id}`)}
-                  >
-                    <td className="px-4 py-3 font-medium text-foreground">{trip.id.slice(0, 8)}</td>
-                    <td className="px-4 py-3">{trip.driverUsername ?? "-"}</td>
-                    <td className="px-4 py-3">{doc.type}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDateTime(doc.uploadedAt)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                        docStateClasses[doc.state]
-                      }`}>
-                        {doc.state}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {canVerifyDocs ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleVerifyDoc(trip.id, doc.id);
-                            }}
-                          >
-                            Verify
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRejectDoc(trip.id, doc.id);
-                            }}
-                          >
-                            Reject
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Read-only</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
-          )}
-        </div>
-      </div>
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"><p className="text-muted-foreground"><Clock3 className="mr-2 inline h-4 w-4" />Planning owns schedules and resource recommendations. Execution owns dispatch release, live progress, and recovery.</p><Link to="/dispatch/trips" className="inline-flex items-center gap-2 font-semibold text-primary hover:text-primary/80">Browse trip records <ArrowRight className="h-4 w-4" /></Link></div>
     </div>
   );
 }

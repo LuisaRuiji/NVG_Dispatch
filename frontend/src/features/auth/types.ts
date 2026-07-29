@@ -44,6 +44,7 @@ export type StepUpResponse = {
 export type MeResponse = {
   userId: string;
   username: string;
+  email?: string | null;
   roles: UserRole[];
   mfaEnabled?: boolean;
   mustChangePassword?: boolean;

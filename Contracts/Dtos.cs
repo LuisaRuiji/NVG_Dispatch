@@ -125,6 +125,7 @@ public sealed record ChangePasswordRequest(string NewPassword);
 public sealed record CurrentUserResponse(
     Guid UserId,
     string Username,
+    string? Email,
     IReadOnlyCollection<string> Roles,
     bool MfaEnabled,
     bool MustChangePassword);

@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import { normalizeUserRoles } from "./roles";
 import { clearDashboardKpiCache } from "@/features/dashboard/kpis";
+import { getSettingsPreferences } from "@/features/settings/preferences";
 
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = "nvg_access_token";
 const LEGACY_REFRESH_TOKEN_STORAGE_KEY = "nvg_refresh_token";
@@ -38,6 +39,16 @@ export function getDefaultRoute(current: MeResponse | null = me) {
   }
   if (current.mustChangePassword) {
     return "/change-password";
+  }
+  const defaultLanding = getSettingsPreferences().defaultLanding;
+  if (defaultLanding === "planning" && (current.roles.includes("Dispatcher") || current.roles.includes("Manager"))) {
+    return "/dispatch/planning";
+  }
+  if (defaultLanding === "my-trips" && current.roles.includes("Driver")) {
+    return "/dispatch/my-trips";
+  }
+  if (defaultLanding === "portal" && current.roles.includes("Customer")) {
+    return "/portal/dashboard";
   }
   return "/dashboard";
 }
@@ -207,6 +218,15 @@ function clearSessionState() {
   me = null;
   setAccessToken(null);
   clearLegacyTokenStorage();
+}
+
+export async function updateMyProfile(username: string, email: string | null) {
+  const response = await api<MeApiResponse>("/api/auth/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ username, email })
+  });
+  me = { ...response, roles: normalizeUserRoles(response.roles) };
+  return me;
 }
 
 async function loadValidatedIdentity(): Promise<MeResponse> {

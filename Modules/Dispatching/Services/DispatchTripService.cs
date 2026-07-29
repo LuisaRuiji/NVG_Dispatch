@@ -240,7 +240,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: trip.Id);
 
         await SaveChangesAsync(cancellationToken);
-        TriggerPostDeliveryRecommendations(trip.Id, trip.Status);
+        TriggerTripChainingSuggestions(trip.Id, trip.Status);
         return trip;
     }
 
@@ -825,7 +825,7 @@ public sealed class DispatchTripService : ITripLifecycleService
         AddHistory(trip.Id, fromStatus, trip.Status, actor.UserId, remarks, command.EventAt);
         AddStatusAudit(actor.UserId, trip.Id, trip.Status);
         await SaveChangesAsync(cancellationToken);
-        TriggerPostDeliveryRecommendations(trip.Id, trip.Status);
+        TriggerTripChainingSuggestions(trip.Id, trip.Status);
         return trip;
     }
 
@@ -936,7 +936,7 @@ public sealed class DispatchTripService : ITripLifecycleService
             tripId: trip.Id);
 
         await SaveChangesAsync(cancellationToken);
-        TriggerPostDeliveryRecommendations(trip.Id, trip.Status);
+        TriggerTripChainingSuggestions(trip.Id, trip.Status);
         return trip;
     }
 
@@ -2298,9 +2298,9 @@ public sealed class DispatchTripService : ITripLifecycleService
         }
     }
 
-    private void TriggerPostDeliveryRecommendations(Guid tripId, TripStatus newStatus)
+    private void TriggerTripChainingSuggestions(Guid tripId, TripStatus newStatus)
     {
-        if (newStatus != TripStatus.Delivered || _serviceScopeFactory is null)
+        if (newStatus is not (TripStatus.Delivered or TripStatus.Cancelled) || _serviceScopeFactory is null)
         {
             return;
         }
@@ -2308,8 +2308,17 @@ public sealed class DispatchTripService : ITripLifecycleService
         _ = Task.Run(async () =>
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<IPostDeliveryRecommendationService>();
-            await svc.GenerateRecommendationsAsync(tripId);
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DispatchTripService>>();
+            try
+            {
+                var service = scope.ServiceProvider.GetRequiredService<ITripChainingSuggestionService>();
+                await service.GenerateSuggestionsAsync(tripId);
+            }
+            catch (Exception exception)
+            {
+                // Trip Chaining is advisory and must never roll back a lifecycle transition.
+                logger.LogError(exception, "Trip Chaining suggestion generation failed for trip {TripId}", tripId);
+            }
         });
     }
 

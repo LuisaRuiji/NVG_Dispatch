@@ -134,6 +134,32 @@ public sealed class DispatchTripsController : ControllerBase
             resolvedPageSize));
     }
 
+    [HttpGet("ready")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Ceo}")]
+    public async Task<ActionResult<PagedResult<DispatchTripListItemResponse>>> GetReadyForDispatchTrips(
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolvePaging(page, pageSize, out var resolvedPage, out var resolvedPageSize, out var pagingError))
+        {
+            return BadRequest(pagingError);
+        }
+
+        var results = await _queryService.GetReadyForDispatchTripsAsync(
+            resolvedPage,
+            resolvedPageSize,
+            BuildActor(),
+            cancellationToken);
+        var responseItems = MapTripListItems(results.Items);
+
+        return Ok(new PagedResult<DispatchTripListItemResponse>(
+            responseItems,
+            results.TotalCount,
+            resolvedPage,
+            resolvedPageSize));
+    }
+
     [HttpGet("on-hold")]
     [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Ceo}")]
     public async Task<ActionResult<PagedResult<DispatchTripListItemResponse>>> GetOnHoldTrips(

@@ -22,6 +22,7 @@ public sealed class AuthController : ControllerBase
     private readonly AuthService _authService;
     private readonly AuthEventService _authEventService;
     private readonly IAuditService _auditService;
+    private readonly UserService _userService;
     private readonly InventoryDbContext _dbContext;
     private readonly IWebHostEnvironment _environment;
 
@@ -29,12 +30,14 @@ public sealed class AuthController : ControllerBase
         AuthService authService,
         AuthEventService authEventService,
         IAuditService auditService,
+        UserService userService,
         InventoryDbContext dbContext,
         IWebHostEnvironment environment)
     {
         _authService = authService;
         _authEventService = authEventService;
         _auditService = auditService;
+        _userService = userService;
         _dbContext = dbContext;
         _environment = environment;
     }
@@ -328,15 +331,58 @@ public sealed class AuthController : ControllerBase
         var userFlags = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Id == userId)
-            .Select(user => new { user.MfaEnabled, user.MustChangePassword })
+            .Select(user => new { user.Email, user.MfaEnabled, user.MustChangePassword })
             .FirstOrDefaultAsync(cancellationToken);
 
         return Ok(new CurrentUserResponse(
             userId,
             username,
+            userFlags?.Email,
             roles,
             userFlags?.MfaEnabled ?? false,
             userFlags?.MustChangePassword ?? false));
+    }
+
+    [HttpPatch("me/profile")]
+    [Authorize]
+    public async Task<ActionResult<CurrentUserResponse>> UpdateMyProfile(
+        UpdateUserProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var user = await _userService.GetUserWithRolesAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        var before = new { user.Username, user.Email };
+        await _userService.UpdateUserProfileAsync(
+            userId,
+            new UpdateUserProfileCommand(request.Username, request.Email),
+            cancellationToken);
+
+        _auditService.AddEntry(
+            userId,
+            AuditActions.UserProfileUpdated,
+            EntityTypes.User,
+            userId,
+            before,
+            new { Username = request.Username.Trim(), Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim() });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var roles = user.UserRoles
+            .Select(role => role.Role?.Name ?? string.Empty)
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct()
+            .ToList();
+        return Ok(new CurrentUserResponse(
+            userId,
+            request.Username.Trim(),
+            string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+            roles,
+            user.MfaEnabled,
+            user.MustChangePassword));
     }
 
     [HttpPost("change-password")]
