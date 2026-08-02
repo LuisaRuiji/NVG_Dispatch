@@ -1,0 +1,39 @@
+# Build artifacts
+bin/
+obj/
+.vs/
+*.tsbuildinfo
+**/artifacts/
+.build-check/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Logs/temp
+tmp/
+tmp-*.log
+*.log
+.env
+!.env.example
+creds.txt
+IPO.txt
+Task_IT21
+
+# ASP.NET Core local/deployment configuration
+appsettings*.json
+**/appsettings*.json
+!appsettings.example.json
+!**/appsettings.example.json
+
+# User-specific
+*.csproj.user
+
+# Docs (except README.md)
+*.md
+!README.md
+!POLICY.md
+!SECURITY.md
+!Docs/Architecture/01-Module-Inventory.md
+!Docs/Architecture/02-Safe-Refactor-Plan.md
+!Docs/Architecture/03-Identity-Semantics.md
