@@ -290,7 +290,7 @@ export default function AppLayout() {
   }
 
   return (
-    <TrackingProvider>
+    <TrackingProvider enabled={roles.includes("Driver")}>
       <div className="vaia-shell fixed inset-0 flex min-h-0 w-full overflow-hidden bg-background text-foreground">
         <ToastHost toasts={toasts} />
       <aside className="hidden h-full w-60 flex-col overflow-hidden border-r border-border bg-card lg:flex">

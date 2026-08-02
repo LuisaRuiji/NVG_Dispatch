@@ -35,22 +35,34 @@ public sealed record LiveMapTripResponse(
     DateTime? DropoffScheduledAt,
     bool DelayFlag);
 
+public sealed record DriverTripEtaEstimate(
+    Guid TripId,
+    string DestinationType,
+    string DestinationLocation,
+    decimal RemainingDistanceKm,
+    int EstimatedTravelMinutes,
+    DateTime EstimatedArrivalAt,
+    DateTime CalculatedAt);
+
 public sealed class LocationTrackingService
 {
     private readonly InventoryDbContext _dbContext;
     private readonly IAuditService _auditService;
     private readonly IHubContext<DispatchLocationHub, IDispatchLocationClient> _hubContext;
     private readonly IGeocodingService? _geocodingService;
+    private readonly ITravelTimeService _travelTimeService;
 
     public LocationTrackingService(
         InventoryDbContext dbContext,
         IAuditService auditService,
         IHubContext<DispatchLocationHub, IDispatchLocationClient> hubContext,
+        ITravelTimeService travelTimeService,
         IGeocodingService? geocodingService = null)
     {
         _dbContext = dbContext;
         _auditService = auditService;
         _hubContext = hubContext;
+        _travelTimeService = travelTimeService;
         _geocodingService = geocodingService;
     }
 
@@ -333,6 +345,68 @@ public sealed class LocationTrackingService
         await _hubContext.Clients.Group($"driver-{driver.Id}").ReceiveLocationUpdate(payload);
 
         return update;
+    }
+
+    public async Task<DriverTripEtaEstimate?> EstimateActiveTripArrivalAsync(
+        Guid tripId,
+        Guid driverUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var trip = await _dbContext.DispatchTrips
+            .AsNoTracking()
+            .Include(t => t.Stops)
+            .FirstOrDefaultAsync(t => t.Id == tripId, cancellationToken);
+
+        if (trip == null)
+        {
+            throw new NotFoundException("Trip not found.");
+        }
+
+        if (trip.DriverUserId != driverUserId)
+        {
+            throw new ForbiddenDomainException("Driver is not assigned to this trip.");
+        }
+
+        if (!trip.LastLatitude.HasValue || !trip.LastLongitude.HasValue)
+        {
+            return null;
+        }
+
+        var destinationType = trip.Status switch
+        {
+            TripStatus.Dispatched or TripStatus.EnroutePickup or TripStatus.AtPickup => TripStopType.Pickup,
+            TripStatus.Loaded or TripStatus.EnrouteDropoff or TripStatus.AtDropoff => TripStopType.Dropoff,
+            _ => (TripStopType?)null
+        };
+
+        if (!destinationType.HasValue)
+        {
+            return null;
+        }
+
+        var destination = trip.Stops.FirstOrDefault(stop => stop.StopType == destinationType.Value);
+        if (destination?.Latitude is not decimal destinationLatitude ||
+            destination.Longitude is not decimal destinationLongitude)
+        {
+            return null;
+        }
+
+        var estimate = await _travelTimeService.EstimateTravelAsync(
+            trip.LastLatitude.Value,
+            trip.LastLongitude.Value,
+            destinationLatitude,
+            destinationLongitude,
+            cancellationToken);
+        var calculatedAt = DateTime.UtcNow;
+
+        return new DriverTripEtaEstimate(
+            trip.Id,
+            destinationType.Value == TripStopType.Pickup ? "PICKUP" : "DROPOFF",
+            destination.LocationText,
+            Math.Round(estimate.DistanceKm, 1),
+            estimate.TravelMinutes,
+            calculatedAt.AddMinutes(estimate.TravelMinutes),
+            calculatedAt);
     }
 
     public async Task<LocationTrackingSession> StopTrackingSessionAsync(

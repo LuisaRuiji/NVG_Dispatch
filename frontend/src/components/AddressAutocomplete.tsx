@@ -10,6 +10,7 @@ type NominatimResult = {
 };
 
 type Props = {
+  id?: string;
   value: string;
   onChange: (value: string, lat?: number, lon?: number) => void;
   placeholder?: string;
@@ -17,7 +18,7 @@ type Props = {
   disabled?: boolean;
 };
 
-export default function AddressAutocomplete({ value, onChange, placeholder, className, disabled }: Props) {
+export default function AddressAutocomplete({ id, value, onChange, placeholder, className, disabled }: Props) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -153,6 +154,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
     <div className={`relative ${className || ""}`} ref={wrapperRef}>
       <div className="relative">
         <Input
+          id={id}
           value={query}
           onChange={handleChange}
           onBlur={handleBlur}

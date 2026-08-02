@@ -251,26 +251,42 @@ function getTripReadiness(trip: DispatchTripListItem): TripReadiness {
   if (!trip.driverUsername) return { label: "Blocked", detail: "Driver not assigned", tone: "alert", needsAttention: true };
   if (!trip.truckAssetCode) return { label: "Blocked", detail: "Truck not assigned", tone: "alert", needsAttention: true };
 
-  const documentBlockers = trip.missingRequiredDocumentCount + trip.rejectedRequiredDocumentCount;
-  if (documentBlockers > 0) {
+  if (trip.status === "ON_HOLD" || trip.status === "FAILED_ATTEMPT") {
+    return { label: statusLabels[trip.status], detail: "Operational recovery required", tone: "warning", needsAttention: true };
+  }
+
+  const atwState = trip.documents.find((document) => document.type === "ATW")?.state ?? "MISSING";
+  if (["DRAFT", "READY_FOR_DISPATCH", "DISPATCHED", "ENROUTE_PICKUP"].includes(trip.status) && atwState !== "VERIFIED") {
     return {
       label: "Blocked",
-      detail: `${documentBlockers} document${documentBlockers === 1 ? "" : "s"} require attention`,
+      detail: atwState === "REJECTED" ? "ATW was rejected" : "Verified ATW required before dispatch",
       tone: "alert",
       needsAttention: true
     };
   }
-  if (trip.podPending || trip.podState === "MISSING" || trip.podState === "REJECTED") {
-    return { label: "At risk", detail: "POD requires review", tone: "warning", needsAttention: true };
+
+  if (trip.status === "READY_FOR_DISPATCH") {
+    return { label: "Ready", detail: "ATW verified — pickup documents follow after collection", tone: "success", needsAttention: false };
   }
-  if (trip.status === "READY_FOR_DISPATCH" && trip.closeDocumentReady) {
-    return { label: "Ready", detail: "All requirements complete", tone: "success", needsAttention: false };
+
+  if (trip.status === "DELIVERED") {
+    const closeoutBlockers = trip.missingRequiredDocumentCount + trip.rejectedRequiredDocumentCount;
+    if (closeoutBlockers > 0) {
+      return {
+        label: "Closeout due",
+        detail: `${closeoutBlockers} closeout document${closeoutBlockers === 1 ? "" : "s"} require attention`,
+        tone: "warning",
+        needsAttention: true
+      };
+    }
+    return { label: "Ready to close", detail: "All closeout documents verified", tone: "success", needsAttention: false };
+  }
+
+  if (trip.status === "CLOSED") {
+    return { label: "Closed", detail: "Trip documentation complete", tone: "success", needsAttention: false };
   }
   if (["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP", "LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"].includes(trip.status)) {
     return { label: "In transit", detail: statusLabels[trip.status], tone: "info", needsAttention: false };
-  }
-  if (trip.status === "ON_HOLD" || trip.status === "FAILED_ATTEMPT") {
-    return { label: statusLabels[trip.status], detail: "Operational recovery required", tone: "warning", needsAttention: true };
   }
   return { label: statusLabels[trip.status], detail: "Review current trip state", tone: "neutral", needsAttention: false };
 }
@@ -279,7 +295,8 @@ function getTripActionLabel(trip: DispatchTripListItem, canOperate: boolean) {
   if (!canOperate) return "Open trip";
   const readiness = getTripReadiness(trip);
   if (!trip.driverUsername || !trip.truckAssetCode) return "Assign assets";
-  if (readiness.label === "Blocked") return "Complete documents";
+  if (readiness.label === "Blocked" && readiness.detail?.includes("ATW")) return "Review ATW";
+  if (readiness.label === "Closeout due") return "Complete closeout";
   if (readiness.label === "At risk") return "Review trip";
   return "Open trip";
 }

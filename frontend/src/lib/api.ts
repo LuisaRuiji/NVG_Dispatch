@@ -230,3 +230,31 @@ export async function previewFile(path: string) {
     throw error;
   }
 }
+
+export async function fetchPreviewFile(path: string) {
+  const headers = new Headers();
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  const res = await fetch(`${API_BASE_URL}${path}`, { credentials: "include", headers });
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    const payload = normalizePayload(raw);
+    if (res.status === 401) {
+      emitToast("Session expired", "error");
+      onUnauthorized?.();
+    }
+    throw new ApiRequestError(
+      res.status,
+      payload?.message?.trim() || raw.trim() || "Document preview failed.",
+      payload ?? undefined,
+      raw
+    );
+  }
+
+  return {
+    blob: await res.blob(),
+    contentType: res.headers.get("content-type") ?? ""
+  };
+}

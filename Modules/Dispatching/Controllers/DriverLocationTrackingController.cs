@@ -86,6 +86,10 @@ public sealed class DriverLocationTrackingController : ControllerBase
                 request.RecordedAt,
                 request.Source,
                 cancellationToken);
+            var eta = await _trackingService.EstimateActiveTripArrivalAsync(
+                update.TripId,
+                driverUserId,
+                cancellationToken);
 
             return Ok(new
             {
@@ -98,7 +102,8 @@ public sealed class DriverLocationTrackingController : ControllerBase
                 update.Longitude,
                 update.RecordedAt,
                 update.ReceivedAt,
-                update.Source
+                update.Source,
+                Eta = eta
             });
         }
         catch (ArgumentException ex)
@@ -109,6 +114,19 @@ public sealed class DriverLocationTrackingController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    [HttpGet("api/driver/trips/{tripId:guid}/eta")]
+    public async Task<ActionResult<DriverTripEtaEstimate>> GetEta(
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var estimate = await _trackingService.EstimateActiveTripArrivalAsync(
+            tripId,
+            User.GetUserId(),
+            cancellationToken);
+
+        return estimate == null ? NoContent() : Ok(estimate);
     }
 
     [HttpPost("api/driver/trips/{tripId:guid}/stop-tracking")]

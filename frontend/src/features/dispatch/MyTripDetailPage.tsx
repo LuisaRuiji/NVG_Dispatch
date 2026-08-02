@@ -172,6 +172,7 @@ export default function MyTripDetailPage() {
   const isException = trip.status === "ON_HOLD" || trip.status === "FAILED_ATTEMPT" || trip.status === "CANCELLED";
   const deliveryBlockers = trip.status === "AT_DROPOFF" ? getDeliveryDocumentBlockers(trip.documents) : [];
   const deliveryBlocked = trip.status === "AT_DROPOFF" && deliveryBlockers.length > 0;
+  const activeLeg = ["LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"].includes(trip.status) ? "dropoff" : "pickup";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-28 md:pb-8">
@@ -232,7 +233,7 @@ export default function MyTripDetailPage() {
             </div>
           </section>
 
-          <section aria-labelledby="map-heading" className="space-y-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Trip visibility</p><h2 id="map-heading" className="mt-1 text-lg font-semibold">Trip map</h2></div><TripMap pickup={{ latitude: stops.pickup?.latitude, longitude: stops.pickup?.longitude, label: stops.pickup?.locationText ?? "Pickup" }} dropoff={{ latitude: stops.dropoff?.latitude, longitude: stops.dropoff?.longitude, label: stops.dropoff?.locationText ?? "Drop-off" }} driver={trip.latestDriverLocation ? { latitude: trip.latestDriverLocation.latitude, longitude: trip.latestDriverLocation.longitude, label: "Latest vehicle location" } : null} driverRecordedAt={trip.latestDriverLocation?.recordedAt} driverAccuracyMeters={trip.latestDriverLocation?.accuracyMeters} /></section>
+          <section aria-labelledby="map-heading" className="space-y-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Trip visibility</p><h2 id="map-heading" className="mt-1 text-lg font-semibold">Trip map</h2></div><TripMap pickup={{ latitude: stops.pickup?.latitude, longitude: stops.pickup?.longitude, label: stops.pickup?.locationText ?? "Pickup" }} dropoff={{ latitude: stops.dropoff?.latitude, longitude: stops.dropoff?.longitude, label: stops.dropoff?.locationText ?? "Drop-off" }} driver={trip.latestDriverLocation ? { latitude: trip.latestDriverLocation.latitude, longitude: trip.latestDriverLocation.longitude, label: "Latest vehicle location" } : null} activeLeg={activeLeg} driverRecordedAt={trip.latestDriverLocation?.recordedAt} driverAccuracyMeters={trip.latestDriverLocation?.accuracyMeters} /></section>
 
           {(driverHoldEligible.includes(trip.status) || failedAttemptEligible.includes(trip.status)) ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setModal({ type: "HOLD", remarks: "", eventAt: toLocalInput(new Date().toISOString()) })} disabled={pendingAction}>Request hold</Button><Button variant="destructive" onClick={() => setModal({ type: "FAILED", remarks: "", eventAt: toLocalInput(new Date().toISOString()) })} disabled={pendingAction}>Report failed attempt</Button></div> : null}
         </div>

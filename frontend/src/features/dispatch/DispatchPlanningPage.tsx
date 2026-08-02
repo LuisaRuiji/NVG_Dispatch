@@ -22,6 +22,7 @@ import {
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import ToastHost from "@/components/ToastHost";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -160,8 +161,12 @@ type PlanForm = {
   trailerAssetId: string;
   containerNumber: string;
   pickupLocation: string;
+  pickupLatitude: number | null;
+  pickupLongitude: number | null;
   pickupScheduledAt: string;
   dropoffLocation: string;
+  dropoffLatitude: number | null;
+  dropoffLongitude: number | null;
   dropoffScheduledAt: string;
   notes: string;
   remarks: string;
@@ -183,9 +188,12 @@ const emptyDecisionSupport: PlanningDecisionSupport = {
   availabilityVersion: 0
 };
 
+const parseApiDate = (value: string) =>
+  new Date(value.endsWith("Z") || value.includes("+") ? value : `${value}Z`);
+
 const formatDateTime = (value?: string | null) => {
   if (!value) return "Unscheduled";
-  const date = new Date(value);
+  const date = parseApiDate(value);
   if (Number.isNaN(date.getTime())) return value.replace("T", " ").slice(0, 16);
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 };
@@ -200,7 +208,7 @@ const formatTripType = (value?: string | null) =>
 
 const toLocalInput = (value?: string | null) => {
   if (!value) return "";
-  const date = new Date(value);
+  const date = parseApiDate(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 16);
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
@@ -222,14 +230,14 @@ type PlanningQueueItem =
 
 const isDueSoon = (value?: string | null) => {
   if (!value) return false;
-  const time = new Date(value).getTime();
+  const time = parseApiDate(value).getTime();
   const now = Date.now();
   return !Number.isNaN(time) && time >= now && time <= now + 2 * 60 * 60 * 1000;
 };
 
 const isPastDue = (value?: string | null) => {
   if (!value) return false;
-  const time = new Date(value).getTime();
+  const time = parseApiDate(value).getTime();
   return !Number.isNaN(time) && time < Date.now();
 };
 
@@ -368,6 +376,7 @@ function ResourceSelect({
   options,
   optional,
   isManager,
+  disabled,
   onChange
 }: {
   id: string;
@@ -376,12 +385,13 @@ function ResourceSelect({
   options: PlanningResource[];
   optional?: boolean;
   isManager: boolean;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}{optional ? " (optional)" : ""}</Label>
-      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm">
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm">
         <option value="">{optional ? `No ${label.toLowerCase()}` : `Select ${label.toLowerCase()}`}</option>
         {options.map((option) => (
           <option key={option.id} value={option.id} disabled={!option.isAvailable && option.id !== value && !isManager}>
@@ -412,6 +422,7 @@ function PlanningDrawer({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [hasValidated, setHasValidated] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   const loadTrip = async () => {
@@ -428,8 +439,12 @@ function PlanningDrawer({
         trailerAssetId: detail.trailerAssetId ?? "",
         containerNumber: detail.containerNumber ?? "",
         pickupLocation: pickup?.locationText ?? "",
+        pickupLatitude: pickup?.latitude ?? null,
+        pickupLongitude: pickup?.longitude ?? null,
         pickupScheduledAt: toLocalInput(pickup?.scheduledAt),
         dropoffLocation: dropoff?.locationText ?? "",
+        dropoffLatitude: dropoff?.latitude ?? null,
+        dropoffLongitude: dropoff?.longitude ?? null,
         dropoffScheduledAt: toLocalInput(dropoff?.scheduledAt),
         notes: detail.notes ?? "",
         remarks: ""
@@ -460,7 +475,11 @@ function PlanningDrawer({
     }
   });
 
-  useEffect(() => { void loadTrip(); void loadDecisionSupport(); }, [tripId]);
+  useEffect(() => {
+    setHasValidated(false);
+    void loadTrip();
+    void loadDecisionSupport();
+  }, [tripId]);
 
   useEffect(() => {
     if (!tripId) return;
@@ -498,6 +517,29 @@ function PlanningDrawer({
     recommendation.driverUserId === form.driverUserId &&
     recommendation.truckAssetId === form.truckAssetId &&
     (recommendation.trailerAssetId ?? "") === form.trailerAssetId);
+  const assignmentMatchesSavedPlan = Boolean(
+    trip && form &&
+    (trip.driverUserId ?? "") === form.driverUserId &&
+    (trip.truckAssetId ?? "") === form.truckAssetId &&
+    (trip.trailerAssetId ?? "") === form.trailerAssetId
+  );
+  const canMarkReady = Boolean(
+    trip?.status === "DRAFT" &&
+    decisionSupport?.canMarkReady &&
+    assignmentMatchesSavedPlan &&
+    (selectedRecommendation || form?.remarks.trim())
+  );
+  const isAlreadyReadyForDispatch = trip?.status === "READY_FOR_DISPATCH";
+
+  const useRecommendation = (recommendation: PlanningRecommendation) => {
+    setForm((current) => current ? {
+      ...current,
+      driverUserId: recommendation.driverUserId,
+      truckAssetId: recommendation.truckAssetId,
+      trailerAssetId: recommendation.trailerAssetId ?? ""
+    } : current);
+    showToast(`${recommendation.isRecommended ? "Recommended" : "Alternative"} assignment selected. Save Draft to apply it.`, "success");
+  };
 
   const save = async () => {
     if (!trip || !form) return;
@@ -509,8 +551,6 @@ function PlanningDrawer({
 
     setSaving(true);
     try {
-      const pickup = trip.stops.find((stop) => stop.stopType === "PICKUP");
-      const dropoff = trip.stops.find((stop) => stop.stopType === "DROPOFF");
       await api(`/api/dispatch/trips/${trip.id}`, {
         method: "PUT",
         body: JSON.stringify({
@@ -528,8 +568,8 @@ function PlanningDrawer({
           containerSize: trip.containerSize ?? null,
           tripType: trip.tripType ?? null,
           stops: [
-            { stopType: "PICKUP" as TripStopType, locationText: form.pickupLocation.trim(), scheduledAt: pickupAt, latitude: pickup?.latitude ?? null, longitude: pickup?.longitude ?? null },
-            { stopType: "DROPOFF" as TripStopType, locationText: form.dropoffLocation.trim(), scheduledAt: dropoffAt, latitude: dropoff?.latitude ?? null, longitude: dropoff?.longitude ?? null }
+            { stopType: "PICKUP" as TripStopType, locationText: form.pickupLocation.trim(), scheduledAt: pickupAt, latitude: form.pickupLatitude, longitude: form.pickupLongitude },
+            { stopType: "DROPOFF" as TripStopType, locationText: form.dropoffLocation.trim(), scheduledAt: dropoffAt, latitude: form.dropoffLatitude, longitude: form.dropoffLongitude }
           ]
         })
       });
@@ -547,8 +587,12 @@ function PlanningDrawer({
   const validateForDispatch = async () => {
     setValidating(true);
     try {
-      await loadDecisionSupport(true);
-      showToast("Dispatch validation refreshed. Review blockers and warnings below.", "success");
+      const validated = await api<PlanningDecisionSupport>(`/api/dispatch/planning/trips/${tripId}/validate`, { method: "POST" });
+      setDecisionSupport(validated);
+      setHasValidated(true);
+      showToast(validated.canMarkReady ? "All dispatch checks pass. Save a recommended assignment, then mark the trip ready." : "Dispatch validation completed. Resolve the remaining blockers below.", "success");
+    } catch (error: any) {
+      showToast(error?.message ?? "Dispatch validation could not be completed.", "error");
     } finally {
       setValidating(false);
     }
@@ -556,7 +600,14 @@ function PlanningDrawer({
 
   const markReady = async () => {
     if (!trip || !form || !decisionSupport) return;
+    if (trip.status === "READY_FOR_DISPATCH") {
+      showToast("This trip is already Ready for Dispatch.", "success");
+      await onSaved();
+      onClose();
+      return;
+    }
     if (!decisionSupport.canMarkReady) return showToast("Resolve all dispatch blockers before marking the trip ready.", "error");
+    if (!assignmentMatchesSavedPlan) return showToast("Save Draft to apply the selected assignment before marking the trip ready.", "error");
     if (!selectedRecommendation && !form.remarks.trim()) return showToast("Add an override reason for a valid manual assignment outside the current suggestions.", "error");
     setSaving(true);
     try {
@@ -595,10 +646,38 @@ function PlanningDrawer({
               <section aria-labelledby="schedule-heading">
                 <div className="flex items-center justify-between gap-3"><h3 id="schedule-heading" className="text-sm font-semibold">Schedule</h3><span className="text-xs text-muted-foreground">Times drive resource availability</span></div>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2"><Label htmlFor="pickup-location">Pickup location</Label><Input id="pickup-location" value={form.pickupLocation} onChange={(event) => setForm({ ...form, pickupLocation: event.target.value })} /></div>
-                  <div className="space-y-2"><Label htmlFor="pickup-time">Pickup time</Label><Input id="pickup-time" type="datetime-local" value={form.pickupScheduledAt} onChange={(event) => setForm({ ...form, pickupScheduledAt: event.target.value })} /></div>
-                  <div className="space-y-2"><Label htmlFor="dropoff-location">Dropoff location</Label><Input id="dropoff-location" value={form.dropoffLocation} onChange={(event) => setForm({ ...form, dropoffLocation: event.target.value })} /></div>
-                  <div className="space-y-2"><Label htmlFor="dropoff-time">Dropoff time</Label><Input id="dropoff-time" type="datetime-local" value={form.dropoffScheduledAt} onChange={(event) => setForm({ ...form, dropoffScheduledAt: event.target.value })} /></div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pickup-location">Pickup location</Label>
+                    <AddressAutocomplete
+                      id="pickup-location"
+                      value={form.pickupLocation}
+                      disabled={isAlreadyReadyForDispatch}
+                      onChange={(pickupLocation, pickupLatitude, pickupLongitude) => setForm({
+                        ...form,
+                        pickupLocation,
+                        pickupLatitude: pickupLatitude ?? null,
+                        pickupLongitude: pickupLongitude ?? null
+                      })}
+                    />
+                    <p className="text-xs text-muted-foreground">Choose a suggested address to save its map location.</p>
+                  </div>
+                  <div className="space-y-2"><Label htmlFor="pickup-time">Pickup time</Label><Input id="pickup-time" type="datetime-local" value={form.pickupScheduledAt} onChange={(event) => setForm({ ...form, pickupScheduledAt: event.target.value })} disabled={isAlreadyReadyForDispatch} /></div>
+                  <div className="space-y-2">
+                    <Label htmlFor="dropoff-location">Dropoff location</Label>
+                    <AddressAutocomplete
+                      id="dropoff-location"
+                      value={form.dropoffLocation}
+                      disabled={isAlreadyReadyForDispatch}
+                      onChange={(dropoffLocation, dropoffLatitude, dropoffLongitude) => setForm({
+                        ...form,
+                        dropoffLocation,
+                        dropoffLatitude: dropoffLatitude ?? null,
+                        dropoffLongitude: dropoffLongitude ?? null
+                      })}
+                    />
+                    <p className="text-xs text-muted-foreground">Choose a suggested address to save its map location.</p>
+                  </div>
+                  <div className="space-y-2"><Label htmlFor="dropoff-time">Dropoff time</Label><Input id="dropoff-time" type="datetime-local" value={form.dropoffScheduledAt} onChange={(event) => setForm({ ...form, dropoffScheduledAt: event.target.value })} disabled={isAlreadyReadyForDispatch} /></div>
                 </div>
               </section>
 
@@ -622,7 +701,7 @@ function PlanningDrawer({
                 </> : <>
                   <div><h3 id="recommendations-heading" className="text-sm font-semibold">Recommended assignment</h3><p className="mt-1 text-xs text-muted-foreground">Choose the suggested resource set or review a viable alternative.</p></div>
                   <div className="mt-3 space-y-3">
-                    {decisionSupport?.recommendations.length ? decisionSupport.recommendations.map((recommendation) => <article key={`${recommendation.driverUserId}-${recommendation.truckAssetId}-${recommendation.trailerAssetId ?? "none"}`} className={`rounded-xl border p-3 ${selectedRecommendation?.selectionRank === recommendation.selectionRank ? "border-primary bg-primary/5" : recommendation.isRecommended ? "border-primary/35 bg-primary/5" : "border-border bg-muted/20"}`}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{recommendation.isRecommended ? "Recommended" : "Alternative"}</p><p className="mt-1 text-sm font-semibold">{recommendation.driverName} + {recommendation.truckCode}{recommendation.trailerCode ? ` + ${recommendation.trailerCode}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{recommendation.reasons.join("; ")}</p></div><Button type="button" variant={recommendation.isRecommended ? "default" : "outline"} size="sm" onClick={() => form && setForm({ ...form, driverUserId: recommendation.driverUserId, truckAssetId: recommendation.truckAssetId, trailerAssetId: recommendation.trailerAssetId ?? "" })}>{recommendation.isRecommended ? "Use recommended" : "Use alternative"}</Button></div>{recommendation.warnings.length ? <p className="mt-2 text-xs text-warning-foreground">Warning: {recommendation.warnings.join("; ")}</p> : null}</article>) : <p className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Complete the booking checks before resource suggestions can be made." : "No valid resource combination is available for this schedule. Review the assignment issues below."}</p>}
+                    {decisionSupport?.recommendations.length ? decisionSupport.recommendations.map((recommendation) => <article key={`${recommendation.driverUserId}-${recommendation.truckAssetId}-${recommendation.trailerAssetId ?? "none"}`} className={`rounded-xl border p-3 ${selectedRecommendation?.selectionRank === recommendation.selectionRank ? "border-primary bg-primary/5" : recommendation.isRecommended ? "border-primary/35 bg-primary/5" : "border-border bg-muted/20"}`}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{recommendation.isRecommended ? "Recommended" : "Alternative"}</p><p className="mt-1 text-sm font-semibold">{recommendation.driverName} + {recommendation.truckCode}{recommendation.trailerCode ? ` + ${recommendation.trailerCode}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{recommendation.reasons.join("; ")}</p></div><Button type="button" variant={recommendation.isRecommended ? "default" : "outline"} size="sm" onClick={() => useRecommendation(recommendation)} disabled={isAlreadyReadyForDispatch}>{recommendation.isRecommended ? "Use recommended" : "Use alternative"}</Button></div>{recommendation.warnings.length ? <p className="mt-2 text-xs text-warning-foreground">Warning: {recommendation.warnings.join("; ")}</p> : null}</article>) : <p className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">{decisionSupport && !decisionSupport.resourcesEvaluated ? "Complete the booking checks before resource suggestions can be made." : "No valid resource combination is available for this schedule. Review the assignment issues below."}</p>}
                   </div>
                 </>}
               </section>
@@ -637,9 +716,9 @@ function PlanningDrawer({
               <section aria-labelledby="resources-heading">
                 <div className="flex items-center justify-between gap-3"><h3 id="resources-heading" className="text-sm font-semibold">Resource assignment</h3><span className="text-xs text-muted-foreground">Availability shown for this schedule</span></div>
                 <div className="mt-3 grid gap-4 sm:grid-cols-3">
-                  <ResourceSelect id="driver" label="Driver" value={form.driverUserId} options={resources.drivers} isManager={false} onChange={(value) => setForm({ ...form, driverUserId: value })} />
-                  <ResourceSelect id="truck" label="Truck" value={form.truckAssetId} options={resources.trucks} isManager={false} onChange={(value) => setForm({ ...form, truckAssetId: value })} />
-                  <ResourceSelect id="trailer" label="Trailer" value={form.trailerAssetId} options={resources.trailers} optional isManager={false} onChange={(value) => setForm({ ...form, trailerAssetId: value })} />
+                  <ResourceSelect id="driver" label="Driver" value={form.driverUserId} options={resources.drivers} isManager={false} disabled={isAlreadyReadyForDispatch} onChange={(value) => setForm({ ...form, driverUserId: value })} />
+                  <ResourceSelect id="truck" label="Truck" value={form.truckAssetId} options={resources.trucks} isManager={false} disabled={isAlreadyReadyForDispatch} onChange={(value) => setForm({ ...form, truckAssetId: value })} />
+                  <ResourceSelect id="trailer" label="Trailer" value={form.trailerAssetId} options={resources.trailers} optional isManager={false} disabled={isAlreadyReadyForDispatch} onChange={(value) => setForm({ ...form, trailerAssetId: value })} />
                 </div>
                 {selectedConflicts.length > 0 ? (
                   <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
@@ -653,16 +732,16 @@ function PlanningDrawer({
               <section aria-labelledby="details-heading">
                 <h3 id="details-heading" className="text-sm font-semibold">Operational details</h3>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2"><Label htmlFor="container-number">Container number</Label><Input id="container-number" value={form.containerNumber} onChange={(event) => setForm({ ...form, containerNumber: event.target.value })} placeholder="Required before dispatch" /></div>
+                  <div className="space-y-2"><Label htmlFor="container-number">Container number</Label><Input id="container-number" value={form.containerNumber} onChange={(event) => setForm({ ...form, containerNumber: event.target.value })} placeholder="Required before dispatch" disabled={isAlreadyReadyForDispatch} /></div>
                   <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm"><p className="text-xs text-muted-foreground">Equipment requirement</p><p className="mt-1 font-semibold">{formatContainer(trip.containerSize)} · {formatTripType(trip.tripType)}</p></div>
-                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-notes">Planning notes</Label><Textarea id="planning-notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Port cutoffs, handling notes, or dispatch instructions" /></div>
-                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-override-reason">Manual assignment reason</Label><Textarea id="planning-override-reason" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} placeholder="Required only when choosing a valid assignment outside the current suggestions." /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-notes">Planning notes</Label><Textarea id="planning-notes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Port cutoffs, handling notes, or dispatch instructions" disabled={isAlreadyReadyForDispatch} /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="planning-override-reason">Manual assignment reason</Label><Textarea id="planning-override-reason" value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} placeholder="Required only when choosing a valid assignment outside the current suggestions." disabled={isAlreadyReadyForDispatch} /></div>
                 </div>
               </section>
 
               <section aria-labelledby="readiness-heading">
                 <div className="flex items-center justify-between gap-3"><div><h3 id="readiness-heading" className="text-sm font-semibold">Final Dispatch Validation</h3><p className="mt-1 text-xs text-muted-foreground">Validation does not change Trip state. Mark Ready reruns every constraint atomically.</p></div><ClipboardCheck className="h-5 w-5 text-primary" /></div>
-                <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-sm"><p className="font-medium">{decisionSupport?.canMarkReady ? "All required checks currently pass." : "Resolve blocked checks and select a valid assignment before handoff."}</p>{selectedRecommendation ? <p className="mt-1 text-xs text-muted-foreground">{selectedRecommendation.isRecommended ? "Recommended assignment selected." : "Alternative assignment selected."}</p> : form.driverUserId && form.truckAssetId ? <p className="mt-1 text-xs text-warning-foreground">Manual selection requires a reason if it is outside the current suggestions.</p> : null}</div>
+                <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-sm"><p className="font-medium">{isAlreadyReadyForDispatch ? "This trip is already Ready for Dispatch." : decisionSupport?.canMarkReady ? "All required checks currently pass." : "Resolve blocked checks and select a valid assignment before handoff."}</p>{isAlreadyReadyForDispatch ? <p className="mt-1 text-xs text-muted-foreground">Open the full trip to dispatch it or continue operational monitoring.</p> : selectedRecommendation && !assignmentMatchesSavedPlan ? <p className="mt-1 text-xs text-warning-foreground">Save Draft to apply the selected assignment.</p> : selectedRecommendation ? <p className="mt-1 text-xs text-muted-foreground">{selectedRecommendation.isRecommended ? "Recommended assignment selected." : "Alternative assignment selected."}</p> : form.driverUserId && form.truckAssetId ? <p className="mt-1 text-xs text-warning-foreground">Manual selection requires a reason if it is outside the current suggestions.</p> : <p className="mt-1 text-xs text-warning-foreground">Choose a recommended assignment, then save the plan.</p>}</div>
                 {atw?.state !== "VERIFIED" ? <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate(`/dispatch/trips/${trip.id}`)}>Open trip document checklist <ArrowRight className="h-4 w-4" /></Button> : null}
               </section>
             </div>
@@ -671,7 +750,7 @@ function PlanningDrawer({
 
         <div className="flex flex-col-reverse gap-2 border-t border-border bg-background px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <Button variant="ghost" onClick={() => navigate(`/dispatch/trips/${tripId}`)}>Open full trip</Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row"><Button variant="outline" onClick={onClose}>Cancel</Button><Button variant="outline" onClick={() => void validateForDispatch()} disabled={saving || loading || validating}>{validating ? "Validating…" : "Validate for dispatch"}</Button><Button onClick={() => void save()} disabled={saving || loading}>{saving ? "Saving…" : "Save Draft"}</Button><Button onClick={() => void markReady()} disabled={saving || loading || !decisionSupport?.canMarkReady}>{saving ? "Saving…" : "Mark Ready for Dispatch"}</Button></div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row"><Button variant="outline" onClick={onClose}>Cancel</Button><Button variant="outline" onClick={() => void validateForDispatch()} disabled={saving || loading || validating || isAlreadyReadyForDispatch}>{validating ? "Validating…" : hasValidated ? "Revalidate" : "Validate for dispatch"}</Button><Button onClick={() => void save()} disabled={saving || loading || isAlreadyReadyForDispatch}>{saving ? "Saving…" : "Save Draft"}</Button><Button onClick={() => void markReady()} disabled={saving || loading || !canMarkReady}>{isAlreadyReadyForDispatch ? "Already Ready" : saving ? "Saving…" : "Mark Ready for Dispatch"}</Button></div>
         </div>
       </aside>
     </div>
@@ -761,8 +840,10 @@ export default function DispatchPlanningPage() {
     return items.sort((left, right) => {
       const priorityDifference = rank[left.priority] - rank[right.priority];
       if (priorityDifference) return priorityDifference;
-      const leftTime = new Date(left.kind === "booking" ? left.booking.requestedPickupTime ?? 0 : left.trip.pickupScheduledAt ?? 0).getTime();
-      const rightTime = new Date(right.kind === "booking" ? right.booking.requestedPickupTime ?? 0 : right.trip.pickupScheduledAt ?? 0).getTime();
+      const leftValue = left.kind === "booking" ? left.booking.requestedPickupTime : left.trip.pickupScheduledAt;
+      const rightValue = right.kind === "booking" ? right.booking.requestedPickupTime : right.trip.pickupScheduledAt;
+      const leftTime = leftValue ? parseApiDate(leftValue).getTime() : 0;
+      const rightTime = rightValue ? parseApiDate(rightValue).getTime() : 0;
       return leftTime - rightTime;
     });
   }, [board]);
@@ -781,7 +862,7 @@ export default function DispatchPlanningPage() {
   }, []);
 
   const convert = async (booking: ApprovedBooking, override?: string) => {
-    const requested = booking.requestedPickupTime ? new Date(booking.requestedPickupTime).getTime() : null;
+    const requested = booking.requestedPickupTime ? parseApiDate(booking.requestedPickupTime).getTime() : null;
     if (!override && requested !== null && requested <= Date.now()) {
       setRescheduleBooking(booking);
       return;

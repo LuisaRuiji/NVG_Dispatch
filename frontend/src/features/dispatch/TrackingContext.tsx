@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
-import { api } from "@/lib/api";
+import { api, apiOptional } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
 import { useDispatchHub } from "@/hooks/useDispatchHub";
 
@@ -30,27 +30,59 @@ export interface CurrentCoords {
   heading: number | null;
 }
 
+export interface LiveTripEta {
+  tripId: string;
+  destinationType: "PICKUP" | "DROPOFF";
+  destinationLocation: string;
+  remainingDistanceKm: number;
+  estimatedTravelMinutes: number;
+  estimatedArrivalAt: string;
+  calculatedAt: string;
+}
+
+type LocationUpdateResponse = {
+  eta?: LiveTripEta | null;
+};
+
 interface TrackingContextType {
   trip: LiveMapTripDetail | null;
   loading: boolean;
   error: string | null;
   trackingActive: boolean;
+  trackingStarting: boolean;
+  eta: LiveTripEta | null;
   currentCoords: CurrentCoords | null;
   gpsWarning: string | null;
   networkError: string | null;
   logs: string[];
   fetchActiveTrip: () => Promise<void>;
-  startWatcher: () => void;
+  startWatcher: () => Promise<void>;
   stopWatcher: () => void;
 }
 
 const TrackingContext = createContext<TrackingContextType | undefined>(undefined);
 
-export function TrackingProvider({ children }: { children: ReactNode }) {
+const automaticTrackingStatuses = new Set([
+  "ENROUTEPICKUP",
+  "ATPICKUP",
+  "LOADED",
+  "ENROUTEDROPOFF",
+  "ATDROPOFF",
+  "ONHOLD",
+  "FAILEDATTEMPT"
+]);
+
+function normalizeStatus(value: string) {
+  return value.replace(/_/g, "").toUpperCase();
+}
+
+export function TrackingProvider({ children, enabled = false }: { children: ReactNode; enabled?: boolean }) {
   const [trip, setTrip] = useState<LiveMapTripDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trackingActive, setTrackingActive] = useState(false);
+  const [trackingStarting, setTrackingStarting] = useState(false);
+  const [eta, setEta] = useState<LiveTripEta | null>(null);
   const [currentCoords, setCurrentCoords] = useState<CurrentCoords | null>(null);
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
   const [networkError, setNetworkError] = useState<string | null>(null);
@@ -62,16 +94,27 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
   const lastSentCoords = useRef<{ latitude: number; longitude: number } | null>(null);
   const isSending = useRef<boolean>(false);
   const tripRef = useRef<LiveMapTripDetail | null>(null);
+  const automaticStartAttemptedTripId = useRef<string | null>(null);
 
   // Sync trip ref to state for access inside location callback
   useEffect(() => {
     tripRef.current = trip;
   }, [trip]);
 
+  const fetchEta = async (tripId: string) => {
+    try {
+      setEta(await apiOptional<LiveTripEta>(`/api/driver/trips/${tripId}/eta`, { method: "GET" }));
+    } catch {
+      setEta(null);
+    }
+  };
+
   useDispatchHub({
     onTripStatusChanged: (e) => {
       if (trip && e.tripId === trip.tripId) {
         setTrip(prev => prev ? { ...prev, currentTripStatus: e.newStatus } : null);
+        setEta(null);
+        void fetchEta(e.tripId);
       }
     }
   });
@@ -82,6 +125,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api<LiveMapTripDetail>("/api/driver/my-route-map", { method: "GET" });
       setTrip(data);
+      void fetchEta(data.tripId);
       const finalStatuses = ["DELIVERED", "CLOSED", "CANCELLED"];
       if (finalStatuses.includes(data.currentTripStatus.toUpperCase())) {
         setError("Your assigned trip is already completed or cancelled.");
@@ -89,6 +133,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "No active trip found for your profile today.";
       setError(message);
+      setEta(null);
     } finally {
       setLoading(false);
     }
@@ -151,10 +196,11 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         Source: 0 // LocationUpdateSource.DriverApp
       };
       try {
-        await api("/api/driver/location", {
+        const response = await api<LocationUpdateResponse>("/api/driver/location", {
           method: "POST",
           body: JSON.stringify(payload)
         });
+        setEta(response.eta ?? null);
         setNetworkError(null);
         lastSentTime.current = Date.now();
         lastSentCoords.current = { latitude, longitude };
@@ -180,63 +226,75 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
       show("Geolocation is not supported by your browser.", "error");
       return;
     }
-    if (watcherId.current !== null) return; // prevent duplicate watchers
+    if (watcherId.current !== null || trackingStarting) return;
+    const currentTrip = tripRef.current;
+    if (!currentTrip || !automaticTrackingStatuses.has(normalizeStatus(currentTrip.currentTripStatus))) return;
+
+    setTrackingStarting(true);
+    setGpsWarning(null);
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] Requesting GPS authorization...`, ...prev]);
 
     try {
-      const currentTrip = tripRef.current;
-      if (currentTrip) {
-        let initLat: number | null = null;
-        let initLon: number | null = null;
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-          );
-          initLat = pos.coords.latitude;
-          initLon = pos.coords.longitude;
-        } catch {
-          // silently continue
-        }
+      const initialPosition = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        })
+      );
 
-        await api(`/api/driver/trips/${currentTrip.tripId}/start-tracking`, {
-          method: "POST",
-          body: JSON.stringify({ Latitude: initLat, Longitude: initLon })
-        });
-        setTrackingActive(true);
-        const initMsg = initLat
-          ? `[${new Date().toLocaleTimeString()}] Initial fix: (${initLat.toFixed(6)}, ${initLon!.toFixed(6)})`
-          : `[${new Date().toLocaleTimeString()}] Initial fix: unavailable`;
-        setLogs(prev => [
-          `[${new Date().toLocaleTimeString()}] Live tracking started.`,
-          initMsg,
-          ...prev
-        ]);
-        show("GPS tracking started successfully.", "success");
-      }
-    } catch (err: any) {
-      setLogs(prev => [`[${new Date().toLocaleTimeString()}] Error starting backend session: ${err.message}`, ...prev]);
-      show(err.message, "error");
+      await api(`/api/driver/trips/${currentTrip.tripId}/start-tracking`, {
+        method: "POST",
+        body: JSON.stringify({
+          Latitude: initialPosition.coords.latitude,
+          Longitude: initialPosition.coords.longitude
+        })
+      });
+
+      setCurrentCoords({
+        latitude: initialPosition.coords.latitude,
+        longitude: initialPosition.coords.longitude,
+        accuracy: initialPosition.coords.accuracy,
+        speed: initialPosition.coords.speed,
+        heading: initialPosition.coords.heading
+      });
+      setTrackingActive(true);
+      setLogs(prev => [
+        `[${new Date().toLocaleTimeString()}] Live tracking started automatically.`,
+        `[${new Date().toLocaleTimeString()}] Initial fix: (${initialPosition.coords.latitude.toFixed(6)}, ${initialPosition.coords.longitude.toFixed(6)})`,
+        ...prev
+      ]);
+
+      watcherId.current = navigator.geolocation.watchPosition(
+        (position) => {
+          setTrackingActive(true);
+          void handleLocationUpdate(position);
+        },
+        (error) => {
+          setLogs(prev => [`[${new Date().toLocaleTimeString()}] GPS Error: ${error.message}`, ...prev]);
+          setGpsWarning(error.code === error.PERMISSION_DENIED
+            ? "Location permission is required during an active trip. Allow location access, then retry."
+            : `GPS is temporarily unavailable: ${error.message}`);
+          if (error.code === error.PERMISSION_DENIED && watcherId.current !== null) {
+            navigator.geolocation.clearWatch(watcherId.current);
+            watcherId.current = null;
+            setTrackingActive(false);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+
+      await handleLocationUpdate(initialPosition);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Location access was not granted.";
+      setTrackingActive(false);
+      setGpsWarning(message.toLowerCase().includes("denied")
+        ? "Location permission is required during an active trip. Allow location access, then retry."
+        : `Automatic location sharing could not start: ${message}`);
+      setLogs(prev => [`[${new Date().toLocaleTimeString()}] Automatic tracking did not start: ${message}`, ...prev]);
+    } finally {
+      setTrackingStarting(false);
     }
-
-    watcherId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (!trackingActive) setTrackingActive(true);
-        if (logs.length === 0 || !logs[0].includes("Live tracking started")) {
-          setLogs(prev => [`[${new Date().toLocaleTimeString()}] Live tracking started.`, ...prev]);
-        }
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] Initial fix: (${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)})`, ...prev]);
-        handleLocationUpdate(pos);
-      },
-      (err) => {
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] GPS Error: ${err.message}`, ...prev]);
-        setGpsWarning(`GPS Error: ${err.message}`);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      }
-    );
   };
 
   const stopWatcher = async () => {
@@ -247,6 +305,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     }
     setTrackingActive(false);
     setCurrentCoords(null);
+    setEta(null);
     setGpsWarning(null);
     setNetworkError(null);
     lastSentTime.current = 0;
@@ -261,14 +320,37 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
           method: "POST",
           body: JSON.stringify({ Latitude: endLat, Longitude: endLon })
         });
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] Tracking stopped by driver.`, ...prev]);
-        show("GPS tracking stopped.", "success");
-      } catch (err: any) {
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] Error stopping tracking session: ${err.message}`, ...prev]);
-        show(err.message, "error");
+        setLogs(prev => [`[${new Date().toLocaleTimeString()}] Tracking stopped with the trip lifecycle.`, ...prev]);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Unable to stop the tracking session.";
+        setLogs(prev => [`[${new Date().toLocaleTimeString()}] Error stopping tracking session: ${message}`, ...prev]);
       }
     }
   };
+
+  useEffect(() => {
+    if (!enabled) return;
+    void fetchActiveTrip();
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled || !trip) return;
+    const shouldTrack = automaticTrackingStatuses.has(normalizeStatus(trip.currentTripStatus));
+
+    if (shouldTrack && watcherId.current === null && automaticStartAttemptedTripId.current !== trip.tripId) {
+      automaticStartAttemptedTripId.current = trip.tripId;
+      void startWatcher();
+      return;
+    }
+
+    if (!shouldTrack && watcherId.current !== null) {
+      void stopWatcher();
+    }
+  }, [enabled, trip?.tripId, trip?.currentTripStatus]);
+
+  useEffect(() => () => {
+    if (watcherId.current !== null) navigator.geolocation.clearWatch(watcherId.current);
+  }, []);
 
   return (
     <TrackingContext.Provider
@@ -277,6 +359,8 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         loading,
         error,
         trackingActive,
+        trackingStarting,
+        eta,
         currentCoords,
         gpsWarning,
         networkError,

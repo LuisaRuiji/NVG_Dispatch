@@ -781,9 +781,11 @@ export default function TripDetailPage() {
     return isDriver;
   };
 
-  const documentUploadLabel = (docType: TripDocumentType) => {
-    if (docType === "ATW") return "Upload ATW (received from customer)";
-    return documents.find((doc) => doc.type === docType) ? "Replace" : "Upload";
+  const documentUploadLabel = (docType: TripDocumentType, document?: DispatchTripDocument) => {
+    if (docType === "ATW") {
+      return document ? "Replace ATW (received from customer)" : "Upload ATW (received from customer)";
+    }
+    return document ? "Replace" : "Upload";
   };
 
   const handleVerifyDoc = async (docId: string) => {
@@ -1305,6 +1307,7 @@ export default function TripDetailPage() {
                   {docTypes.map((type) => {
                     const doc = documents.find((d) => d.type === type);
                     const state = type === "WAYBILL" ? (generatedWaybill ? "VERIFIED" : "MISSING") : doc?.state ?? "MISSING";
+                    const canOfferUpload = canUploadDocument(type) && (!doc || doc.state === "REJECTED");
                     return (
                       <tr key={type} className="text-sm">
                         <td className="px-4 py-3 font-medium text-foreground">{type}</td>
@@ -1334,7 +1337,7 @@ export default function TripDetailPage() {
                           <div className="flex items-center justify-end gap-2">
                             {type === "WAYBILL" ? (
                               <>
-                                {isDispatcher || isManager || isAdmin ? (
+                                {!generatedWaybill && (isDispatcher || isManager || isAdmin) ? (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -1350,7 +1353,7 @@ export default function TripDetailPage() {
                                   </Button>
                                 ) : null}
                               </>
-                            ) : canUploadDocument(type) ? (
+                            ) : canOfferUpload ? (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1359,7 +1362,7 @@ export default function TripDetailPage() {
                                   setModal({ type: "DOC_UPLOAD", docType: type, storageKey: "" })
                                 }
                               >
-                                {documentUploadLabel(type)}
+                                {documentUploadLabel(type, doc)}
                               </Button>
                             ) : null}
                             {canVerifyDocs && doc && doc.state === "UPLOADED" ? (

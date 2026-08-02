@@ -14,6 +14,7 @@ type TripMapProps = {
   pickup?: TripMapPoint | null;
   dropoff?: TripMapPoint | null;
   driver?: TripMapPoint | null;
+  activeLeg?: "pickup" | "dropoff";
   driverRecordedAt?: string | null;
   driverAccuracyMeters?: number | null;
   className?: string;
@@ -97,6 +98,7 @@ export default function TripMap({
   pickup,
   dropoff,
   driver,
+  activeLeg = "dropoff",
   driverRecordedAt,
   driverAccuracyMeters,
   className,
@@ -106,13 +108,16 @@ export default function TripMap({
   const pickupPosition = hasPoint(pickup) ? toLatLng(pickup) : null;
   const dropoffPosition = hasPoint(dropoff) ? toLatLng(dropoff) : null;
   const driverPosition = hasPoint(driver) ? toLatLng(driver) : null;
-  const positions = useMemo(
-    () => [pickupPosition, dropoffPosition, driverPosition].filter(Boolean) as [number, number][],
-    [pickupPosition, dropoffPosition, driverPosition]
-  );
   const routePositions = pickupPosition && dropoffPosition ? [pickupPosition, dropoffPosition] : null;
-  const driverLegPositions =
-    driverPosition && dropoffPosition ? [driverPosition, dropoffPosition] : null;
+  const activeDestination = activeLeg === "pickup" ? pickupPosition : dropoffPosition;
+  const driverLegPositions = driverPosition && activeDestination ? [driverPosition, activeDestination] : null;
+  const positions = useMemo(
+    () => {
+      if (driverPosition && activeDestination) return [driverPosition, activeDestination];
+      return [pickupPosition, dropoffPosition, driverPosition].filter(Boolean) as [number, number][];
+    },
+    [pickupPosition, dropoffPosition, driverPosition, activeDestination]
+  );
   const recordedLabel = formatRecordedAt(driverRecordedAt);
   const stale = isStale(driverRecordedAt);
 

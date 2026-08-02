@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { Eye, X } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import ToastHost from "@/components/ToastHost";
 import StatusBadge from "@/components/StatusBadge";
@@ -10,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/useToast";
-import { api } from "@/lib/api";
+import { api, fetchPreviewFile } from "@/lib/api";
 import type {
   ContainerSize,
+  ShipmentRequestDocument,
   ShipmentRequestDetail,
   ShipmentRequestDocumentType,
   ShipmentRequestStatusResponse,
@@ -37,6 +39,12 @@ type FormState = {
 type UploadModal = {
   docType: ShipmentRequestDocumentType;
   storageKey: string;
+} | null;
+
+type DocumentPreview = {
+  document: ShipmentRequestDocument;
+  url: string;
+  isImage: boolean;
 } | null;
 
 const docTypes: ShipmentRequestDocumentType[] = [
@@ -81,6 +89,8 @@ export default function PortalRequestDetailPage() {
     specialInstructions: ""
   });
   const [uploadModal, setUploadModal] = useState<UploadModal>(null);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreview>(null);
+  const [previewingDocumentId, setPreviewingDocumentId] = useState<string | null>(null);
 
   const isEditable = request?.status === "DRAFT" || request?.status === "NEEDS_REVISION";
   const canUpload = isEditable;
@@ -117,6 +127,18 @@ export default function PortalRequestDetailPage() {
   useEffect(() => {
     loadRequest();
   }, [id]);
+
+  useEffect(() => {
+    if (!documentPreview) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDocumentPreview(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      URL.revokeObjectURL(documentPreview.url);
+    };
+  }, [documentPreview]);
 
   const handleSave = async () => {
     if (!id) return;
@@ -194,6 +216,27 @@ export default function PortalRequestDetailPage() {
   };
 
   const documents = useMemo(() => request?.documents ?? [], [request]);
+
+  const handlePreview = async (document: ShipmentRequestDocument) => {
+    if (!id) return;
+    try {
+      setPreviewingDocumentId(document.id);
+      const { blob, contentType } = await fetchPreviewFile(
+        `/api/portal/requests/${id}/documents/${document.id}/content`
+      );
+      const fileType = contentType || blob.type;
+      setDocumentPreview({
+        document,
+        url: URL.createObjectURL(blob),
+        isImage: fileType.startsWith("image/")
+      });
+    } catch (e: any) {
+      console.error(e);
+      show(e?.message ?? "Failed to preview document.", "error");
+    } finally {
+      setPreviewingDocumentId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -442,9 +485,11 @@ export default function PortalRequestDetailPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => window.open(doc.storageKey, "_blank", "noopener,noreferrer")}
+                    onClick={() => void handlePreview(doc)}
+                    disabled={previewingDocumentId === doc.id}
                   >
-                    View
+                    <Eye className="h-4 w-4" />
+                    {previewingDocumentId === doc.id ? "Opening..." : "View"}
                   </Button>
                 </div>
               </div>
@@ -452,6 +497,50 @@ export default function PortalRequestDetailPage() {
           </div>
         )}
       </div>
+
+      {documentPreview ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
+          role="presentation"
+          onMouseDown={() => setDocumentPreview(null)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-preview-title"
+            className="flex h-[min(88vh,860px)] w-[min(96vw,1080px)] flex-col overflow-hidden rounded-[10px] border border-border bg-card"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-4 sm:px-5">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Document preview</p>
+                <h2 id="document-preview-title" className="truncate text-sm font-semibold text-foreground">
+                  {documentPreview.document.documentType}
+                </h2>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setDocumentPreview(null)} aria-label="Close document preview">
+                <X className="h-4 w-4" />
+                Close
+              </Button>
+            </header>
+            <div className="min-h-0 flex-1 bg-muted/40 p-3 sm:p-5">
+              {documentPreview.isImage ? (
+                <img
+                  src={documentPreview.url}
+                  alt={`${documentPreview.document.documentType} document`}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <iframe
+                  src={documentPreview.url}
+                  title={`${documentPreview.document.documentType} document preview`}
+                  className="h-full w-full rounded-lg border border-border bg-card"
+                />
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {uploadModal ? (
         <div

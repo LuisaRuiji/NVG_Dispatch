@@ -20,19 +20,22 @@ public sealed class PortalShipmentRequestsController : ControllerBase
     private readonly IPortalCustomerAccessService _portalCustomerAccessService;
     private readonly IAtwDocumentIntelligenceService _documentIntelligenceService;
     private readonly IAtwScanSessionStore _atwScanSessionStore;
+    private readonly IShipmentRequestDocumentStorage _documentStorage;
 
     public PortalShipmentRequestsController(
         ShipmentRequestService service,
         ShipmentRequestQueryService queryService,
         IPortalCustomerAccessService portalCustomerAccessService,
         IAtwDocumentIntelligenceService documentIntelligenceService,
-        IAtwScanSessionStore atwScanSessionStore)
+        IAtwScanSessionStore atwScanSessionStore,
+        IShipmentRequestDocumentStorage documentStorage)
     {
         _service = service;
         _queryService = queryService;
         _portalCustomerAccessService = portalCustomerAccessService;
         _documentIntelligenceService = documentIntelligenceService;
         _atwScanSessionStore = atwScanSessionStore;
+        _documentStorage = documentStorage;
     }
 
     [HttpGet]
@@ -204,6 +207,28 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             doc.UploadedByUserId,
             doc.UploadedByUser?.Username,
             doc.UploadedAt));
+    }
+
+    [HttpGet("{id:guid}/documents/{documentId:guid}/content")]
+    public async Task<IActionResult> GetDocumentContent(
+        Guid id,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var customerId = await GetCustomerIdAsync(cancellationToken);
+        var detail = await _queryService.GetCustomerRequestDetailAsync(id, customerId, cancellationToken);
+        var document = detail.Documents.FirstOrDefault(item => item.Id == documentId);
+        if (document is null)
+        {
+            return NotFound("Document not found.");
+        }
+
+        var readable = await _documentStorage.OpenReadAsync(
+            document.StorageKey,
+            document.OriginalFileName,
+            document.ContentType,
+            cancellationToken);
+        return File(readable.Content, readable.ContentType, enableRangeProcessing: true);
     }
 
     [HttpPost("atw/scan")]
