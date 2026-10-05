@@ -13,6 +13,8 @@ public sealed class TripStatusHistoryConfiguration : IEntityTypeConfiguration<Tr
         var statusConverter = new ValueConverter<TripStatus, string>(
             value =>
                 value == TripStatus.Draft ? "DRAFT" :
+                value == TripStatus.Planning ? "PLANNING" :
+                value == TripStatus.Assigned ? "ASSIGNED" :
                 value == TripStatus.ReadyForDispatch ? "READY_FOR_DISPATCH" :
                 value == TripStatus.Dispatched ? "DISPATCHED" :
                 value == TripStatus.EnroutePickup ? "ENROUTE_PICKUP" :
@@ -20,14 +22,17 @@ public sealed class TripStatusHistoryConfiguration : IEntityTypeConfiguration<Tr
                 value == TripStatus.Loaded ? "LOADED" :
                 value == TripStatus.EnrouteDropoff ? "ENROUTE_DROPOFF" :
                 value == TripStatus.AtDropoff ? "AT_DROPOFF" :
-                value == TripStatus.Delivered ? "DELIVERED" :
-                value == TripStatus.Closed ? "CLOSED" :
+                value == TripStatus.DeliveryCompleted ? "DELIVERY_COMPLETED" :
+                value == TripStatus.DocumentsPending ? "DOCUMENTS_PENDING" :
+                value == TripStatus.OperationallyClosed ? "OPERATIONALLY_CLOSED" :
                 value == TripStatus.Cancelled ? "CANCELLED" :
                 value == TripStatus.OnHold ? "ON_HOLD" :
                 value == TripStatus.FailedAttempt ? "FAILED_ATTEMPT" :
                 "DRAFT",
             value =>
                 value == "DRAFT" ? TripStatus.Draft :
+                value == "PLANNING" ? TripStatus.Planning :
+                value == "ASSIGNED" ? TripStatus.Assigned :
                 value == "READY_FOR_DISPATCH" ? TripStatus.ReadyForDispatch :
                 value == "DISPATCHED" ? TripStatus.Dispatched :
                 value == "ENROUTE_PICKUP" ? TripStatus.EnroutePickup :
@@ -35,8 +40,9 @@ public sealed class TripStatusHistoryConfiguration : IEntityTypeConfiguration<Tr
                 value == "LOADED" ? TripStatus.Loaded :
                 value == "ENROUTE_DROPOFF" ? TripStatus.EnrouteDropoff :
                 value == "AT_DROPOFF" ? TripStatus.AtDropoff :
-                value == "DELIVERED" ? TripStatus.Delivered :
-                value == "CLOSED" ? TripStatus.Closed :
+                (value == "DELIVERED" || value == "DELIVERY_COMPLETED") ? TripStatus.DeliveryCompleted :
+                value == "DOCUMENTS_PENDING" ? TripStatus.DocumentsPending :
+                (value == "CLOSED" || value == "OPERATIONALLY_CLOSED") ? TripStatus.OperationallyClosed :
                 value == "CANCELLED" ? TripStatus.Cancelled :
                 value == "ON_HOLD" ? TripStatus.OnHold :
                 value == "FAILED_ATTEMPT" ? TripStatus.FailedAttempt :
@@ -73,7 +79,10 @@ public sealed class TripStatusHistoryConfiguration : IEntityTypeConfiguration<Tr
             .HasMaxLength(30)
             .IsRequired();
         entity.Property(history => history.ActorUserId).HasColumnName("actor_user_id");
+        entity.Property(history => history.ActorRole).HasColumnName("actor_role").HasMaxLength(200);
         entity.Property(history => history.Remarks).HasColumnName("remarks").HasMaxLength(400);
+        entity.Property(history => history.RelatedAttachmentId).HasColumnName("related_attachment_id");
+        entity.Property(history => history.ReferenceNumber).HasColumnName("reference_number").HasMaxLength(120);
         entity.Property(history => history.EventAt).HasColumnName("event_at");
         entity.Property(history => history.RecordedAt)
             .HasColumnName("recorded_at")

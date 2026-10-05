@@ -8,8 +8,12 @@ import type {
 export type ShipmentRequestStatus =
   | "DRAFT"
   | "SUBMITTED"
+  | "UNDER_REVIEW"
   | "APPROVED"
   | "REJECTED"
+  | "CANCELLED"
+  | "AWAITING_FINANCE_CLEARANCE"
+  | "CLEARED_FOR_PLANNING"
   | "NEEDS_REVISION"
   | "CONVERTED_TO_TRIP";
 
@@ -18,10 +22,20 @@ export type ShipmentRequestDocumentType =
   | "INVOICE"
   | "CARGO_MANIFEST"
   | "DELIVERY_INSTRUCTIONS"
+  | "BOOKING_CONFIRMATION"
+  | "RELEASE_CONFIRMATION"
+  | "TERMINAL_AUTHORIZATION"
+  | "BILL_OF_LADING"
+  | "SEA_WAYBILL"
+  | "DELIVERY_ORDER"
+  | "CRO"
+  | "WEB_CRO"
+  | "RETURN_DEPOT_AUTHORIZATION"
+  | "RETURN_INSTRUCTION"
   | "OTHER";
 
 export type ContainerSize = "TWENTY_FT" | "FORTY_FT" | "FORTY_HC";
-export type TripType = "PORT_PICKUP" | "PORT_DROPOFF" | "YARD_TRANSFER" | "LONG_HAUL";
+export type TripType = "EXPORT_EMPTY_PICKUP" | "EXPORT_LADEN_TO_TERMINAL" | "IMPORT_LADEN_DELIVERY" | "EMPTY_RETURN" | "PORT_PICKUP" | "PORT_DROPOFF" | "YARD_TRANSFER" | "LONG_HAUL";
 
 export const containerSizeLabels: Record<ContainerSize, string> = {
   TWENTY_FT: "20 ft",
@@ -30,6 +44,10 @@ export const containerSizeLabels: Record<ContainerSize, string> = {
 };
 
 export const tripTypeLabels: Record<TripType, string> = {
+  EXPORT_EMPTY_PICKUP: "Export empty pickup",
+  EXPORT_LADEN_TO_TERMINAL: "Export laden to terminal",
+  IMPORT_LADEN_DELIVERY: "Import laden delivery",
+  EMPTY_RETURN: "Empty return",
   PORT_PICKUP: "Port Pickup",
   PORT_DROPOFF: "Port Dropoff",
   YARD_TRANSFER: "Yard Transfer",
@@ -55,6 +73,7 @@ export type ShipmentRequestListItem = {
   createdAt: string;
   approvedAt?: string | null;
   convertedTripId?: string | null;
+  financeClearanceStatus?: string | null;
 };
 
 export type ShipmentRequestDocument = {
@@ -64,6 +83,15 @@ export type ShipmentRequestDocument = {
   uploadedByUserId: string;
   uploadedByUsername?: string | null;
   uploadedAt: string;
+  verificationState?: TripDocumentState;
+  originalFileName?: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  expiryDate?: string | null;
+  carrier?: string | null;
+  terminalOrDepot?: string | null;
+  referenceNumber?: string | null;
+  rejectionReason?: string | null;
 };
 
 export type ShipmentRequestDetail = {
@@ -88,6 +116,7 @@ export type ShipmentRequestDetail = {
   createdAt: string;
   approvedAt?: string | null;
   convertedTripId?: string | null;
+  financeClearanceStatus?: string | null;
   documents: ShipmentRequestDocument[];
 };
 

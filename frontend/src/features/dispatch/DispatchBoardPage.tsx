@@ -244,7 +244,7 @@ export default function DispatchBoardPage() {
       />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Execution summary">
-        {metrics.map(({ label, value, icon: Icon, tone, detail }) => <div key={label} className="operations-kpi"><span className={`operations-kpi__icon ${tone}`}><Icon className="h-5 w-5" /></span><div><p className="operations-kpi__value tabular-nums">{isLoading ? "…" : value}</p><p className="operations-kpi__label">{label}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div></div>)}
+        {metrics.map(({ label, value, icon: Icon, tone, detail }) => <div key={label} className="operations-kpi"><span className={`operations-kpi__icon ${tone}`}><Icon className="h-5 w-5" /></span><div><p className="operations-kpi__value tabular-nums">{isLoading ? "…" : value}</p><p className="operations-kpi__label">{label}</p><p className="operations-kpi__detail text-xs text-muted-foreground">{detail}</p></div></div>)}
       </section>
 
       <section className="surface-card overflow-hidden" aria-labelledby="ready-queue-heading">

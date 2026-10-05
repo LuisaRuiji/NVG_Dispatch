@@ -92,17 +92,20 @@ public sealed class PlanningDecisionSupportService
     private readonly IAuditService _auditService;
     private readonly PlanningRecommendationSnapshotStore _snapshotStore;
     private readonly IPlanningAvailabilityNotifier _availabilityNotifier;
+    private readonly DispatchLifecycleReadinessService _readinessService;
 
     public PlanningDecisionSupportService(
         InventoryDbContext dbContext,
         IAuditService auditService,
         PlanningRecommendationSnapshotStore snapshotStore,
-        IPlanningAvailabilityNotifier availabilityNotifier)
+        IPlanningAvailabilityNotifier availabilityNotifier,
+        DispatchLifecycleReadinessService? readinessService = null)
     {
         _dbContext = dbContext;
         _auditService = auditService;
         _snapshotStore = snapshotStore;
         _availabilityNotifier = availabilityNotifier;
+        _readinessService = readinessService ?? new DispatchLifecycleReadinessService(dbContext);
     }
 
     public async Task<PlanningDecisionSupportResponse> GetDecisionSupportAsync(
@@ -171,9 +174,9 @@ public sealed class PlanningDecisionSupportService
             throw new NotFoundException("Trip not found.");
         }
 
-        if (trip.Status != TripStatus.Draft)
+        if (trip.Status is not (TripStatus.Assigned or TripStatus.Planning or TripStatus.Draft))
         {
-            throw new ConflictDomainException("Only Draft trips can be marked ready for dispatch.");
+            throw new ConflictDomainException("Only Planning or Assigned trips can be marked ready for dispatch.");
         }
 
         if (!trip.RowVersion.SequenceEqual(expectedRowVersion) || !string.Equals(snapshot.TripRowVersion, command.RowVersion, StringComparison.Ordinal))
@@ -199,6 +202,12 @@ public sealed class PlanningDecisionSupportService
         if (blockers.Count > 0)
         {
             throw new BusinessRuleViolationException(string.Join(" ", blockers));
+        }
+
+        var lifecycleReadiness = await _readinessService.EvaluatePreDispatchAsync(trip.Id, cancellationToken);
+        if (!lifecycleReadiness.IsReady)
+        {
+            throw new BusinessRuleViolationException(string.Join(" ", lifecycleReadiness.Blockers));
         }
 
         var rankedSelection = snapshot.Recommendations.FirstOrDefault(recommendation =>
@@ -282,9 +291,17 @@ public sealed class PlanningDecisionSupportService
 
         var booking = await _dbContext.ShipmentRequests
             .AsNoTracking()
+            .Include(item => item.Customer)
+            .Include(item => item.Documents)
             .FirstOrDefaultAsync(item => item.ConvertedTripId == trip.Id, cancellationToken);
         var now = DateTime.UtcNow;
-        var bookingChecks = BuildBookingChecks(trip, booking, now);
+        var bookingChecks = BuildBookingChecks(trip, booking, now).ToList();
+        var lifecycleReadiness = await _readinessService.EvaluatePreDispatchAsync(trip.Id, cancellationToken);
+        foreach (var blocker in lifecycleReadiness.Blockers.Where(message => !message.StartsWith("Assign a ", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!bookingChecks.Any(check => string.Equals(check.Message, blocker, StringComparison.OrdinalIgnoreCase)))
+                bookingChecks.Add(new PlanningValidationCheck("CONTROLLED_LIFECYCLE", PlanningCheckState.Blocked, blocker));
+        }
         var pickup = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Pickup);
         var dropoff = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff);
 
@@ -344,7 +361,6 @@ public sealed class PlanningDecisionSupportService
                     continue;
                 }
 
-                candidates.Add(BuildCandidate(driver, truck, null, driverWorkload, driverChecks[driver.UserId], truckChecks[truck.AssetId], pairChecks));
                 foreach (var trailer in trailers.Where(item => !trailerChecks[item.AssetId].Any(IsBlocked)))
                 {
                     var combinationChecks = BuildTrailerCombinationChecks(trip, trailer);
@@ -378,7 +394,6 @@ public sealed class PlanningDecisionSupportService
     {
         var pickup = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Pickup);
         var dropoff = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff);
-        var atwVerified = trip.Documents.Any(document => document.IsActive && document.Type == TripDocumentType.Atw && document.State == TripDocumentState.Verified);
         return
         [
             new("BOOKING_APPROVED", booking is not null && booking.ApprovedAt.HasValue && booking.Status != ShipmentRequestStatus.Rejected
@@ -398,8 +413,6 @@ public sealed class PlanningDecisionSupportService
                 pickup?.Latitude.HasValue == true && pickup.Longitude.HasValue == true
                     ? "Pickup coordinates are available for reachability checks."
                     : "Pickup coordinates are missing; reachability can only be verified from the location text."),
-            new("MANDATORY_DOCUMENTS", atwVerified ? PlanningCheckState.Passed : PlanningCheckState.Blocked,
-                atwVerified ? "ATW is verified." : "Verify the ATW before the trip can be marked ready."),
             new("CONTAINER_NUMBER", !string.IsNullOrWhiteSpace(trip.ContainerNumber) ? PlanningCheckState.Passed : PlanningCheckState.Blocked,
                 !string.IsNullOrWhiteSpace(trip.ContainerNumber) ? "Container number is set." : "Set the container number before dispatch handoff.")
         ];

@@ -915,7 +915,7 @@ public sealed class ReportQueryService
         CancellationToken cancellationToken = default)
     {
         var resolvedPage = page <= 0 ? 1 : page;
-        var resolvedPageSize = pageSize <= 0 ? 20 : pageSize;
+        var resolvedPageSize = pageSize <= 0 ? 20 : Math.Min(pageSize, 100);
 
         var query = ApplyRoleFilter(_dbContext.AuditLogs.AsNoTracking(), user);
 
@@ -953,6 +953,7 @@ public sealed class ReportQueryService
             .ThenInclude(actor => actor!.UserRoles)
             .ThenInclude(userRole => userRole.Role)
             .OrderByDescending(log => log.CreatedAt)
+            .ThenByDescending(log => log.Id)
             .Skip((resolvedPage - 1) * resolvedPageSize)
             .Take(resolvedPageSize)
             .ToListAsync(cancellationToken);

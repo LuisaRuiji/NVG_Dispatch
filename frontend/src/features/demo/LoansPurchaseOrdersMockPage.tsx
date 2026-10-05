@@ -166,7 +166,7 @@ export default function LoansPurchaseOrdersMockPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-sm text-slate-500">{kpi.label}</p>
-                      <p className="mt-2 text-3xl font-bold text-slate-900">{kpi.value}</p>
+                      <p className="mt-2 text-right text-3xl font-bold tabular-nums text-slate-900">{kpi.value}</p>
                     </div>
                     <Icon className="h-5 w-5 text-[#175C99]" />
                   </div>

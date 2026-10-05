@@ -11,5 +11,6 @@ public interface IVaiaDispatchClient
     Task TripChainingSuggestionsGenerated(TripChainingSuggestionsGeneratedEvent e);
     Task DriverLocationUpdated(DriverLocationUpdatedEvent e);
     Task ShipmentRequestSubmitted(ShipmentRequestSubmittedEvent e);
+    Task BookingFinanceChanged(BookingFinanceChangedEvent e);
     Task PlanningInvalidated(PlanningInvalidatedEvent e);
 }

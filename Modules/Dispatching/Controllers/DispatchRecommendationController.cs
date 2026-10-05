@@ -163,16 +163,37 @@ public sealed class DispatchRecommendationController : ControllerBase
 
         var driverUserId = completedTrip?.DriverUserId ?? recommendation.DriverId;
 
-        var dispatchCommand = new DispatchTripCommand(
-            recommendation.RecommendedTripId,
-            driverUserId,
-            recommendation.TruckId,
-            "Confirmed through Trip Chaining",
-            recommendedTrip.RowVersion);
+        if (recommendedTrip.Status != TripStatus.Draft)
+        {
+            return Conflict("The suggested next movement is no longer a Draft trip.");
+        }
 
-        var actorContext = BuildActor();
-
-        await _tripLifecycleService.DispatchAsync(dispatchCommand, actorContext, cancellationToken);
+        var planningStartedAt = DateTime.UtcNow;
+        recommendedTrip.Status = TripStatus.Planning;
+        recommendedTrip.DriverUserId = driverUserId;
+        recommendedTrip.TruckAssetId = recommendation.TruckId;
+        recommendedTrip.UpdatedAt = planningStartedAt;
+        _dbContext.DispatchTripStatusHistories.Add(new TripStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            TripId = recommendedTrip.Id,
+            FromStatus = TripStatus.Draft,
+            ToStatus = TripStatus.Planning,
+            ActorUserId = actorUserId,
+            ActorRole = User.IsInRole(RoleNames.Manager) ? RoleNames.Manager : RoleNames.Dispatcher,
+            Remarks = "Trip Chaining accepted. Assignment proposed; normal Planning and Finance validation still apply.",
+            EventAt = planningStartedAt,
+            RecordedAt = planningStartedAt
+        });
+        _auditService.AddEntry(
+            actorUserId,
+            AuditActions.DispatchTripStatusChanged,
+            EntityTypes.DispatchTrip,
+            recommendedTrip.Id,
+            new { Status = TripStatus.Draft },
+            new { Status = TripStatus.Planning, recommendedTrip.DriverUserId, recommendedTrip.TruckAssetId },
+            tripId: recommendedTrip.Id,
+            reason: "Accepted Trip Chaining suggestion; moved to Planning without dispatch release.");
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var loaded = await LoadRecommendationById(id, cancellationToken);

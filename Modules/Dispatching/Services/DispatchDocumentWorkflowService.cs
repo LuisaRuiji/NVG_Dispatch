@@ -55,11 +55,18 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             throw new BusinessRuleViolationException("Storage key is required.");
         }
 
+        if (command.Type == TripDocumentType.Eir && command.Direction == DocumentDirection.NotApplicable)
+            throw new BusinessRuleViolationException("Each EIR must specify GateIn or GateOut direction.");
+        if (command.IsProofOfDelivery && command.Type != TripDocumentType.Dr)
+            throw new BusinessRuleViolationException("Only a signed DR can be linked as the POD.");
+
         var now = DateTime.UtcNow;
-        var active = await _dbContext.DispatchTripDocuments
-            .FirstOrDefaultAsync(
-                d => d.TripId == trip.Id && d.Type == command.Type && d.IsActive,
-                cancellationToken);
+        TripDocument? active = null;
+        if (IsSingleton(command.Type))
+        {
+            active = await _dbContext.DispatchTripDocuments
+                .FirstOrDefaultAsync(d => d.TripId == trip.Id && d.Type == command.Type && d.IsActive, cancellationToken);
+        }
 
         if (active is not null)
         {
@@ -75,6 +82,17 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             Type = command.Type,
             State = TripDocumentState.Uploaded,
             StorageKey = command.StorageKey,
+            OriginalFileName = command.OriginalFileName,
+            ContentType = command.ContentType,
+            SizeBytes = command.SizeBytes,
+            ReferenceNumber = Normalize(command.ReferenceNumber),
+            ExpiryDate = command.ExpiryDate,
+            Carrier = Normalize(command.Carrier),
+            TerminalOrDepot = Normalize(command.TerminalOrDepot),
+            Direction = command.Direction,
+            DocumentEventAt = command.DocumentEventAt,
+            ContainerCondition = Normalize(command.ContainerCondition),
+            IsProofOfDelivery = command.IsProofOfDelivery,
             UploadedByUserId = actor.UserId,
             UploadedAt = now
         };
@@ -87,8 +105,10 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             EntityTypes.DispatchTripDocument,
             doc.Id,
             null,
-            new { doc.Type, doc.State, TripId = trip.Id },
-            tripId: trip.Id);
+            new { doc.Type, doc.State, TripId = trip.Id, doc.Direction, doc.ReferenceNumber, doc.IsProofOfDelivery },
+            tripId: trip.Id,
+            relatedAttachmentId: doc.Id,
+            referenceNumber: doc.ReferenceNumber);
 
         await SaveChangesAsync(cancellationToken);
         QueueDocumentUploadedBroadcast(doc.Id);
@@ -100,9 +120,9 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
         DispatchActorContext actor,
         CancellationToken cancellationToken = default)
     {
-        if (!actor.IsManager && !actor.IsDispatcher && !actor.IsAdmin)
+        if (!actor.IsManager && !actor.IsDispatcher)
         {
-            throw new ForbiddenDomainException("Only dispatcher, manager, or admin can verify documents.");
+            throw new ForbiddenDomainException("Only a dispatcher or manager can verify documents.");
         }
 
         var doc = await _dbContext.DispatchTripDocuments
@@ -137,7 +157,9 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             doc.Id,
             null,
             new { doc.Type, doc.State, TripId = doc.TripId },
-            tripId: doc.TripId);
+            tripId: doc.TripId,
+            relatedAttachmentId: doc.Id,
+            referenceNumber: doc.ReferenceNumber);
 
         await SaveChangesAsync(cancellationToken);
         QueueDocumentVerifiedBroadcast(doc.Id, isVerified: true);
@@ -149,9 +171,9 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
         DispatchActorContext actor,
         CancellationToken cancellationToken = default)
     {
-        if (!actor.IsManager && !actor.IsDispatcher && !actor.IsAdmin)
+        if (!actor.IsManager && !actor.IsDispatcher)
         {
-            throw new ForbiddenDomainException("Only dispatcher, manager, or admin can reject documents.");
+            throw new ForbiddenDomainException("Only a dispatcher or manager can reject documents.");
         }
 
         if (string.IsNullOrWhiteSpace(command.Remarks))
@@ -192,7 +214,10 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             doc.Id,
             null,
             new { doc.Type, doc.State, TripId = doc.TripId },
-            tripId: doc.TripId);
+            tripId: doc.TripId,
+            reason: command.Remarks,
+            relatedAttachmentId: doc.Id,
+            referenceNumber: doc.ReferenceNumber);
 
         await SaveChangesAsync(cancellationToken);
         if (doc.Trip?.DriverUserId.HasValue == true)
@@ -220,7 +245,7 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             .AnyAsync(
                 d => d.TripId == tripId
                      && d.IsActive
-                     && d.Type == TripDocumentType.Pod
+                     && (d.Type == TripDocumentType.Pod || (d.Type == TripDocumentType.Dr && d.IsProofOfDelivery))
                      && d.State == TripDocumentState.Verified,
                 cancellationToken);
     }
@@ -234,7 +259,7 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             .AnyAsync(
                 d => d.TripId == tripId
                      && d.IsActive
-                     && d.Type == TripDocumentType.Pod
+                     && (d.Type == TripDocumentType.Pod || (d.Type == TripDocumentType.Dr && d.IsProofOfDelivery))
                      && (d.State == TripDocumentState.Uploaded || d.State == TripDocumentState.Verified),
                 cancellationToken);
     }
@@ -274,8 +299,12 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
 
             case TripDocumentType.Eir:
             case TripDocumentType.GatePass:
+            case TripDocumentType.Dtr:
+            case TripDocumentType.GateEvidence:
+            case TripDocumentType.ReturnEvidence:
+            case TripDocumentType.ContainerInspectionPhoto:
                 EnsureAssignedDriver(actor, trip, "Only the assigned driver can upload EIR and Gate Pass.");
-                EnsureStatusAtLeast(trip.Status, TripStatus.AtPickup, "EIR and Gate Pass can only be uploaded after pickup.");
+                EnsureStatusAtLeast(trip.Status, TripStatus.AtPickup, "Operational evidence can only be uploaded after pickup.");
                 return;
 
             case TripDocumentType.Dr:
@@ -330,11 +359,15 @@ public sealed class DispatchDocumentWorkflowService : IDispatchDocumentWorkflowS
             TripStatus.Loaded => 4,
             TripStatus.EnrouteDropoff => 5,
             TripStatus.AtDropoff => 6,
-            TripStatus.Delivered => 7,
-            TripStatus.Closed => 8,
+            TripStatus.DeliveryCompleted => 7,
+            TripStatus.DocumentsPending => 8,
+            TripStatus.OperationallyClosed => 9,
             _ => -1
         };
     }
+
+    private static bool IsSingleton(TripDocumentType type) => type is TripDocumentType.Atw or TripDocumentType.Pod or TripDocumentType.Dr or TripDocumentType.GatePass;
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static void EnsureTripAccess(Trip trip, DispatchActorContext actor)
     {

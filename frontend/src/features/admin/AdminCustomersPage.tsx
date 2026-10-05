@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/lib/useToast";
 import { api } from "@/lib/api";
+import { getMe } from "@/features/auth/authStore";
+
+type CustomerAccountStatus = "PENDING_REVIEW" | "ACTIVE_PREPAID" | "ACTIVE_CREDIT" | "REJECTED" | "SUSPENDED" | "ON_HOLD";
 
 type CustomerListItem = {
   id: string;
@@ -15,6 +18,9 @@ type CustomerListItem = {
   contactEmail?: string | null;
   phone?: string | null;
   createdAt: string;
+  accountStatus: CustomerAccountStatus;
+  creditStatus: string;
+  hasOverdueBalance: boolean;
 };
 
 export default function AdminCustomersPage() {
@@ -25,6 +31,8 @@ export default function AdminCustomersPage() {
   const [userOpen, setUserOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerListItem | null>(null);
+  const [decisionLoading, setDecisionLoading] = useState<string | null>(null);
+  const isManager = getMe()?.roles?.includes("Manager") ?? false;
 
   const [name, setName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
@@ -129,6 +137,21 @@ export default function AdminCustomersPage() {
     setViewOpen(true);
   };
 
+  const handleAccountDecision = async (customer: CustomerListItem, action: "approve" | "reject" | "suspend" | "hold") => {
+    const reason = window.prompt(`Reason for ${action}:`)?.trim();
+    if (!reason) return;
+    try {
+      setDecisionLoading(customer.id);
+      await api(`/api/customer-accounts/${customer.id}/${action}`, { method: "POST", body: JSON.stringify({ reason }) });
+      show(`Customer account ${action} action recorded.`, "success");
+      await loadCustomers();
+    } catch (e: any) {
+      show(e?.message ?? "Account decision failed.", "error");
+    } finally {
+      setDecisionLoading(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <ToastHost toasts={toasts} />
@@ -156,6 +179,7 @@ export default function AdminCustomersPage() {
                   <th className="px-4 py-3 text-left">Contact Person</th>
                   <th className="px-4 py-3 text-left">Email</th>
                   <th className="px-4 py-3 text-left">Phone</th>
+                  <th className="px-4 py-3 text-left">Account</th>
                   <th className="px-4 py-3 text-left">Created At</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -167,6 +191,7 @@ export default function AdminCustomersPage() {
                     <td className="px-4 py-3">{customer.contactPerson ?? "-"}</td>
                     <td className="px-4 py-3">{customer.contactEmail ?? "-"}</td>
                     <td className="px-4 py-3">{customer.phone ?? "-"}</td>
+                    <td className="px-4 py-3"><AccountStatusBadge status={customer.accountStatus} overdue={customer.hasOverdueBalance} /></td>
                     <td className="px-4 py-3">
                       {customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : "-"}
                     </td>
@@ -175,7 +200,9 @@ export default function AdminCustomersPage() {
                         <Button size="sm" variant="outline" onClick={() => openView(customer)}>
                           View
                         </Button>
-                        <Button size="sm" onClick={() => openCreateUser(customer)}>
+                        {isManager && customer.accountStatus === "PENDING_REVIEW" ? <><Button size="sm" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "approve")}>Approve prepaid</Button><Button size="sm" variant="destructive" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "reject")}>Reject</Button></> : null}
+                        {isManager && ["ACTIVE_PREPAID", "ACTIVE_CREDIT"].includes(customer.accountStatus) ? <Button size="sm" variant="outline" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "hold")}>Place on hold</Button> : null}
+                        <Button size="sm" onClick={() => openCreateUser(customer)} disabled={!customer.accountStatus.startsWith("ACTIVE_")}>
                           Create Portal User
                         </Button>
                       </div>
@@ -334,6 +361,10 @@ export default function AdminCustomersPage() {
             </div>
             <div className="mt-5 space-y-3 text-sm text-muted-foreground">
               <p>
+                <span className="text-foreground font-semibold">Account:</span>{" "}
+                {customerStatusLabel(selectedCustomer.accountStatus)} · {selectedCustomer.creditStatus.replace(/_/g, " ")}
+              </p>
+              <p>
                 <span className="text-foreground font-semibold">Contact Person:</span>{" "}
                 {selectedCustomer.contactPerson ?? "-"}
               </p>
@@ -357,4 +388,13 @@ export default function AdminCustomersPage() {
       ) : null}
     </div>
   );
+}
+
+function customerStatusLabel(status: CustomerAccountStatus) {
+  return status.split("_").map((part) => part.charAt(0) + part.slice(1).toLowerCase()).join(" ");
+}
+
+function AccountStatusBadge({ status, overdue }: { status: CustomerAccountStatus; overdue: boolean }) {
+  const active = status === "ACTIVE_PREPAID" || status === "ACTIVE_CREDIT";
+  return <div className="flex flex-wrap items-center gap-1.5"><span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${active ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700" : status === "PENDING_REVIEW" ? "border-amber-500/25 bg-amber-500/10 text-amber-700" : "border-destructive/25 bg-destructive/10 text-destructive"}`}>{customerStatusLabel(status)}</span>{overdue ? <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-destructive">Overdue</span> : null}</div>;
 }

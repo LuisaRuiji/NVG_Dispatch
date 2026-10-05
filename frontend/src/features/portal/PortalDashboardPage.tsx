@@ -66,7 +66,7 @@ export default function PortalDashboardPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <div className="surface-card p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Shipment Requests</p>
-          <p className="mt-3 text-3xl font-semibold text-foreground">
+          <p className="mt-3 text-right text-3xl font-semibold tabular-nums text-foreground">
             {loading ? "—" : requestCount}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">Drafts and submitted requests.</p>
@@ -81,7 +81,7 @@ export default function PortalDashboardPage() {
         </div>
         <div className="surface-card p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Shipments</p>
-          <p className="mt-3 text-3xl font-semibold text-foreground">
+          <p className="mt-3 text-right text-3xl font-semibold tabular-nums text-foreground">
             {loading ? "—" : shipmentCount}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">Active and delivered shipments.</p>

@@ -12,5 +12,8 @@ public interface IAuditService
         object? before = null,
         object? after = null,
         string? actorRole = null,
-        Guid? tripId = null);
+        Guid? tripId = null,
+        string? reason = null,
+        Guid? relatedAttachmentId = null,
+        string? referenceNumber = null);
 }

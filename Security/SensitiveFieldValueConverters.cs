@@ -26,6 +26,13 @@ public static class SensitiveFieldValueConverters
             value => UnprotectDecimal(value));
     }
 
+    public static ValueConverter<decimal, string> CreateRequiredSensitiveDecimalConverter()
+    {
+        return new ValueConverter<decimal, string>(
+            value => SensitiveFieldProtector.Protect(value.ToString(CultureInfo.InvariantCulture)) ?? string.Empty,
+            value => UnprotectRequiredDecimal(value));
+    }
+
     private static string? ProtectDecimal(decimal? value)
     {
         return value.HasValue
@@ -39,5 +46,21 @@ public static class SensitiveFieldValueConverters
         return string.IsNullOrWhiteSpace(plainText)
             ? null
             : decimal.Parse(plainText, NumberStyles.Number, CultureInfo.InvariantCulture);
+    }
+
+    private static decimal UnprotectRequiredDecimal(string? protectedValue)
+    {
+        // Schema upgrades add required encrypted decimal columns to legacy rows. An
+        // empty payload represents the migration-time zero only; all subsequent
+        // writes are protected by the current key ring.
+        if (string.IsNullOrWhiteSpace(protectedValue))
+        {
+            return 0m;
+        }
+
+        return decimal.Parse(
+            SensitiveFieldProtector.Unprotect(protectedValue) ?? "0",
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture);
     }
 }

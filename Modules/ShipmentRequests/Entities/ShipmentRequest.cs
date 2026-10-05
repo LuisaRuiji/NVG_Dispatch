@@ -26,6 +26,19 @@ public sealed class ShipmentRequest
     public string? BookingNumber { get; set; }
     public string? SpecialInstructions { get; set; }
     public string? RejectionRemarks { get; set; }
+    public BookingFinanceClearanceStatus FinanceClearanceStatus { get; set; } = BookingFinanceClearanceStatus.Cleared;
+    public decimal? QuotedAmount { get; set; }
+    public decimal? RequiredDepositAmount { get; set; }
+    public decimal VerifiedPaymentAmount { get; set; }
+    public decimal VerifiedDepositAmount { get; set; }
+    public Guid? FinanceClearedByUserId { get; set; }
+    public User? FinanceClearedByUser { get; set; }
+    public DateTime? FinanceClearedAt { get; set; }
+    public string? FinanceClearanceReason { get; set; }
+    public Guid? FinanceExceptionByUserId { get; set; }
+    public User? FinanceExceptionByUser { get; set; }
+    public DateTime? FinanceExceptionAt { get; set; }
+    public string? FinanceExceptionReason { get; set; }
     public DateTime CreatedAt { get; set; }
     public Guid CreatedByUserId { get; set; }
     public User? CreatedByUser { get; set; }
@@ -36,4 +49,5 @@ public sealed class ShipmentRequest
     public Trip? ConvertedTrip { get; set; }
 
     public List<ShipmentRequestDocument> Documents { get; set; } = [];
+    public List<BookingFinanceHistory> FinanceHistory { get; set; } = [];
 }

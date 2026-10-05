@@ -56,7 +56,8 @@ type AtwScanResult = {
 };
 
 const containerSizeOptions = Object.entries(containerSizeLabels) as [ContainerSize, string][];
-const tripTypeOptions = Object.entries(tripTypeLabels) as [TripType, string][];
+const supportedTripTypes: TripType[] = ["EXPORT_EMPTY_PICKUP", "EXPORT_LADEN_TO_TERMINAL", "IMPORT_LADEN_DELIVERY", "EMPTY_RETURN"];
+const tripTypeOptions = (Object.entries(tripTypeLabels) as [TripType, string][]).filter(([value]) => supportedTripTypes.includes(value));
 
 const toScheduleDateTime = (date: string, time: string) => {
   if (!date) return null;
@@ -80,7 +81,7 @@ export default function PortalRequestNewPage() {
     requestedPickupDate: "",
     requestedPickupTime: "",
     containerSize: "TWENTY_FT",
-    tripType: "PORT_PICKUP",
+    tripType: "EXPORT_EMPTY_PICKUP",
     containerNumber: "",
     shippingLine: "",
     bookingNumber: "",

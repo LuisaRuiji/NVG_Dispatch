@@ -12,6 +12,9 @@ public sealed class AuditLog
     public string? BeforeJson { get; set; }
     public string? AfterJson { get; set; }
     public string? TraceId { get; set; }
+    public string? Reason { get; set; }
+    public Guid? RelatedAttachmentId { get; set; }
+    public string? ReferenceNumber { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public User? Actor { get; set; }

@@ -25,6 +25,9 @@ import {
   Sliders,
   Map as MapIcon,
   CalendarClock,
+  CreditCard,
+  Archive,
+  Route as RouteIcon,
   LogOut
 } from "lucide-react";
 import { TrackingProvider } from "@/features/dispatch/TrackingContext";
@@ -68,8 +71,11 @@ const navSections: { title: string; items: NavItem[] }[] = [
       { label: "Dispatch Board", to: "/dispatch/board", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
       { label: "Live Operations Map", to: "/dispatch/live-map", roles: ["Manager", "Dispatcher"], icon: MapIcon, moduleKey: "dispatch" },
       { label: "Requests", to: "/dispatch/requests", roles: ["Manager", "Dispatcher"], icon: ClipboardList, moduleKey: "dispatch" },
+      { label: "Booking Finance", to: "/dispatch/booking-finance", roles: ["HeadOfFinance", "Manager"], icon: CreditCard, moduleKey: "dispatch" },
       { label: "Planning", to: "/dispatch/planning", roles: ["Manager", "Dispatcher"], icon: CalendarClock, moduleKey: "dispatch" },
       { label: "Trips", to: "/dispatch/trips", roles: ["Manager", "Dispatcher", "CEO"], icon: Truck, moduleKey: "dispatch" },
+      { label: "Trip chaining", to: "/dispatch/trip-chaining", roles: ["Manager", "Dispatcher"], icon: RouteIcon, moduleKey: "dispatch" },
+      { label: "Archives", to: "/dispatch/archives", roles: ["Manager", "Dispatcher", "CEO"], icon: Archive, moduleKey: "dispatch" },
       { label: "Optimization Settings", to: "/dispatch/optimization-settings", roles: ["Manager", "Owner"], icon: Sliders, moduleKey: "dispatch" },
       { label: "Documents", to: "/dispatch/documents", roles: ["Manager", "HeadOfFinance"], icon: FileText, moduleKey: "dispatch" },
       { label: "Trips", to: "/dispatch/my-trips", roles: ["Driver"], icon: Truck, moduleKey: "dispatch" }

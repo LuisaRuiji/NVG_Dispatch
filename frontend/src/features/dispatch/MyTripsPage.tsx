@@ -21,6 +21,8 @@ type StatusScope = "ACTIVE" | "ALL";
 
 const driverActionMap: Record<TripStatus, { endpoint: string; label: string } | null> = {
   DRAFT: null,
+  PLANNING: null,
+  ASSIGNED: null,
   READY_FOR_DISPATCH: null,
   DISPATCHED: { endpoint: "start", label: "Start trip to pickup" },
   ENROUTE_PICKUP: { endpoint: "arrive-pickup", label: "Mark arrived at pickup" },
@@ -28,6 +30,9 @@ const driverActionMap: Record<TripStatus, { endpoint: string; label: string } | 
   LOADED: { endpoint: "depart-pickup", label: "Start trip to drop-off" },
   ENROUTE_DROPOFF: { endpoint: "arrive-dropoff", label: "Mark arrived at drop-off" },
   AT_DROPOFF: { endpoint: "confirm-delivery", label: "Confirm delivery" },
+  DELIVERY_COMPLETED: null,
+  DOCUMENTS_PENDING: null,
+  OPERATIONALLY_CLOSED: null,
   DELIVERED: null,
   CLOSED: null,
   CANCELLED: null,

@@ -14,6 +14,17 @@ public sealed class TripDocument
     public TripDocumentType Type { get; set; }
     public TripDocumentState State { get; set; }
     public string StorageKey { get; set; } = string.Empty;
+    public string? OriginalFileName { get; set; }
+    public string? ContentType { get; set; }
+    public long? SizeBytes { get; set; }
+    public string? ReferenceNumber { get; set; }
+    public DateTime? ExpiryDate { get; set; }
+    public string? Carrier { get; set; }
+    public string? TerminalOrDepot { get; set; }
+    public DocumentDirection Direction { get; set; } = DocumentDirection.NotApplicable;
+    public DateTime? DocumentEventAt { get; set; }
+    public string? ContainerCondition { get; set; }
+    public bool IsProofOfDelivery { get; set; }
     public Guid UploadedByUserId { get; set; }
     public User? UploadedBy { get; set; }
     public Guid? VerifiedByUserId { get; set; }

@@ -209,6 +209,35 @@ public sealed class PortalShipmentRequestsController : ControllerBase
             doc.UploadedAt));
     }
 
+    [HttpPost("{id:guid}/documents/upload")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<ShipmentRequestDocumentResponse>> UploadDocumentFile(
+        Guid id,
+        [FromForm] IFormFile file,
+        [FromForm] ShipmentRequestDocumentType documentType,
+        [FromForm] DateTime? expiryDate,
+        [FromForm] string? carrier,
+        [FromForm] string? terminalOrDepot,
+        [FromForm] string? referenceNumber,
+        CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0) return BadRequest("A document file is required.");
+        var customerId = await GetCustomerIdAsync(cancellationToken);
+        StoredShipmentRequestDocument stored;
+        await using (var content = file.OpenReadStream())
+        {
+            stored = await _documentStorage.SaveAsync(customerId, id, content, file.FileName, file.ContentType, file.Length, cancellationToken);
+        }
+        var doc = await _service.UploadDocumentAsync(
+            new UploadShipmentRequestDocumentCommand(id, documentType, stored.StorageKey, User.GetUserId(), stored.OriginalFileName,
+                stored.ContentType, stored.SizeBytes, expiryDate, carrier, terminalOrDepot, referenceNumber),
+            customerId,
+            cancellationToken);
+        return Ok(new ShipmentRequestDocumentResponse(doc.Id, doc.DocumentType, doc.StorageKey, doc.UploadedByUserId,
+            doc.UploadedByUser?.Username, doc.UploadedAt, doc.VerificationState, doc.OriginalFileName, doc.ContentType,
+            doc.SizeBytes, doc.ExpiryDate, doc.Carrier, doc.TerminalOrDepot, doc.ReferenceNumber, doc.RejectionReason));
+    }
+
     [HttpGet("{id:guid}/documents/{documentId:guid}/content")]
     public async Task<IActionResult> GetDocumentContent(
         Guid id,
@@ -476,7 +505,10 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             item.CreatedAt,
             ToStatusValue(item.Status),
             item.Priority.ToString().ToUpperInvariant(),
-            item.ReviewRemarks)).ToList();
+            item.ReviewRemarks,
+            item.FinanceClearanceStatus,
+            item.CustomerAccountStatus,
+            item.HasOverdueBalance)).ToList();
 
         return Ok(new PagedResult<DispatchShipmentRequestQueueItemResponse>(
             items,
@@ -502,7 +534,13 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             document.ExtractionConfidence,
             document.UploadedByUserId,
             document.UploadedByUser?.Username,
-            document.UploadedAt)).ToList();
+            document.UploadedAt,
+            document.VerificationState,
+            document.ExpiryDate,
+            document.Carrier,
+            document.TerminalOrDepot,
+            document.ReferenceNumber,
+            document.RejectionReason)).ToList();
         var activity = detail.Activity.Select(item => new DispatchShipmentRequestActivityResponse(
             item.Action,
             item.ActorUsername,
@@ -544,7 +582,10 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             detail.ConvertedTripId,
             documents,
             activity,
-            assignment));
+            assignment,
+            detail.FinanceClearanceStatus,
+            detail.CustomerAccountStatus,
+            detail.HasOverdueBalance));
     }
 
     [HttpGet("{id:guid}/documents/{documentId:guid}/content")]
@@ -575,6 +616,36 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
     {
         var approved = await _service.ApproveAsync(id, User.GetUserId(), cancellationToken);
         return Ok(new ShipmentRequestStatusResponse(approved.Id, approved.Status));
+    }
+
+    [HttpPost("{id:guid}/documents/{documentId:guid}/verify")]
+    public async Task<ActionResult<DispatchShipmentRequestDocumentResponse>> VerifyDocument(
+        Guid id,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var document = await _service.VerifyDocumentAsync(id, documentId, User.GetUserId(), cancellationToken);
+        return Ok(MapDispatchDocument(document));
+    }
+
+    [HttpPost("{id:guid}/documents/{documentId:guid}/reject")]
+    public async Task<ActionResult<DispatchShipmentRequestDocumentResponse>> RejectDocument(
+        Guid id,
+        Guid documentId,
+        ShipmentRequestRejectRequest request,
+        CancellationToken cancellationToken)
+    {
+        var document = await _service.RejectDocumentAsync(id, documentId, User.GetUserId(), request.Remarks, cancellationToken);
+        return Ok(MapDispatchDocument(document));
+    }
+
+    [HttpPost("{id:guid}/start-review")]
+    public async Task<ActionResult<ShipmentRequestStatusResponse>> StartReview(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var reviewed = await _service.StartReviewAsync(id, User.GetUserId(), cancellationToken);
+        return Ok(new ShipmentRequestStatusResponse(reviewed.Id, reviewed.Status));
     }
 
     [HttpPost("{id:guid}/reject")]
@@ -619,6 +690,25 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             User.IsInRole(RoleNames.Ceo));
     }
 
+    private static DispatchShipmentRequestDocumentResponse MapDispatchDocument(NVGInventory.Modules.ShipmentRequests.Entities.ShipmentRequestDocument document) => new(
+        document.Id,
+        document.DocumentType,
+        document.OriginalFileName,
+        document.ContentType,
+        document.SizeBytes,
+        document.AnalysisStatus.ToString().ToUpperInvariant(),
+        document.AnalysisError,
+        document.ExtractionConfidence,
+        document.UploadedByUserId,
+        document.UploadedByUser?.Username,
+        document.UploadedAt,
+        document.VerificationState,
+        document.ExpiryDate,
+        document.Carrier,
+        document.TerminalOrDepot,
+        document.ReferenceNumber,
+        document.RejectionReason);
+
     private static bool TryResolvePaging(
         int? page,
         int? pageSize,
@@ -661,7 +751,10 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
         status = value.Trim().ToUpperInvariant() switch
         {
             "SUBMITTED" => ShipmentRequestStatus.Submitted,
+            "UNDER_REVIEW" => ShipmentRequestStatus.UnderReview,
             "APPROVED" => ShipmentRequestStatus.Approved,
+            "AWAITING_FINANCE_CLEARANCE" => ShipmentRequestStatus.AwaitingFinanceClearance,
+            "CLEARED_FOR_PLANNING" => ShipmentRequestStatus.ClearedForPlanning,
             "NEEDS_REVISION" => ShipmentRequestStatus.NeedsRevision,
             "REJECTED" => ShipmentRequestStatus.Rejected,
             _ => null
@@ -672,7 +765,7 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
             return true;
         }
 
-        error = "Status must be SUBMITTED, APPROVED, NEEDS_REVISION, or REJECTED.";
+        error = "Status must be SUBMITTED, UNDER_REVIEW, APPROVED, AWAITING_FINANCE_CLEARANCE, CLEARED_FOR_PLANNING, NEEDS_REVISION, or REJECTED.";
         return false;
     }
 
@@ -748,8 +841,12 @@ public sealed class DispatchShipmentRequestsController : ControllerBase
         {
             ShipmentRequestStatus.Draft => "DRAFT",
             ShipmentRequestStatus.Submitted => "SUBMITTED",
+            ShipmentRequestStatus.UnderReview => "UNDER_REVIEW",
             ShipmentRequestStatus.Approved => "APPROVED",
             ShipmentRequestStatus.Rejected => "REJECTED",
+            ShipmentRequestStatus.Cancelled => "CANCELLED",
+            ShipmentRequestStatus.AwaitingFinanceClearance => "AWAITING_FINANCE_CLEARANCE",
+            ShipmentRequestStatus.ClearedForPlanning => "CLEARED_FOR_PLANNING",
             ShipmentRequestStatus.ConvertedToTrip => "CONVERTED_TO_TRIP",
             ShipmentRequestStatus.NeedsRevision => "NEEDS_REVISION",
             _ => "DRAFT"

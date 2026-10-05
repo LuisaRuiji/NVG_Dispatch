@@ -57,6 +57,13 @@ public sealed record ShipmentRequestSubmittedEvent(
     string DropoffLocation,
     DateTime SubmittedAt);
 
+public sealed record BookingFinanceChangedEvent(
+    Guid RequestId,
+    string BookingStatus,
+    string FinanceStatus,
+    string CustomerName,
+    DateTime ChangedAt);
+
 public sealed record PlanningInvalidatedEvent(
     Guid? TripId,
     string Reason,

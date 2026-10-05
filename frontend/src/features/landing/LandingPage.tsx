@@ -439,7 +439,7 @@ export default function LandingPage() {
                                             <span className="text-xs font-medium text-gray-500">{stat.label}</span>
                                             <stat.icon size={14} className="text-primary" />
                                         </div>
-                                        <span className="font-mono text-2xl font-bold text-primary">
+                                        <span className="text-right font-mono text-2xl font-bold tabular-nums text-primary">
                                             <CountUpValue value={stat.val} />
                                         </span>
                                     </div>

@@ -1,4 +1,5 @@
 using NVGInventory.Domain.Entities;
+using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.ShipmentRequests.Enums;
 
 namespace NVGInventory.Modules.ShipmentRequests.Entities;
@@ -13,6 +14,15 @@ public sealed class ShipmentRequestDocument
     public string? OriginalFileName { get; set; }
     public string? ContentType { get; set; }
     public long? SizeBytes { get; set; }
+    public TripDocumentState VerificationState { get; set; } = TripDocumentState.Uploaded;
+    public Guid? VerifiedByUserId { get; set; }
+    public User? VerifiedByUser { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTime? ExpiryDate { get; set; }
+    public string? Carrier { get; set; }
+    public string? TerminalOrDepot { get; set; }
+    public string? ReferenceNumber { get; set; }
     public Guid UploadedByUserId { get; set; }
     public User? UploadedByUser { get; set; }
     public DateTime UploadedAt { get; set; }

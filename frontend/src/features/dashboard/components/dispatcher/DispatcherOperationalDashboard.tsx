@@ -86,6 +86,10 @@ const containerSizeLabels = {
 } as const;
 
 const tripTypeLabels = {
+  EXPORT_EMPTY_PICKUP: "Export empty pickup",
+  EXPORT_LADEN_TO_TERMINAL: "Export laden to terminal",
+  IMPORT_LADEN_DELIVERY: "Import laden delivery",
+  EMPTY_RETURN: "Empty return",
   PORT_PICKUP: "Port pickup",
   PORT_DROPOFF: "Port dropoff",
   YARD_TRANSFER: "Yard transfer",
@@ -151,7 +155,7 @@ function OperationalStrip({ kpis }: { kpis: DispatchDashboardKpis }) {
             <div className="min-w-0">
               <p className="operations-kpi__value font-mono tabular-nums">{metric.value.toLocaleString()}</p>
               <p className="operations-kpi__label" title={metric.label}>{metric.label}</p>
-              <p className="mt-1 truncate text-[11px] text-muted-foreground">{metric.hint}</p>
+              <p className="operations-kpi__detail truncate text-[11px] text-muted-foreground">{metric.hint}</p>
             </div>
           </Link>
         ))}
@@ -307,8 +311,8 @@ function DispatchHealth({ kpis }: { kpis: DispatchDashboardKpis }) {
       <CardContent className="space-y-5 px-5 pb-5 sm:px-6 sm:pb-6">
         <div>
           <div className="flex items-end justify-between gap-3">
-            <div>
-              <p className="font-mono text-3xl font-semibold tabular-nums text-foreground">{onSchedulePercent}%</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-right font-mono text-3xl font-semibold tabular-nums text-foreground">{onSchedulePercent}%</p>
               <p className="mt-1 text-xs text-muted-foreground">of running trips on schedule</p>
             </div>
             <p className="font-mono text-xs tabular-nums text-muted-foreground">{onSchedule}/{kpis.activeTrips}</p>

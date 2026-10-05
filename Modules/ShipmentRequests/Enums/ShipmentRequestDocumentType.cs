@@ -6,5 +6,15 @@ public enum ShipmentRequestDocumentType
     Invoice = 1,
     CargoManifest = 2,
     DeliveryInstructions = 3,
-    Other = 4
+    Other = 4,
+    BookingConfirmation = 5,
+    ReleaseConfirmation = 6,
+    TerminalAuthorization = 7,
+    BillOfLading = 8,
+    SeaWaybill = 9,
+    DeliveryOrder = 10,
+    Cro = 11,
+    WebCro = 12,
+    ReturnDepotAuthorization = 13,
+    ReturnInstruction = 14
 }

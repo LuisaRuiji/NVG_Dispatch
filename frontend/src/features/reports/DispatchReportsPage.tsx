@@ -882,7 +882,7 @@ function SummaryTile({ label, value }: { label: string; value: string | number }
   return (
     <div className="surface-card p-5">
       <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+      <p className="mt-2 text-right text-2xl font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }

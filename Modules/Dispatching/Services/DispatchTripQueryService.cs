@@ -190,10 +190,12 @@ public sealed class DispatchTripQueryService
         int page,
         int pageSize,
         DispatchActorContext actor,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DispatchTripRecordScope scope = DispatchTripRecordScope.Operational)
     {
         var requiredTypes = DispatchDocumentRules.GetRequiredDocumentTypes(_options).ToArray();
         var query = _builder.Base(actor);
+        query = _builder.FilterRecordScope(query, scope);
         query = _builder.FilterStatus(query, status);
         query = _builder.FilterDriver(query, driverUserId);
         query = _builder.FilterTruck(query, truckAssetId);
@@ -471,8 +473,9 @@ public sealed class DispatchTripQueryService
         var total = await query.CountAsync(cancellationToken);
 
         var results = await query
-            .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
+            .OrderByDescending(t => t.UpdatedAt)
             .ThenByDescending(t => t.CreatedAt)
+            .ThenByDescending(t => t.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(t => new DispatchTripListItem(
@@ -822,7 +825,7 @@ public sealed class DispatchTripQueryService
 
     private static bool CanViewFinancials(DispatchActorContext actor)
     {
-        return actor.IsManager || actor.IsFinance || actor.IsCeo;
+        return actor.IsManager || actor.IsFinance || actor.IsCeo || actor.IsAdmin;
     }
 
     private static List<DispatchTripListItem> AttachPlannedWindow(List<DispatchTripListItem> items)

@@ -7,5 +7,9 @@ public enum TripDocumentType
     Atw,
     Eir,
     GatePass,
-    Dr
+    Dr,
+    Dtr,
+    GateEvidence,
+    ReturnEvidence,
+    ContainerInspectionPhoto
 }

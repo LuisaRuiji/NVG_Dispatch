@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { CheckCircle2, X } from "lucide-react";
+import { api, ApiRequestError } from "@/lib/api";
 
 type DemoRequestModalProps = {
     open: boolean;
@@ -53,35 +54,34 @@ export default function DemoRequestModal({ open, onClose }: DemoRequestModalProp
         setError(null);
 
         try {
-            const endpoint = import.meta.env.VITE_DEMO_REQUEST_URL as string | undefined;
-            if (endpoint) {
-                const response = await fetch(endpoint, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(form)
-                });
+            const reason = [
+                `Fleet size: ${form.fleetSize}`,
+                form.message.trim() ? `Message: ${form.message.trim()}` : null
+            ]
+                .filter((value): value is string => value !== null)
+                .join("\n");
 
-                if (!response.ok) {
-                    throw new Error("Demo request failed");
-                }
-            } else {
-                const subject = `Demo request from ${form.companyName}`;
-                const body = [
-                    `Company name: ${form.companyName}`,
-                    `Contact name: ${form.contactName}`,
-                    `Email: ${form.email}`,
-                    `Phone number: ${form.phoneNumber}`,
-                    `Fleet size: ${form.fleetSize}`,
-                    `Message: ${form.message || "N/A"}`
-                ].join("\n");
-
-                window.location.href = `mailto:demo@nvgdispatch.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            }
+            await api("/api/customer-accounts/requests", {
+                method: "POST",
+                auth: false,
+                body: JSON.stringify({
+                    companyName: form.companyName.trim(),
+                    contactPerson: form.contactName.trim(),
+                    contactEmail: form.email.trim(),
+                    phone: form.phoneNumber.trim() || null,
+                    address: null,
+                    reason
+                })
+            });
 
             setSubmitted(true);
         } catch (err) {
             console.error(err);
-            setError("We could not send the request. Please try again.");
+            setError(
+                err instanceof ApiRequestError && err.message
+                    ? err.message
+                    : "We could not save the request. Please try again."
+            );
         } finally {
             setSubmitting(false);
         }
@@ -119,7 +119,8 @@ export default function DemoRequestModal({ open, onClose }: DemoRequestModalProp
                         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                             <CheckCircle2 size={24} />
                         </div>
-                        <h3 className="text-lg font-semibold text-emerald-900">We'll be in touch within 24 hours.</h3>
+                        <h3 className="text-lg font-semibold text-emerald-900">Your request is awaiting account review.</h3>
+                        <p className="mt-2 text-sm text-emerald-800">Our team will contact you within 24 hours.</p>
                         <button
                             type="button"
                             onClick={closeModal}

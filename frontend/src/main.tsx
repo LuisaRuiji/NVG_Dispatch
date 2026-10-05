@@ -35,7 +35,10 @@ import DispatchMapPage from "@/features/dispatch/DispatchMapPage";
 import DispatchRequestsPage from "@/features/dispatch/DispatchRequestsPage";
 import DispatchPlanningPage from "@/features/dispatch/DispatchPlanningPage";
 import DispatchDocumentsPage from "@/features/dispatch/DispatchDocumentsPage";
+import BookingFinancePage from "@/features/dispatch/BookingFinancePage";
 import DispatchTripsPage from "@/features/dispatch/DispatchTripsPage";
+import DispatchArchivesPage from "@/features/dispatch/DispatchArchivesPage";
+import TripChainingPage from "@/features/dispatch/TripChainingPage";
 import MyTripsPage from "@/features/dispatch/MyTripsPage";
 import MyTripDetailPage from "@/features/dispatch/MyTripDetailPage";
 import MyRouteMapPage from "@/features/dispatch/MyRouteMapPage";
@@ -253,6 +256,30 @@ function App() {
             element={
               <RoleGate roles={["Manager", "Dispatcher", "CEO"]}>
                 <DispatchTripsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/trip-chaining"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher"]}>
+                <TripChainingPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/archives"
+            element={
+              <RoleGate roles={["Manager", "Dispatcher", "CEO"]}>
+                <DispatchArchivesPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/dispatch/booking-finance"
+            element={
+              <RoleGate roles={["HeadOfFinance", "Manager"]}>
+                <BookingFinancePage />
               </RoleGate>
             }
           />

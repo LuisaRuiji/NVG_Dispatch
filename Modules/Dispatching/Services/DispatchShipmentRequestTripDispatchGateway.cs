@@ -43,7 +43,9 @@ public sealed class DispatchShipmentRequestTripDispatchGateway : IShipmentReques
             tripDraft.BookingNumber,
             tripDraft.ShippingLine,
             tripDraft.ContainerSize,
-            tripDraft.TripType);
+            tripDraft.TripType,
+            null,
+            TripStatus.Planning);
 
         var trip = await _tripLifecycleService.CreateDraftAsync(lifecycleCommand, actor, cancellationToken);
         return trip.Id;

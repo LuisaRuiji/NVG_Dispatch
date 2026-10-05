@@ -13,7 +13,10 @@ public sealed class TripStatusHistory
     public TripStatus ToStatus { get; set; }
     public Guid ActorUserId { get; set; }
     public User? Actor { get; set; }
+    public string? ActorRole { get; set; }
     public string? Remarks { get; set; }
+    public Guid? RelatedAttachmentId { get; set; }
+    public string? ReferenceNumber { get; set; }
     public DateTime EventAt { get; set; }
     public DateTime RecordedAt { get; set; }
 }

@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/lib/useToast";
 import { changePassword, logout } from "./authStore";
+import PasswordRequirements from "./PasswordRequirements";
+import { getPasswordValidationMessage } from "./passwordPolicy";
 
 export default function ChangePasswordPage() {
   const nav = useNavigate();
@@ -16,8 +18,9 @@ export default function ChangePasswordPage() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newPassword.trim()) {
-      show("New password is required.", "error");
+    const passwordValidationMessage = getPasswordValidationMessage(newPassword);
+    if (passwordValidationMessage) {
+      show(passwordValidationMessage, "error");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -58,6 +61,7 @@ export default function ChangePasswordPage() {
                 autoComplete="new-password"
               />
             </div>
+            <PasswordRequirements password={newPassword} confirmation={confirmPassword} />
             <div className="space-y-2">
               <Label>Confirm Password</Label>
               <PasswordInput

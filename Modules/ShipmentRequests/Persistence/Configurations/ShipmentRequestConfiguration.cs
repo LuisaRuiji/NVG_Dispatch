@@ -14,15 +14,23 @@ public sealed class ShipmentRequestConfiguration : IEntityTypeConfiguration<Ship
             value =>
                 value == ShipmentRequestStatus.Draft ? "DRAFT" :
                 value == ShipmentRequestStatus.Submitted ? "SUBMITTED" :
+                value == ShipmentRequestStatus.UnderReview ? "UNDER_REVIEW" :
                 value == ShipmentRequestStatus.Approved ? "APPROVED" :
                 value == ShipmentRequestStatus.Rejected ? "REJECTED" :
+                value == ShipmentRequestStatus.Cancelled ? "CANCELLED" :
+                value == ShipmentRequestStatus.AwaitingFinanceClearance ? "AWAITING_FINANCE_CLEARANCE" :
+                value == ShipmentRequestStatus.ClearedForPlanning ? "CLEARED_FOR_PLANNING" :
                 value == ShipmentRequestStatus.NeedsRevision ? "NEEDS_REVISION" :
                 "CONVERTED_TO_TRIP",
             value =>
                 value == "DRAFT" ? ShipmentRequestStatus.Draft :
                 value == "SUBMITTED" ? ShipmentRequestStatus.Submitted :
+                value == "UNDER_REVIEW" ? ShipmentRequestStatus.UnderReview :
                 value == "APPROVED" ? ShipmentRequestStatus.Approved :
                 value == "REJECTED" ? ShipmentRequestStatus.Rejected :
+                value == "CANCELLED" ? ShipmentRequestStatus.Cancelled :
+                value == "AWAITING_FINANCE_CLEARANCE" ? ShipmentRequestStatus.AwaitingFinanceClearance :
+                value == "CLEARED_FOR_PLANNING" ? ShipmentRequestStatus.ClearedForPlanning :
                 value == "NEEDS_REVISION" ? ShipmentRequestStatus.NeedsRevision :
                 ShipmentRequestStatus.ConvertedToTrip);
 
@@ -51,6 +59,17 @@ public sealed class ShipmentRequestConfiguration : IEntityTypeConfiguration<Ship
         entity.Property(request => request.BookingNumber).HasColumnName("booking_number").HasMaxLength(60);
         entity.Property(request => request.SpecialInstructions).HasColumnName("special_instructions").HasMaxLength(600);
         entity.Property(request => request.RejectionRemarks).HasColumnName("rejection_remarks").HasMaxLength(600);
+        entity.Property(request => request.FinanceClearanceStatus).HasColumnName("finance_clearance_status").HasConversion<string>().HasMaxLength(40).IsRequired();
+        entity.Property(request => request.QuotedAmount).HasColumnName("quoted_amount").HasColumnType("decimal(18,2)");
+        entity.Property(request => request.RequiredDepositAmount).HasColumnName("required_deposit_amount").HasColumnType("decimal(18,2)");
+        entity.Property(request => request.VerifiedPaymentAmount).HasColumnName("verified_payment_amount").HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+        entity.Property(request => request.VerifiedDepositAmount).HasColumnName("verified_deposit_amount").HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+        entity.Property(request => request.FinanceClearedByUserId).HasColumnName("finance_cleared_by_user_id");
+        entity.Property(request => request.FinanceClearedAt).HasColumnName("finance_cleared_at");
+        entity.Property(request => request.FinanceClearanceReason).HasColumnName("finance_clearance_reason").HasMaxLength(600);
+        entity.Property(request => request.FinanceExceptionByUserId).HasColumnName("finance_exception_by_user_id");
+        entity.Property(request => request.FinanceExceptionAt).HasColumnName("finance_exception_at");
+        entity.Property(request => request.FinanceExceptionReason).HasColumnName("finance_exception_reason").HasMaxLength(600);
         entity.Property(request => request.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
         entity.Property(request => request.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(request => request.ApprovedAt).HasColumnName("approved_at");
@@ -77,8 +96,19 @@ public sealed class ShipmentRequestConfiguration : IEntityTypeConfiguration<Ship
             .HasForeignKey(request => request.ConvertedTripId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        entity.HasOne(request => request.FinanceClearedByUser)
+            .WithMany()
+            .HasForeignKey(request => request.FinanceClearedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne(request => request.FinanceExceptionByUser)
+            .WithMany()
+            .HasForeignKey(request => request.FinanceExceptionByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         entity.HasIndex(request => request.CustomerId);
         entity.HasIndex(request => request.Status);
         entity.HasIndex(request => new { request.CustomerId, request.Status });
+        entity.HasIndex(request => request.FinanceClearanceStatus);
     }
 }

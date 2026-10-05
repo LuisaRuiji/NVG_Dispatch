@@ -73,7 +73,7 @@ export default function CustomerDashboardSection({ kpis, charts, loading }: Prop
       <div className="grid gap-3 md:grid-cols-[0.85fr_1.15fr]">
         <div className="surface-card border-primary/20 bg-primary/5 p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Active Requests</p>
-          <div className="mt-2 text-3xl font-semibold text-foreground">
+          <div className="mt-2 text-right text-3xl font-semibold tabular-nums text-foreground">
             {formatNumber(customer?.myActiveRequests) ?? "0"}
           </div>
           <p className="text-sm text-muted-foreground">

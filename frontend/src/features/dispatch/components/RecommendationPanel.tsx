@@ -58,6 +58,7 @@ type RecommendationTime = {
 
 interface RecommendationPanelProps {
   className?: string;
+  showHeading?: boolean;
 }
 
 interface RecommendationMetaProps {
@@ -133,7 +134,7 @@ function QueueSkeleton() {
   );
 }
 
-export default function RecommendationPanel({ className }: RecommendationPanelProps) {
+export default function RecommendationPanel({ className, showHeading = true }: RecommendationPanelProps) {
   const me = getMe();
   const canReview = reviewerRoles.some((role) => me?.roles.some((currentRole) => currentRole === role));
   const { show } = useToast();
@@ -328,17 +329,30 @@ export default function RecommendationPanel({ className }: RecommendationPanelPr
   return (
     <section className={cn("min-w-0 space-y-4", className)} aria-labelledby="trip-chaining-queue-title">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h2 id="trip-chaining-queue-title" className="text-xl font-semibold tracking-tight text-foreground">
-            Trip Chaining
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Review a recommended next movement before the truck begins an empty return trip.
-          </p>
+        {showHeading ? (
+          <div className="min-w-0">
+            <h2 id="trip-chaining-queue-title" className="text-xl font-semibold tracking-tight text-foreground">
+              Trip chaining
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Review a recommended next movement before the truck begins an empty return trip.
+            </p>
+          </div>
+        ) : (
+          <div className="min-w-0">
+            <h2 id="trip-chaining-queue-title" className="text-lg font-semibold text-foreground">Decision queue</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Newest opportunities appear first and expire after 30 minutes.</p>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="w-fit border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+            {groups.length} waiting
+          </Badge>
+          <Button variant="outline" size="sm" onClick={() => void loadRecommendations()} disabled={isRefreshing}>
+            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin motion-reduce:animate-none")} aria-hidden="true" />
+            {isRefreshing ? "Refreshing…" : "Refresh"}
+          </Button>
         </div>
-        <Badge className="w-fit border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
-          {groups.length} waiting
-        </Badge>
       </div>
 
       {fetchError ? (
@@ -351,7 +365,7 @@ export default function RecommendationPanel({ className }: RecommendationPanelPr
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+      <div className="overflow-hidden rounded-[10px] border border-border bg-card">
         <div className="hidden border-b border-border bg-muted/50 px-4 py-3 lg:grid lg:grid-cols-[minmax(9rem,1fr)_minmax(13rem,1.35fr)_minmax(8rem,.8fr)_minmax(14rem,1.45fr)_minmax(9rem,.85fr)_minmax(14rem,max-content)] lg:items-center lg:gap-4">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Driver / truck</span>
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current movement</span>
@@ -438,7 +452,7 @@ export default function RecommendationPanel({ className }: RecommendationPanelPr
             role="dialog"
             aria-modal="true"
             aria-labelledby="trip-chaining-review-title"
-            className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-border bg-card shadow-2xl motion-reduce:transition-none"
+            className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-border bg-card motion-reduce:transition-none"
             onMouseDown={(event) => event.stopPropagation()}
             onKeyDown={handleDrawerKeyDown}
           >

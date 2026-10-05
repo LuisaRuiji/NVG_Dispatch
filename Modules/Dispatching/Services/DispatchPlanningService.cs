@@ -108,10 +108,14 @@ public sealed class DispatchPlanningService
     {
         var requestQuery = _dbContext.ShipmentRequests
             .AsNoTracking()
-            .Where(request => request.Status == ShipmentRequestStatus.Approved);
+            .Where(request => request.Status == ShipmentRequestStatus.ClearedForPlanning ||
+                              (request.Status == ShipmentRequestStatus.Approved &&
+                               (request.FinanceClearanceStatus == BookingFinanceClearanceStatus.Cleared ||
+                                request.FinanceClearanceStatus == BookingFinanceClearanceStatus.AuthorizedException)));
         var tripQuery = _dbContext.DispatchTrips
             .AsNoTracking()
-            .Where(trip => trip.Status == TripStatus.Draft || trip.Status == TripStatus.ReadyForDispatch);
+            .Where(trip => trip.Status == TripStatus.Draft || trip.Status == TripStatus.Planning ||
+                           trip.Status == TripStatus.Assigned || trip.Status == TripStatus.ReadyForDispatch);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -142,7 +146,7 @@ public sealed class DispatchPlanningService
         }
 
         var approvedTotal = await requestQuery.CountAsync(cancellationToken);
-        var draftQuery = tripQuery.Where(trip => trip.Status == TripStatus.Draft);
+        var draftQuery = tripQuery.Where(trip => trip.Status == TripStatus.Draft || trip.Status == TripStatus.Planning || trip.Status == TripStatus.Assigned);
         var readyQuery = tripQuery.Where(trip => trip.Status == TripStatus.ReadyForDispatch);
         var draftTotal = await draftQuery.CountAsync(cancellationToken);
         var readyTotal = await readyQuery.CountAsync(cancellationToken);

@@ -215,6 +215,8 @@ public sealed class TripStatusJsonConverter : EnumStringConverter<TripStatus>
     private static readonly IReadOnlyDictionary<TripStatus, string> Map = new Dictionary<TripStatus, string>
     {
         [TripStatus.Draft] = "DRAFT",
+        [TripStatus.Planning] = "PLANNING",
+        [TripStatus.Assigned] = "ASSIGNED",
         [TripStatus.ReadyForDispatch] = "READY_FOR_DISPATCH",
         [TripStatus.Dispatched] = "DISPATCHED",
         [TripStatus.EnroutePickup] = "ENROUTE_PICKUP",
@@ -222,15 +224,22 @@ public sealed class TripStatusJsonConverter : EnumStringConverter<TripStatus>
         [TripStatus.Loaded] = "LOADED",
         [TripStatus.EnrouteDropoff] = "ENROUTE_DROPOFF",
         [TripStatus.AtDropoff] = "AT_DROPOFF",
-        [TripStatus.Delivered] = "DELIVERED",
-        [TripStatus.Closed] = "CLOSED",
+        [TripStatus.DeliveryCompleted] = "DELIVERY_COMPLETED",
+        [TripStatus.DocumentsPending] = "DOCUMENTS_PENDING",
+        [TripStatus.OperationallyClosed] = "OPERATIONALLY_CLOSED",
         [TripStatus.Cancelled] = "CANCELLED",
         [TripStatus.OnHold] = "ON_HOLD",
         [TripStatus.FailedAttempt] = "FAILED_ATTEMPT"
     };
 
     private static readonly IReadOnlyDictionary<string, TripStatus> Reverse =
-        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+        Map.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Concat(new Dictionary<string, TripStatus>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["DELIVERED"] = TripStatus.DeliveryCompleted,
+                ["CLOSED"] = TripStatus.OperationallyClosed
+            })
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
     protected override IReadOnlyDictionary<TripStatus, string> ToStringMap => Map;
     protected override IReadOnlyDictionary<string, TripStatus> FromStringMap => Reverse;
@@ -261,6 +270,10 @@ public sealed class TripDocumentTypeJsonConverter : EnumStringConverter<TripDocu
         [TripDocumentType.Eir] = "EIR",
         [TripDocumentType.GatePass] = "GATE_PASS",
         [TripDocumentType.Dr] = "DR"
+        ,[TripDocumentType.Dtr] = "DTR"
+        ,[TripDocumentType.GateEvidence] = "GATE_EVIDENCE"
+        ,[TripDocumentType.ReturnEvidence] = "RETURN_EVIDENCE"
+        ,[TripDocumentType.ContainerInspectionPhoto] = "CONTAINER_INSPECTION_PHOTO"
     };
 
     private static readonly IReadOnlyDictionary<string, TripDocumentType> Reverse =
@@ -294,8 +307,12 @@ public sealed class ShipmentRequestStatusJsonConverter : EnumStringConverter<Shi
         {
             [ShipmentRequestStatus.Draft] = "DRAFT",
             [ShipmentRequestStatus.Submitted] = "SUBMITTED",
+            [ShipmentRequestStatus.UnderReview] = "UNDER_REVIEW",
             [ShipmentRequestStatus.Approved] = "APPROVED",
             [ShipmentRequestStatus.Rejected] = "REJECTED",
+            [ShipmentRequestStatus.Cancelled] = "CANCELLED",
+            [ShipmentRequestStatus.AwaitingFinanceClearance] = "AWAITING_FINANCE_CLEARANCE",
+            [ShipmentRequestStatus.ClearedForPlanning] = "CLEARED_FOR_PLANNING",
             [ShipmentRequestStatus.ConvertedToTrip] = "CONVERTED_TO_TRIP",
             [ShipmentRequestStatus.NeedsRevision] = "NEEDS_REVISION"
         };
@@ -317,6 +334,16 @@ public sealed class ShipmentRequestDocumentTypeJsonConverter : EnumStringConvert
             [ShipmentRequestDocumentType.CargoManifest] = "CARGO_MANIFEST",
             [ShipmentRequestDocumentType.DeliveryInstructions] = "DELIVERY_INSTRUCTIONS",
             [ShipmentRequestDocumentType.Other] = "OTHER"
+            ,[ShipmentRequestDocumentType.BookingConfirmation] = "BOOKING_CONFIRMATION"
+            ,[ShipmentRequestDocumentType.ReleaseConfirmation] = "RELEASE_CONFIRMATION"
+            ,[ShipmentRequestDocumentType.TerminalAuthorization] = "TERMINAL_AUTHORIZATION"
+            ,[ShipmentRequestDocumentType.BillOfLading] = "BILL_OF_LADING"
+            ,[ShipmentRequestDocumentType.SeaWaybill] = "SEA_WAYBILL"
+            ,[ShipmentRequestDocumentType.DeliveryOrder] = "DELIVERY_ORDER"
+            ,[ShipmentRequestDocumentType.Cro] = "CRO"
+            ,[ShipmentRequestDocumentType.WebCro] = "WEB_CRO"
+            ,[ShipmentRequestDocumentType.ReturnDepotAuthorization] = "RETURN_DEPOT_AUTHORIZATION"
+            ,[ShipmentRequestDocumentType.ReturnInstruction] = "RETURN_INSTRUCTION"
         };
 
     private static readonly IReadOnlyDictionary<string, ShipmentRequestDocumentType> Reverse =
@@ -348,6 +375,10 @@ public sealed class TripTypeJsonConverter : EnumStringConverter<TripType>
     private static readonly IReadOnlyDictionary<TripType, string> Map =
         new Dictionary<TripType, string>
         {
+            [TripType.ExportEmptyPickup] = "EXPORT_EMPTY_PICKUP",
+            [TripType.ExportLadenToTerminal] = "EXPORT_LADEN_TO_TERMINAL",
+            [TripType.ImportLadenDelivery] = "IMPORT_LADEN_DELIVERY",
+            [TripType.EmptyReturn] = "EMPTY_RETURN",
             [TripType.PortPickup] = "PORT_PICKUP",
             [TripType.PortDropoff] = "PORT_DROPOFF",
             [TripType.YardTransfer] = "YARD_TRANSFER",

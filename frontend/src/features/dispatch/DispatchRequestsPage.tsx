@@ -26,11 +26,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, previewFile } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import { useToast } from "@/lib/useToast";
+import { useDispatchHub } from "@/hooks/useDispatchHub";
 
-type RequestStatus = "SUBMITTED" | "NEEDS_REVISION" | "REJECTED" | "APPROVED";
+type RequestStatus = "SUBMITTED" | "UNDER_REVIEW" | "NEEDS_REVISION" | "REJECTED" | "APPROVED" | "AWAITING_FINANCE_CLEARANCE" | "CLEARED_FOR_PLANNING" | "CONVERTED_TO_TRIP" | "CANCELLED";
 type RequestPriority = "CRITICAL" | "HIGH" | "NORMAL";
 type ContainerSize = "TWENTY_FT" | "FORTY_FT" | "FORTY_HC";
-type TripType = "PORT_PICKUP" | "PORT_DROPOFF" | "YARD_TRANSFER" | "LONG_HAUL";
+type TripType = "EXPORT_EMPTY_PICKUP" | "EXPORT_LADEN_TO_TERMINAL" | "IMPORT_LADEN_DELIVERY" | "EMPTY_RETURN" | "PORT_PICKUP" | "PORT_DROPOFF" | "YARD_TRANSFER" | "LONG_HAUL";
 type AtwFilter = "ALL" | "UPLOADED" | "MISSING";
 type QueueSort = "PRIORITY" | "REQUESTED_TIME" | "REQUESTED_TIME_DESC" | "NEWEST" | "OLDEST" | "CUSTOMER";
 type ReviewAction = "REQUEST_CHANGES" | "REJECT";
@@ -60,6 +61,9 @@ type DispatchRequestItem = {
   status: RequestStatus;
   priority: RequestPriority;
   reviewRemarks?: string | null;
+  financeClearanceStatus: string;
+  customerAccountStatus: string;
+  hasOverdueBalance: boolean;
 };
 
 type RequestDocument = {
@@ -98,6 +102,10 @@ const containerLabels: Record<ContainerSize, string> = {
 };
 
 const tripTypeLabels: Record<TripType, string> = {
+  EXPORT_EMPTY_PICKUP: "Export empty pickup",
+  EXPORT_LADEN_TO_TERMINAL: "Export laden to terminal",
+  IMPORT_LADEN_DELIVERY: "Import laden delivery",
+  EMPTY_RETURN: "Empty return",
   PORT_PICKUP: "Port pickup",
   PORT_DROPOFF: "Port dropoff",
   YARD_TRANSFER: "Yard transfer",
@@ -444,6 +452,8 @@ export default function DispatchRequestsPage() {
     }
   };
 
+  useDispatchHub({ onBookingFinanceChanged: () => { void loadQueue(); } });
+
   useEffect(() => {
     void loadQueue();
   }, [page, status, priority, atwFilter, sort, search]);
@@ -460,6 +470,7 @@ export default function DispatchRequestsPage() {
     const results: Array<{ id: string; ok: boolean }> = [];
     for (const id of ids) {
       try {
+        await api(`/api/dispatch/requests/${id}/start-review`, { method: "POST" });
         await api(`/api/dispatch/requests/${id}/${action}`, {
           method: "POST",
           body: remarks ? JSON.stringify({ remarks }) : undefined
@@ -500,7 +511,7 @@ export default function DispatchRequestsPage() {
       <ToastHost toasts={toasts} />
       <PageHeader
         title="Customer Requests"
-        description="Review new customer submissions. Approved bookings move automatically to Planning."
+        description="Review customer bookings, then hand approved work to Finance before dispatch planning."
         breadcrumbs={
           <nav className="flex items-center gap-2" aria-label="Breadcrumb">
             <Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">Dispatch</Link>
@@ -515,14 +526,14 @@ export default function DispatchRequestsPage() {
         <div className="border-b border-border p-4 sm:p-5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-wrap gap-2" aria-label="Request status filters">
-              {(["SUBMITTED", "NEEDS_REVISION", "REJECTED"] as RequestStatus[]).map((value) => (
+              {(["SUBMITTED", "AWAITING_FINANCE_CLEARANCE", "CLEARED_FOR_PLANNING", "NEEDS_REVISION", "REJECTED"] as RequestStatus[]).map((value) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => { setStatus(value); setPage(1); }}
                   className={`min-h-10 rounded-full border px-4 text-sm font-semibold transition-colors ${status === value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground"}`}
                 >
-                  {value === "SUBMITTED" ? "Needs review" : value === "NEEDS_REVISION" ? "With customer" : "Rejected"}
+                  {value === "SUBMITTED" ? "Needs review" : value === "AWAITING_FINANCE_CLEARANCE" ? "With Finance" : value === "CLEARED_FOR_PLANNING" ? "Planning cleared" : value === "NEEDS_REVISION" ? "With customer" : "Rejected"}
                 </button>
               ))}
             </div>
@@ -602,7 +613,7 @@ export default function DispatchRequestsPage() {
                     <p className="mt-1 text-xs"><SlaCountdown dueAt={item.requestedPickupTime} now={now} /></p>
                   </div>
                   <div className="flex flex-wrap gap-2 lg:block">
-                    {item.atwDocumentId ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-success"><CheckCircle2 className="h-4 w-4" /> ATW uploaded</span> : <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning-foreground"><FileWarning className="h-4 w-4" /> ATW missing</span>}
+                    {item.hasOverdueBalance ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-destructive"><FileWarning className="h-4 w-4" /> Overdue block</span> : item.status === "AWAITING_FINANCE_CLEARANCE" ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning-foreground"><Clock3 className="h-4 w-4" /> {item.financeClearanceStatus.replace(/_/g, " ")}</span> : item.atwDocumentId ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-success"><CheckCircle2 className="h-4 w-4" /> ATW uploaded</span> : <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning-foreground"><FileWarning className="h-4 w-4" /> ATW missing</span>}
                     <div className="mt-1 hidden lg:block"><StatusBadge status={item.status} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-col lg:items-stretch">

@@ -316,7 +316,7 @@ function PlanningQueueRow({
   };
 
   return (
-    <article className="relative grid min-w-[1080px] grid-cols-[78px_minmax(130px,0.85fr)_minmax(200px,1.35fr)_minmax(175px,1fr)_220px_40px] items-center gap-3 overflow-hidden rounded-xl border border-border bg-card p-4">
+    <article className="relative grid min-w-[1080px] grid-cols-[78px_minmax(150px,0.85fr)_minmax(320px,1.8fr)_125px_250px_40px] items-center gap-3 overflow-hidden rounded-xl border border-border bg-card p-4">
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${priorityStyles.rail}`} />
       <div className="pl-3">
         <p className={`text-[11px] font-bold uppercase tracking-[0.08em] ${priorityStyles.text}`}>{item.priority}</p>
@@ -344,10 +344,7 @@ function PlanningQueueRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-l border-border pl-3">
-        <Requirement label="Driver" ready={Boolean(trip?.driverUserId)} />
-        <Requirement label="Truck" ready={Boolean(trip?.truckAssetId)} />
-        <Requirement label="Trailer" ready={Boolean(trip?.trailerAssetId)} optional />
+      <div className="border-l border-border pl-3">
         <Requirement label="ATW" ready={booking ? booking.hasAtw : trip?.atwState === "VERIFIED"} />
       </div>
 
@@ -921,7 +918,7 @@ export default function DispatchPlanningPage() {
           { label: "In planning", value: board?.draftTotalCount ?? 0, hint: "Schedules and assignments", icon: CircleDashed, filter: "planning" as const, tone: "text-indigo-700 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-950/60" },
           { label: "Ready to dispatch", value: board?.readyCount ?? 0, hint: "All gates passed", icon: CheckCircle2, filter: "ready" as const, tone: "text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/60" }
         ].map((item) => <button key={item.label} type="button" onClick={() => setQueueFilter(item.filter)} className={`operations-kpi text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${queueFilter === item.filter ? "border-primary" : "border-border"}`}>
-          <span className={`operations-kpi__icon ${item.tone.replace(" bg-primary/10", "").replace(" bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60", "").replace(" bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-950/60", "").replace(" bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/60", "")}`}><item.icon className="h-5 w-5" /></span><div><p className="operations-kpi__value tabular-nums">{item.value}</p><p className="operations-kpi__label">{item.label}</p><p className="mt-1 text-xs text-muted-foreground">{item.hint}</p></div>
+          <span className={`operations-kpi__icon ${item.tone.replace(" bg-primary/10", "").replace(" bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60", "").replace(" bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-950/60", "").replace(" bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950/60", "")}`}><item.icon className="h-5 w-5" /></span><div><p className="operations-kpi__value tabular-nums">{item.value}</p><p className="operations-kpi__label">{item.label}</p><p className="operations-kpi__detail text-xs text-muted-foreground">{item.hint}</p></div>
         </button>)}
       </section>
 

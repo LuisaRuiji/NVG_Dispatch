@@ -37,7 +37,10 @@ public sealed class CustomersController : ControllerBase
                 customer.ContactPerson,
                 customer.ContactEmail,
                 customer.Phone,
-                customer.CreatedAt))
+                customer.CreatedAt,
+                customer.AccountStatus,
+                customer.CreditStatus,
+                customer.HasOverdueBalance))
             .ToListAsync(cancellationToken);
 
         return Ok(customers);
@@ -61,6 +64,10 @@ public sealed class CustomersController : ControllerBase
             ContactPerson = string.IsNullOrWhiteSpace(request.ContactPerson) ? null : request.ContactPerson.Trim(),
             ContactEmail = string.IsNullOrWhiteSpace(request.ContactEmail) ? null : request.ContactEmail.Trim(),
             Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
+            AccountStatus = NVGInventory.Modules.Dispatching.Enums.CustomerAccountStatus.PendingReview,
+            CreditStatus = NVGInventory.Modules.Dispatching.Enums.CustomerCreditStatus.NotGranted,
+            AccountRequestedAt = now,
+            AccountStatusReason = "Created by staff; awaiting Manager review.",
             CreatedAt = now
         };
 
@@ -73,7 +80,10 @@ public sealed class CustomersController : ControllerBase
             customer.ContactPerson,
             customer.ContactEmail,
             customer.Phone,
-            customer.CreatedAt));
+            customer.CreatedAt,
+            customer.AccountStatus,
+            customer.CreditStatus,
+            customer.HasOverdueBalance));
     }
 
     [HttpPost("{customerId:guid}/users")]

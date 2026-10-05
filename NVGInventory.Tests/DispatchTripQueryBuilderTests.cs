@@ -233,6 +233,33 @@ public class DispatchTripQueryBuilderTests
         Assert.Contains(failed, trip => trip.Id == failedTrip.Id);
     }
 
+    [Fact]
+    public void FilterRecordScope_SeparatesOperationalAndHistoricalTrips()
+    {
+        using var context = CreateContext();
+        var now = DateTime.UtcNow;
+        var customer = SeedCustomer(context, "Archive Scope Co");
+        var driver = SeedDriver(context, "driver_archive_scope");
+
+        var operationalTrip = CreateTrip(context, customer.Id, driver, TripStatus.Delivered, now);
+        var closedTrip = CreateTrip(context, customer.Id, driver, TripStatus.Closed, now.AddMinutes(1));
+        var cancelledTrip = CreateTrip(context, customer.Id, driver, TripStatus.Cancelled, now.AddMinutes(2));
+        context.SaveChanges();
+
+        var builder = new DispatchTripQueryBuilder(context, new DispatchingOptions());
+        var actor = new DispatchActorContext(driver, true, false, false, false, false);
+
+        var operational = builder.FilterRecordScope(builder.Base(actor), DispatchTripRecordScope.Operational).ToList();
+        Assert.Contains(operational, trip => trip.Id == operationalTrip.Id);
+        Assert.DoesNotContain(operational, trip => trip.Id == closedTrip.Id);
+        Assert.DoesNotContain(operational, trip => trip.Id == cancelledTrip.Id);
+
+        var history = builder.FilterRecordScope(builder.Base(actor), DispatchTripRecordScope.History).ToList();
+        Assert.DoesNotContain(history, trip => trip.Id == operationalTrip.Id);
+        Assert.Contains(history, trip => trip.Id == closedTrip.Id);
+        Assert.Contains(history, trip => trip.Id == cancelledTrip.Id);
+    }
+
     private static InventoryDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<InventoryDbContext>()

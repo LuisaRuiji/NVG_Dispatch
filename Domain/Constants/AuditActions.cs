@@ -51,6 +51,16 @@ public static class AuditActions
     public const string RecommendationIgnored = "RECOMMENDATION_IGNORED";
     public const string WaybillGenerated = "WAYBILL_GENERATED";
     public const string FinancialFieldAccessed = "FINANCIAL_FIELD_ACCESSED";
+    public const string CustomerAccountRequested = "CUSTOMER_ACCOUNT_REQUESTED";
+    public const string CustomerAccountStatusChanged = "CUSTOMER_ACCOUNT_STATUS_CHANGED";
+    public const string CustomerCreditTermsChanged = "CUSTOMER_CREDIT_TERMS_CHANGED";
+    public const string ShipmentRequestUnderReview = "SHIPMENT_REQUEST_UNDER_REVIEW";
+    public const string BookingFinanceClearanceChanged = "BOOKING_FINANCE_CLEARANCE_CHANGED";
+    public const string BookingFinanceExceptionApproved = "BOOKING_FINANCE_EXCEPTION_APPROVED";
+    public const string TripOperationalEventRecorded = "TRIP_OPERATIONAL_EVENT_RECORDED";
+    public const string ContainerInspectionRecorded = "CONTAINER_INSPECTION_RECORDED";
+    public const string TripReceiptGenerated = "TRIP_RECEIPT_GENERATED";
+    public const string DispatchDocumentRuleChanged = "DISPATCH_DOCUMENT_RULE_CHANGED";
 
     public const string ModuleSettingUpdated = "MODULE_SETTING_UPDATED";
     public const string OptimizationWeightSettingsUpdated = "OPTIMIZATION_WEIGHT_SETTINGS_UPDATED";

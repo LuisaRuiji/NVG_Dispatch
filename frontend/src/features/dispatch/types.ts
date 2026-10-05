@@ -1,5 +1,7 @@
 export type TripStatus =
   | "DRAFT"
+  | "PLANNING"
+  | "ASSIGNED"
   | "READY_FOR_DISPATCH"
   | "DISPATCHED"
   | "ENROUTE_PICKUP"
@@ -7,6 +9,10 @@ export type TripStatus =
   | "LOADED"
   | "ENROUTE_DROPOFF"
   | "AT_DROPOFF"
+  | "DELIVERY_COMPLETED"
+  | "DOCUMENTS_PENDING"
+  | "OPERATIONALLY_CLOSED"
+  // Accepted while older API responses and archived exports are upgraded.
   | "DELIVERED"
   | "CLOSED"
   | "CANCELLED"
@@ -14,11 +20,77 @@ export type TripStatus =
   | "FAILED_ATTEMPT";
 
 export type TripStopType = "PICKUP" | "DROPOFF";
-export type TripDocumentType = "WAYBILL" | "POD" | "ATW" | "EIR" | "GATE_PASS" | "DR";
+export type TripDocumentType =
+  | "WAYBILL"
+  | "POD"
+  | "ATW"
+  | "EIR"
+  | "GATE_PASS"
+  | "DR"
+  | "DTR"
+  | "GATE_EVIDENCE"
+  | "RETURN_EVIDENCE"
+  | "CONTAINER_INSPECTION_PHOTO";
 export type TripDocumentState = "MISSING" | "UPLOADED" | "VERIFIED" | "REJECTED";
 export type TripHistoryEventType = "STATUS_CHANGE" | "SCHEDULE_UPDATED" | "STATUS_CORRECTED";
 export type ContainerSize = "TWENTY_FT" | "FORTY_FT" | "FORTY_HC";
-export type TripType = "PORT_PICKUP" | "PORT_DROPOFF" | "YARD_TRANSFER" | "LONG_HAUL";
+export type TripType =
+  | "EXPORT_EMPTY_PICKUP"
+  | "EXPORT_LADEN_TO_TERMINAL"
+  | "IMPORT_LADEN_DELIVERY"
+  | "EMPTY_RETURN"
+  | "PORT_PICKUP"
+  | "PORT_DROPOFF"
+  | "YARD_TRANSFER"
+  | "LONG_HAUL";
+
+export type DispatchLifecycleReadiness = {
+  preDispatchReady: boolean;
+  preDispatchBlockers: string[];
+  operationalCloseReady: boolean;
+  operationalCloseBlockers: string[];
+};
+
+export type TripReceiptCharge = {
+  description: string;
+  amount: number;
+};
+
+export type GenerateTripReceiptPayload = {
+  receiptNumber: string;
+  baseCharge: number;
+  additionalCharges: TripReceiptCharge[];
+  discountAmount?: number | null;
+  discountPercent?: number | null;
+  discountReason?: string | null;
+  taxAmount?: number | null;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  notes?: string | null;
+};
+
+export type TripReceipt = {
+  tripId: string;
+  receiptNumber: string;
+  generatedAt: string;
+  currency: "PHP";
+  customerName: string;
+  containerNumber?: string | null;
+  bookingNumber?: string | null;
+  pickupLocation?: string | null;
+  dropoffLocation?: string | null;
+  baseCharge: number;
+  additionalCharges: TripReceiptCharge[];
+  subtotal: number;
+  discountAmount: number;
+  discountPercent?: number | null;
+  discountReason?: string | null;
+  taxAmount: number;
+  total: number;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  notes?: string | null;
+};
 
 export type DispatchCustomerSummary = {
   id: string;
@@ -172,6 +244,17 @@ export type DispatchTripDocument = {
   uploadedAt: string;
   verifiedAt?: string | null;
   rejectedAt?: string | null;
+  originalFileName?: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  referenceNumber?: string | null;
+  expiryDate?: string | null;
+  carrier?: string | null;
+  terminalOrDepot?: string | null;
+  direction?: "NOT_APPLICABLE" | "GATE_IN" | "GATE_OUT" | null;
+  documentEventAt?: string | null;
+  containerCondition?: string | null;
+  isProofOfDelivery?: boolean;
 };
 
 export type DispatchTripDocumentVersion = {
@@ -277,11 +360,13 @@ export const operationalFlow: TripStatus[] = [
   "LOADED",
   "ENROUTE_DROPOFF",
   "AT_DROPOFF",
-  "DELIVERED"
+  "DELIVERY_COMPLETED"
 ];
 
 export const statusLabels: Record<TripStatus, string> = {
   DRAFT: "Draft",
+  PLANNING: "Planning",
+  ASSIGNED: "Assigned",
   READY_FOR_DISPATCH: "Ready for dispatch",
   DISPATCHED: "Dispatched",
   ENROUTE_PICKUP: "Enroute pickup",
@@ -289,6 +374,9 @@ export const statusLabels: Record<TripStatus, string> = {
   LOADED: "Loaded",
   ENROUTE_DROPOFF: "Enroute dropoff",
   AT_DROPOFF: "At dropoff",
+  DELIVERY_COMPLETED: "Delivery completed",
+  DOCUMENTS_PENDING: "Documents pending",
+  OPERATIONALLY_CLOSED: "Operationally closed",
   DELIVERED: "Delivered",
   CLOSED: "Closed",
   CANCELLED: "Cancelled",

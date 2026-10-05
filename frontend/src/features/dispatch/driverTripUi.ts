@@ -18,13 +18,17 @@ const documentLabels: Record<TripDocumentType, string> = {
   EIR: "EIR",
   GATE_PASS: "Gate Pass",
   DR: "DR",
+  DTR: "DTR",
+  GATE_EVIDENCE: "Gate evidence",
+  RETURN_EVIDENCE: "Return evidence",
+  CONTAINER_INSPECTION_PHOTO: "Container inspection photo",
   POD: "POD",
   WAYBILL: "Waybill"
 };
 
 // ATW is supplied and managed by dispatch. Drivers can view it but must never upload it.
-const driverUploadableDocTypes: TripDocumentType[] = ["EIR", "GATE_PASS", "DR", "POD"];
-const lockedStatuses: TripStatus[] = ["CLOSED", "CANCELLED", "FAILED_ATTEMPT", "ON_HOLD"];
+const driverUploadableDocTypes: TripDocumentType[] = ["EIR", "GATE_PASS", "DR", "POD", "DTR", "GATE_EVIDENCE", "RETURN_EVIDENCE", "CONTAINER_INSPECTION_PHOTO"];
+const lockedStatuses: TripStatus[] = ["OPERATIONALLY_CLOSED", "CLOSED", "CANCELLED", "FAILED_ATTEMPT", "ON_HOLD"];
 
 export function formatDocumentLabel(type: TripDocumentType | string) {
   if (type in documentLabels) {
@@ -117,7 +121,7 @@ export function canDriverUploadDocument(docType: TripDocumentType, status: TripS
     return false;
   }
 
-  if ((docType === "EIR" || docType === "GATE_PASS") && !isStatusAtLeast(status, "AT_PICKUP")) {
+  if (["EIR", "DTR", "GATE_PASS", "GATE_EVIDENCE", "RETURN_EVIDENCE", "CONTAINER_INSPECTION_PHOTO"].includes(docType) && !isStatusAtLeast(status, "AT_PICKUP")) {
     return false;
   }
 
@@ -166,6 +170,8 @@ export function getDriverTripNextAction(
 
   switch (trip.status) {
     case "DRAFT":
+    case "PLANNING":
+    case "ASSIGNED":
       return "Waiting for dispatch";
     case "DISPATCHED":
       return "Next: Start pickup";
@@ -184,15 +190,19 @@ export function getDriverTripNextAction(
       if (isDocumentAttentionState(podState)) return "Next: Upload POD";
       if (isDocumentAttentionState(drState)) return "Next: Upload DR";
       return "Next: Confirm delivery";
+    case "DELIVERY_COMPLETED":
     case "DELIVERED":
       if (trip.podPending || isDocumentAttentionState(podState)) return "POD needs dispatcher verification";
       return "Waiting for closure";
+    case "DOCUMENTS_PENDING":
+      return "Documents need dispatcher verification";
     case "ON_HOLD":
       return "Trip is on hold";
     case "FAILED_ATTEMPT":
       return "Waiting for dispatcher resolution";
     case "CANCELLED":
       return "Trip cancelled";
+    case "OPERATIONALLY_CLOSED":
     case "CLOSED":
       return "Trip closed";
     default:
@@ -203,6 +213,8 @@ export function getDriverTripNextAction(
 function isStatusAtLeast(current: TripStatus, required: TripStatus) {
   const order: TripStatus[] = [
     "DRAFT",
+    "PLANNING",
+    "ASSIGNED",
     "READY_FOR_DISPATCH",
     "DISPATCHED",
     "ENROUTE_PICKUP",
@@ -210,8 +222,9 @@ function isStatusAtLeast(current: TripStatus, required: TripStatus) {
     "LOADED",
     "ENROUTE_DROPOFF",
     "AT_DROPOFF",
-    "DELIVERED",
-    "CLOSED"
+    "DELIVERY_COMPLETED",
+    "DOCUMENTS_PENDING",
+    "OPERATIONALLY_CLOSED"
   ];
   return order.indexOf(current) >= order.indexOf(required);
 }

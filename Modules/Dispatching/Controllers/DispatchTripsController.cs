@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NVGInventory.Contracts;
+using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Enums;
 using NVGInventory.Security;
@@ -24,6 +26,9 @@ public sealed class DispatchTripsController : ControllerBase
     private readonly DispatchTripLocationService _locationService;
     private readonly DispatchTripQueryService _queryService;
     private readonly DispatchingOptions _options;
+    private readonly ITripDocumentStorage _tripDocumentStorage;
+    private readonly InventoryDbContext _dbContext;
+    private readonly DispatchLifecycleReadinessService _readinessService;
 
     public DispatchTripsController(
         ITripLifecycleService tripLifecycleService,
@@ -31,7 +36,10 @@ public sealed class DispatchTripsController : ControllerBase
         IGeneratedWaybillService generatedWaybillService,
         DispatchTripLocationService locationService,
         DispatchTripQueryService queryService,
-        IOptions<DispatchingOptions> options)
+        IOptions<DispatchingOptions> options,
+        ITripDocumentStorage tripDocumentStorage,
+        InventoryDbContext dbContext,
+        DispatchLifecycleReadinessService readinessService)
     {
         _tripLifecycleService = tripLifecycleService;
         _documentWorkflowService = documentWorkflowService;
@@ -39,11 +47,15 @@ public sealed class DispatchTripsController : ControllerBase
         _locationService = locationService;
         _queryService = queryService;
         _options = options.Value ?? new DispatchingOptions();
+        _tripDocumentStorage = tripDocumentStorage;
+        _dbContext = dbContext;
+        _readinessService = readinessService;
     }
 
     [HttpGet]
     public async Task<ActionResult<PagedResult<DispatchTripListItemResponse>>> GetTrips(
         [FromQuery] string? status,
+        [FromQuery] string? scope,
         [FromQuery] Guid? driverId,
         [FromQuery] Guid? truckId,
         [FromQuery] Guid? customerId,
@@ -65,6 +77,12 @@ public sealed class DispatchTripsController : ControllerBase
             }
 
             parsedStatus = parsed;
+        }
+
+        var parsedScope = DispatchTripRecordScope.Operational;
+        if (!string.IsNullOrWhiteSpace(scope) && !TryParseRecordScope(scope, out parsedScope))
+        {
+            return BadRequest("Invalid trip record scope. Use CURRENT, HISTORY, or ALL.");
         }
 
         DispatchPodStatusFilter? parsedPodStatus = null;
@@ -96,7 +114,8 @@ public sealed class DispatchTripsController : ControllerBase
             resolvedPage,
             resolvedPageSize,
             BuildActor(),
-            cancellationToken);
+            cancellationToken,
+            parsedScope);
 
         var responseItems = MapTripListItems(results.Items);
 
@@ -832,7 +851,18 @@ public sealed class DispatchTripsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var doc = await _documentWorkflowService.UploadDocumentAsync(
-            new UploadTripDocumentCommand(tripId, request.Type, request.StorageKey),
+            new UploadTripDocumentCommand(
+                tripId,
+                request.Type,
+                request.StorageKey,
+                ReferenceNumber: request.ReferenceNumber,
+                ExpiryDate: request.ExpiryDate,
+                Carrier: request.Carrier,
+                TerminalOrDepot: request.TerminalOrDepot,
+                Direction: request.Direction,
+                DocumentEventAt: request.DocumentEventAt,
+                ContainerCondition: request.ContainerCondition,
+                IsProofOfDelivery: request.IsProofOfDelivery),
             BuildActor(),
             cancellationToken);
 
@@ -853,8 +883,62 @@ public sealed class DispatchTripsController : ControllerBase
             doc.RejectedAt));
     }
 
+    [HttpGet("{tripId:guid}/readiness")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.HeadOfFinance},{RoleNames.Admin}")]
+    public async Task<ActionResult<DispatchLifecycleReadinessResponse>> GetReadiness(Guid tripId, CancellationToken cancellationToken)
+    {
+        var preDispatch = await _readinessService.EvaluatePreDispatchAsync(tripId, cancellationToken);
+        var operationalClose = await _readinessService.EvaluateOperationalCloseAsync(tripId, cancellationToken);
+        return Ok(new DispatchLifecycleReadinessResponse(preDispatch.IsReady, preDispatch.Blockers, operationalClose.IsReady, operationalClose.Blockers));
+    }
+
+    [HttpPost("{tripId:guid}/documents/upload")]
+    [Authorize(Roles = $"{RoleNames.Driver},{RoleNames.Dispatcher},{RoleNames.Manager}")]
+    [RequestSizeLimit(15 * 1024 * 1024)]
+    public async Task<ActionResult<DispatchTripDocumentResponse>> UploadDocumentFile(
+        Guid tripId,
+        [FromForm] IFormFile file,
+        [FromForm] TripDocumentType type,
+        [FromForm] DocumentDirection direction = DocumentDirection.NotApplicable,
+        [FromForm] string? referenceNumber = null,
+        [FromForm] DateTime? documentEventAt = null,
+        [FromForm] string? terminalOrDepot = null,
+        [FromForm] string? carrier = null,
+        [FromForm] DateTime? expiryDate = null,
+        [FromForm] string? containerCondition = null,
+        [FromForm] bool isProofOfDelivery = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (file is null || file.Length == 0) return BadRequest("A document file is required.");
+        var customerId = await _dbContext.DispatchTrips.AsNoTracking()
+            .Where(trip => trip.Id == tripId)
+            .Select(trip => (Guid?)trip.CustomerId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!customerId.HasValue) return NotFound("Trip not found.");
+        StoredTripDocument stored;
+        await using (var content = file.OpenReadStream())
+        {
+            stored = await _tripDocumentStorage.SaveAsync(customerId.Value, tripId, content, file.FileName, file.ContentType, file.Length, cancellationToken);
+        }
+        var doc = await _documentWorkflowService.UploadDocumentAsync(
+            new UploadTripDocumentCommand(tripId, type, stored.StorageKey, stored.OriginalFileName, stored.ContentType, stored.SizeBytes,
+                referenceNumber, expiryDate, carrier, terminalOrDepot, direction, documentEventAt, containerCondition, isProofOfDelivery),
+            BuildActor(), cancellationToken);
+        return Ok(MapDocument(doc));
+    }
+
+    [HttpGet("{tripId:guid}/documents/{docId:guid}/content")]
+    public async Task<IActionResult> GetDocumentContent(Guid tripId, Guid docId, CancellationToken cancellationToken)
+    {
+        var docs = await _queryService.GetTripDocumentsAsync(tripId, BuildActor(), cancellationToken);
+        var doc = docs.FirstOrDefault(item => item.Id == docId);
+        if (doc is null) return NotFound("Document not found.");
+        var readable = await _tripDocumentStorage.OpenReadAsync(doc.StorageKey, doc.OriginalFileName, doc.ContentType, cancellationToken);
+        return File(readable.Content, readable.ContentType, readable.FileName, enableRangeProcessing: true);
+    }
+
     [HttpPost("{tripId:guid}/documents/{docId:guid}/verify")]
-    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager}")]
     public async Task<ActionResult<DispatchTripDocumentResponse>> VerifyDocument(
         Guid tripId,
         Guid docId,
@@ -883,7 +967,7 @@ public sealed class DispatchTripsController : ControllerBase
     }
 
     [HttpPost("{tripId:guid}/documents/{docId:guid}/reject")]
-    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager},{RoleNames.Admin},{RoleNames.SuperAdmin}")]
+    [Authorize(Roles = $"{RoleNames.Dispatcher},{RoleNames.Manager}")]
     public async Task<ActionResult<DispatchTripDocumentResponse>> RejectDocument(
         Guid tripId,
         Guid docId,
@@ -998,6 +1082,37 @@ public sealed class DispatchTripsController : ControllerBase
 
         error = null;
         return true;
+    }
+
+    private static DispatchTripDocumentResponse MapDocument(NVGInventory.Modules.Dispatching.Entities.TripDocument doc) => new(
+        doc.Id, doc.Type, doc.State, doc.StorageKey, doc.UploadedByUserId, doc.UploadedBy?.Username,
+        doc.VerifiedByUserId, doc.VerifiedBy?.Username, doc.RejectedByUserId, doc.RejectedBy?.Username,
+        doc.Remarks, doc.UploadedAt, doc.VerifiedAt, doc.RejectedAt, doc.OriginalFileName, doc.ContentType,
+        doc.SizeBytes, doc.ReferenceNumber, doc.ExpiryDate, doc.Carrier, doc.TerminalOrDepot, doc.Direction,
+        doc.DocumentEventAt, doc.ContainerCondition, doc.IsProofOfDelivery);
+
+    private static bool TryParseRecordScope(string raw, out DispatchTripRecordScope scope)
+    {
+        scope = DispatchTripRecordScope.Operational;
+        if (string.Equals(raw, "current", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "operational", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(raw, "history", StringComparison.OrdinalIgnoreCase))
+        {
+            scope = DispatchTripRecordScope.History;
+            return true;
+        }
+
+        if (string.Equals(raw, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            scope = DispatchTripRecordScope.All;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryParseAssignmentGroupBy(string raw, out DispatchAssignmentGroupBy groupBy)

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NVGInventory.Data;
@@ -10,7 +11,7 @@ namespace NVGInventory.Domain.Services;
 
 public sealed class AuditService : IAuditService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly InventoryDbContext _dbContext;
     private readonly ILogger<AuditService> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -33,7 +34,10 @@ public sealed class AuditService : IAuditService
         object? before = null,
         object? after = null,
         string? actorRole = null,
-        Guid? tripId = null)
+        Guid? tripId = null,
+        string? reason = null,
+        Guid? relatedAttachmentId = null,
+        string? referenceNumber = null)
     {
         var traceId = _httpContextAccessor.HttpContext?.TraceIdentifier
             ?? Activity.Current?.TraceId.ToString()
@@ -52,6 +56,9 @@ public sealed class AuditService : IAuditService
             BeforeJson = Serialize(before),
             AfterJson = Serialize(after),
             TraceId = traceId,
+            Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+            RelatedAttachmentId = relatedAttachmentId,
+            ReferenceNumber = string.IsNullOrWhiteSpace(referenceNumber) ? null : referenceNumber.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -79,6 +86,13 @@ public sealed class AuditService : IAuditService
         }
 
         return JsonSerializer.Serialize(value, JsonOptions);
+    }
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
     }
 
     private string? ResolveActorRole(string? actorRole)

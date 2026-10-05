@@ -40,9 +40,9 @@ public sealed class GeneratedWaybillService : IGeneratedWaybillService
             throw new NotFoundException("Trip not found.");
         }
 
-        if (trip.Status is not (TripStatus.Delivered or TripStatus.Closed))
+        if (trip.Status is not (TripStatus.DeliveryCompleted or TripStatus.DocumentsPending or TripStatus.OperationallyClosed))
         {
-            throw new ConflictDomainException("Waybill can only be generated after delivery.");
+            throw new ConflictDomainException("The VAIA Haulage Job Sheet can only be generated after delivery.");
         }
 
         if (string.IsNullOrWhiteSpace(trip.ContainerNumber))
@@ -78,6 +78,7 @@ public sealed class GeneratedWaybillService : IGeneratedWaybillService
         var dropoff = trip.Stops.FirstOrDefault(stop => stop.StopType == TripStopType.Dropoff);
         var snapshot = new
         {
+            DocumentTitle = "VAIA Haulage Job Sheet",
             WaybillNumber = waybillNumber,
             ContainerNumber = trip.ContainerNumber,
             EirNumber = trip.EirNumber,
@@ -152,7 +153,7 @@ public sealed class GeneratedWaybillService : IGeneratedWaybillService
 
     private async Task<string> GenerateWaybillNumberAsync(int year, CancellationToken cancellationToken)
     {
-        var prefix = $"NVG-{year}-";
+        var prefix = $"VAIA-JS-{year}-";
         var count = await _dbContext.GeneratedWaybills
             .AsNoTracking()
             .CountAsync(waybill => waybill.WaybillNumber.StartsWith(prefix), cancellationToken);
@@ -167,7 +168,7 @@ public sealed class GeneratedWaybillService : IGeneratedWaybillService
             return;
         }
 
-        throw new ForbiddenDomainException("Only dispatchers or managers can generate waybills.");
+        throw new ForbiddenDomainException("Only dispatchers or managers can generate a VAIA Haulage Job Sheet.");
     }
 
     private static void EnsureTripAccess(Trip trip, DispatchActorContext actor)

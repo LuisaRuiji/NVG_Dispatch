@@ -70,7 +70,10 @@ public sealed record DispatchShipmentRequestQueueItem(
     DateTime CreatedAt,
     ShipmentRequestStatus Status,
     ShipmentRequestQueuePriority Priority,
-    string? ReviewRemarks);
+    string? ReviewRemarks,
+    BookingFinanceClearanceStatus FinanceClearanceStatus,
+    CustomerAccountStatus CustomerAccountStatus,
+    bool HasOverdueBalance);
 
 public enum ShipmentRequestQueuePriority
 {
@@ -135,7 +138,10 @@ public sealed record DispatchShipmentRequestDetail(
     Guid? ConvertedTripId,
     IReadOnlyCollection<ShipmentRequestDocument> Documents,
     IReadOnlyCollection<DispatchShipmentRequestActivity> Activity,
-    DispatchShipmentRequestAssignment? Assignment);
+    DispatchShipmentRequestAssignment? Assignment,
+    BookingFinanceClearanceStatus FinanceClearanceStatus,
+    CustomerAccountStatus CustomerAccountStatus,
+    bool HasOverdueBalance);
 
 public sealed record CustomerShipmentListItem(
     Guid TripId,
@@ -389,7 +395,10 @@ public sealed class ShipmentRequestQueryService
                     : request.RequestedPickupTime.HasValue && request.RequestedPickupTime <= highCutoff
                         ? ShipmentRequestQueuePriority.High
                         : ShipmentRequestQueuePriority.Normal,
-                request.RejectionRemarks))
+                request.RejectionRemarks,
+                request.FinanceClearanceStatus,
+                request.Customer != null ? request.Customer.AccountStatus : CustomerAccountStatus.PendingReview,
+                request.Customer != null && request.Customer.HasOverdueBalance))
             .ToListAsync(cancellationToken);
 
         return new PagedQueryResult<DispatchShipmentRequestQueueItem>(items, total);
@@ -464,7 +473,10 @@ public sealed class ShipmentRequestQueryService
             request.ConvertedTripId,
             request.Documents.OrderByDescending(document => document.UploadedAt).ToList(),
             activity,
-            assignment);
+            assignment,
+            request.FinanceClearanceStatus,
+            request.Customer?.AccountStatus ?? CustomerAccountStatus.PendingReview,
+            request.Customer?.HasOverdueBalance ?? false);
     }
 
     public async Task<PagedQueryResult<CustomerShipmentListItem>> GetCustomerShipmentsAsync(

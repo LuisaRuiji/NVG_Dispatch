@@ -33,9 +33,11 @@ public sealed class ShipmentRequestTripCreationService : IShipmentRequestTripCre
             throw new NotFoundException("Shipment request not found.");
         }
 
-        if (request.Status != ShipmentRequestStatus.Approved)
+        if (request.Status != ShipmentRequestStatus.ClearedForPlanning &&
+            !(request.Status == ShipmentRequestStatus.Approved &&
+              request.FinanceClearanceStatus is BookingFinanceClearanceStatus.Cleared or BookingFinanceClearanceStatus.AuthorizedException))
         {
-            throw new ConflictDomainException("Only approved requests can be converted.");
+            throw new ConflictDomainException("Only Finance-cleared bookings can be converted.");
         }
 
         if (request.ConvertedTripId.HasValue)

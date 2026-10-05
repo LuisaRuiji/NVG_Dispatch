@@ -17,7 +17,6 @@ import type {
 } from "./types";
 import { statusLabels } from "./types";
 import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDot, FileWarning, Filter, MoreHorizontal, RefreshCw, ShieldAlert, Truck, UserRound, X } from "lucide-react";
-import RecommendationPanel from "./components/RecommendationPanel";
 
 type CustomerOption = { id: string; name: string };
 type DriverOption = { id: string; username: string };
@@ -285,6 +284,9 @@ function getTripReadiness(trip: DispatchTripListItem): TripReadiness {
   if (trip.status === "CLOSED") {
     return { label: "Closed", detail: "Trip documentation complete", tone: "success", needsAttention: false };
   }
+  if (trip.status === "CANCELLED") {
+    return { label: "Cancelled", detail: "Retained for operational reference", tone: "neutral", needsAttention: false };
+  }
   if (["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP", "LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"].includes(trip.status)) {
     return { label: "In transit", detail: statusLabels[trip.status], tone: "info", needsAttention: false };
   }
@@ -327,7 +329,12 @@ function getRouteLabel(trip: DispatchTripListItem) {
   return origin ?? destination ?? "Route not scheduled";
 }
 
-export default function DispatchTripsPage() {
+export type DispatchTripsPageProps = {
+  view?: "current" | "archive";
+};
+
+export default function DispatchTripsPage({ view = "current" }: DispatchTripsPageProps) {
+  const isArchive = view === "archive";
   const nav = useNavigate();
   const { toasts, show } = useToast();
   const me = getMe();
@@ -385,6 +392,7 @@ export default function DispatchTripsPage() {
       const params = new URLSearchParams();
       params.set("page", targetPage.toString());
       params.set("pageSize", pageSize.toString());
+      params.set("scope", isArchive ? "HISTORY" : "CURRENT");
       if (filters.status !== "ALL") params.set("status", filters.status);
       if (filters.driverId) params.set("driverId", filters.driverId);
       if (filters.customerId) params.set("customerId", filters.customerId);
@@ -418,6 +426,7 @@ export default function DispatchTripsPage() {
   useEffect(() => {
     loadTrips(1);
   }, [
+    isArchive,
     filters.status,
     filters.driverId,
     filters.customerId,
@@ -523,47 +532,64 @@ export default function DispatchTripsPage() {
   const activeTripCount = trips.filter((trip) => ["DISPATCHED", "ENROUTE_PICKUP", "AT_PICKUP", "LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF"].includes(trip.status)).length;
   const documentAttentionCount = trips.filter((trip) => !trip.closeDocumentReady || trip.podState === "MISSING" || trip.podState === "REJECTED").length;
   const exceptionCount = trips.filter((trip) => trip.status === "ON_HOLD" || trip.status === "FAILED_ATTEMPT").length;
+  const closedCount = trips.filter((trip) => trip.status === "CLOSED").length;
+  const cancelledCount = trips.filter((trip) => trip.status === "CANCELLED").length;
+  const verifiedPodCount = trips.filter((trip) => trip.podState === "VERIFIED").length;
   const activeFilterCount = [filters.status !== "ALL", Boolean(filters.driverId), Boolean(filters.customerId), Boolean(filters.truckId), Boolean(filters.pickupFrom), Boolean(filters.pickupTo), Boolean(filters.deliveredFrom), Boolean(filters.deliveredTo), filters.podStatus !== "ALL"].filter(Boolean).length;
   const clearFilters = () => setFilters({ status: "ALL", driverId: "", customerId: "", truckId: "", pickupFrom: "", pickupTo: "", deliveredFrom: "", deliveredTo: "", podStatus: "ALL" });
+  const statusOptions = isArchive
+    ? [{ value: "ALL", label: "All final statuses" }, { value: "CLOSED", label: statusLabels.CLOSED }, { value: "CANCELLED", label: statusLabels.CANCELLED }]
+    : [{ value: "ALL", label: "All current statuses" }, ...Object.entries(statusLabels).filter(([value]) => value !== "CLOSED" && value !== "CANCELLED").map(([value, label]) => ({ value, label }))];
+  const summaryCards = isArchive
+    ? [
+        { label: "Archived trips", value: totalCount, detail: "Matching current filters", icon: Truck, tone: "text-primary", onClick: clearFilters },
+        { label: "Closed", value: closedCount, detail: "On this page", icon: Check, tone: "text-success", onClick: () => setFilters((current) => ({ ...current, status: "CLOSED" })) },
+        { label: "Cancelled", value: cancelledCount, detail: "On this page", icon: X, tone: "text-muted-foreground", onClick: () => setFilters((current) => ({ ...current, status: "CANCELLED" })) },
+        { label: "Verified POD", value: verifiedPodCount, detail: "On this page", icon: FileWarning, tone: "text-info", onClick: () => setFilters((current) => ({ ...current, podStatus: "VERIFIED" })) }
+      ]
+    : [
+        { label: "Loaded trips", value: totalCount, detail: "Matching current filters", icon: Truck, tone: "text-primary", onClick: clearFilters },
+        { label: "In execution", value: activeTripCount, detail: "On this page", icon: CircleDot, tone: "text-info", onClick: () => setFilters((current) => ({ ...current, status: "DISPATCHED" })) },
+        { label: "Need documents", value: documentAttentionCount, detail: "On this page", icon: FileWarning, tone: "text-warning-foreground", onClick: () => setFilters((current) => ({ ...current, podStatus: "PENDING" })) },
+        { label: "Exceptions", value: exceptionCount, detail: "On this page", icon: ShieldAlert, tone: "text-destructive", onClick: () => setFilters((current) => ({ ...current, status: "ON_HOLD" })) }
+      ];
   return (
     <div className="space-y-5">
       <ToastHost toasts={toasts} />
       <PageHeader
-        title="Trip records"
-        description="Review dispatch status, document readiness, and operational exceptions across the fleet."
+        title={isArchive ? "Trip archives" : "Trip records"}
+        description={isArchive ? "Search finalized trips and preserved delivery records without crowding the active dispatch workspace." : "Review dispatch status, document readiness, and operational exceptions across the fleet."}
         breadcrumbs={
           <nav className="flex items-center gap-2" aria-label="Breadcrumb">
             <Link to="/dispatch/board" className="text-muted-foreground hover:text-foreground">
               Dispatch
             </Link>
             <span className="text-muted-foreground">/</span>
-            <span className="text-foreground">Trips</span>
+            <span className="text-foreground">{isArchive ? "Archives" : "Trips"}</span>
           </nav>
         }
         actions={
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => loadTrips()} disabled={loading}>
-            <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {isArchive ? <Button variant="outline" size="sm" onClick={() => nav("/dispatch/trips")}>Current trips</Button> : null}
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => loadTrips()} disabled={loading}>
+              <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Trip record summary">
-        {[
-          { label: "Loaded trips", value: totalCount, detail: "Matching current filters", icon: Truck, tone: "text-primary", onClick: clearFilters },
-          { label: "In execution", value: activeTripCount, detail: "On this page", icon: CircleDot, tone: "text-info", onClick: () => setFilters((current) => ({ ...current, status: "DISPATCHED" })) },
-          { label: "Need documents", value: documentAttentionCount, detail: "On this page", icon: FileWarning, tone: "text-warning-foreground", onClick: () => setFilters((current) => ({ ...current, podStatus: "PENDING" })) },
-          { label: "Exceptions", value: exceptionCount, detail: "On this page", icon: ShieldAlert, tone: "text-destructive", onClick: () => setFilters((current) => ({ ...current, status: "ON_HOLD" })) }
-        ].map(({ label, value, detail, icon: Icon, tone, onClick }) => (
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={isArchive ? "Archive summary" : "Trip record summary"}>
+        {summaryCards.map(({ label, value, detail, icon: Icon, tone, onClick }) => (
           <button key={label} type="button" onClick={onClick} className="operations-kpi text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span className={`operations-kpi__icon ${tone}`}><Icon className="h-5 w-5" /></span><span><span className="operations-kpi__value block tabular-nums">{value}</span><span className="operations-kpi__label block">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{detail}</span></span>
+            <span className={`operations-kpi__icon ${tone}`}><Icon className="h-5 w-5" /></span><span><span className="operations-kpi__value block tabular-nums">{value}</span><span className="operations-kpi__label block">{label}</span><span className="operations-kpi__detail block text-xs text-muted-foreground">{detail}</span></span>
           </button>
         ))}
       </section>
 
       <section className="surface-card relative z-20 overflow-visible" aria-labelledby="trip-filter-title">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-          <div><h2 id="trip-filter-title" className="text-sm font-semibold text-foreground">Filter trip records</h2><p className="mt-0.5 text-xs text-muted-foreground">Narrow the list by assignment, status, and time window.</p></div>
+          <div><h2 id="trip-filter-title" className="text-sm font-semibold text-foreground">{isArchive ? "Search archived trips" : "Filter trip records"}</h2><p className="mt-0.5 text-xs text-muted-foreground">{isArchive ? "Narrow finalized records by status, assignment, and delivery window." : "Narrow current operations by assignment, status, and time window."}</p></div>
           <div className="flex items-center gap-2">
             {activeFilterCount > 0 ? <span className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-foreground">{activeFilterCount} active</span> : null}
             {activeFilterCount > 0 ? <Button variant="ghost" size="sm" onClick={clearFilters}><X className="h-4 w-4" />Clear</Button> : null}
@@ -571,7 +597,7 @@ export default function DispatchTripsPage() {
           </div>
         </div>
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5">
-          <FilterSelect label="Status" value={filters.status} onChange={(value) => setFilters((prev) => ({ ...prev, status: value as FilterState["status"] }))} options={[{ value: "ALL", label: "All" }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
+          <FilterSelect label="Status" value={filters.status} onChange={(value) => setFilters((prev) => ({ ...prev, status: value as FilterState["status"] }))} options={statusOptions} />
           <FilterSelect label="Driver" value={filters.driverId} onChange={(value) => setFilters((prev) => ({ ...prev, driverId: value }))} options={[{ value: "", label: "All drivers" }, ...drivers.map((driver) => ({ value: driver.id, label: driver.username }))]} />
           <FilterSelect label="Customer" value={filters.customerId} onChange={(value) => setFilters((prev) => ({ ...prev, customerId: value }))} options={[{ value: "", label: "All customers" }, ...customers.map((customer) => ({ value: customer.id, label: customer.name }))]} />
           <FilterSelect label="Truck" value={filters.truckId} onChange={(value) => setFilters((prev) => ({ ...prev, truckId: value }))} options={[{ value: "", label: "All trucks" }, ...trucks.map((truck) => ({ value: truck.id, label: truck.assetCode }))]} />
@@ -620,11 +646,11 @@ export default function DispatchTripsPage() {
       {loading && trips.length === 0 ? (
         <LoadingSkeleton rows={6} />
       ) : trips.length === 0 ? (
-        <EmptyState title="No trips" description="No trips match the current filters." />
+        <EmptyState title={isArchive ? "No archived trips" : "No trips"} description={isArchive ? "No finalized trips match the current archive filters." : "No current trips match the selected filters."} />
       ) : (
         <section className="surface-card overflow-hidden" aria-labelledby="trip-records-title">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-            <div><h2 id="trip-records-title" className="text-lg font-bold text-foreground">Trip list</h2><p className="mt-0.5 text-xs text-muted-foreground">{totalCount.toLocaleString()} matching trip{totalCount === 1 ? "" : "s"}</p></div>
+            <div><h2 id="trip-records-title" className="text-lg font-bold text-foreground">{isArchive ? "Archived trip list" : "Trip list"}</h2><p className="mt-0.5 text-xs text-muted-foreground">{totalCount.toLocaleString()} matching trip{totalCount === 1 ? "" : "s"}</p></div>
             <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span></div>
           </header>
           <div className="grid gap-3 p-4 md:hidden">
@@ -646,7 +672,7 @@ export default function DispatchTripsPage() {
                   <p className="mt-1 text-xs text-muted-foreground">{formatWindow(trip)}</p>
                 </div>
                 <div className="mt-3"><AssignmentCell trip={trip} /></div>
-                <Button className="mt-4 w-full" onClick={() => openTrip(trip.id)}>{getTripActionLabel(trip, canOperate)}<ArrowRight className="h-4 w-4" /></Button>
+                <Button className="mt-4 w-full" onClick={() => openTrip(trip.id)}>{isArchive ? "View record" : getTripActionLabel(trip, canOperate)}<ArrowRight className="h-4 w-4" /></Button>
               </article>
             ))}
           </div>
@@ -679,7 +705,7 @@ export default function DispatchTripsPage() {
                   <td className="px-3 py-3.5"><ReadinessCell trip={trip} /></td>
                   <td className="px-3 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
-                      <Button size="sm" className="min-w-0 flex-1 px-2 text-xs" onClick={() => openTrip(trip.id)}><span className="truncate">{getTripActionLabel(trip, canOperate)}</span><ArrowRight className="h-3.5 w-3.5 shrink-0" /></Button>
+                      <Button size="sm" className="min-w-0 flex-1 px-2 text-xs" onClick={() => openTrip(trip.id)}><span className="truncate">{isArchive ? "View record" : getTripActionLabel(trip, canOperate)}</span><ArrowRight className="h-3.5 w-3.5 shrink-0" /></Button>
                       {hasSecondaryActions ? (
                       <div className="relative shrink-0">
                           <button
@@ -733,8 +759,6 @@ export default function DispatchTripsPage() {
           <TripListPagination page={page} totalPages={totalPages} totalCount={totalCount} pageSize={pageSize} loading={loading} onPageChange={setPage} onPageSizeChange={(nextPageSize) => { setPageSize(nextPageSize); setPage(1); }} />
         </section>
       )}
-
-      {canOperate ? <RecommendationPanel /> : null}
 
       {actionModal ? (
         <div

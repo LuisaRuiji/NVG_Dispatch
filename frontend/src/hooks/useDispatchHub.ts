@@ -52,6 +52,14 @@ export type ShipmentRequestSubmittedEvent = {
   submittedAt: string;
 };
 
+export type BookingFinanceChangedEvent = {
+  requestId: string;
+  bookingStatus: string;
+  financeStatus: string;
+  customerName: string;
+  changedAt: string;
+};
+
 export type DriverLocationUpdatedEvent = {
   tripId: string;
   driverId: string;
@@ -79,6 +87,7 @@ interface DispatchHubHandlers {
   onRecommendationGenerated?: (e: RecommendationGeneratedEvent) => void;
   onTripChainingSuggestionsGenerated?: (e: TripChainingSuggestionsGeneratedEvent) => void;
   onShipmentRequestSubmitted?: (e: ShipmentRequestSubmittedEvent) => void;
+  onBookingFinanceChanged?: (e: BookingFinanceChangedEvent) => void;
   onDriverLocationUpdated?: (e: DriverLocationUpdatedEvent) => void;
   onPlanningInvalidated?: (e: PlanningInvalidatedEvent) => void;
 }
@@ -101,6 +110,8 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
       handlersRef.current.onTripChainingSuggestionsGenerated?.(e);
     const shipmentRequestSubmitted = (e: ShipmentRequestSubmittedEvent) =>
       handlersRef.current.onShipmentRequestSubmitted?.(e);
+    const bookingFinanceChanged = (e: BookingFinanceChangedEvent) =>
+      handlersRef.current.onBookingFinanceChanged?.(e);
     const driverLocationUpdated = (e: DriverLocationUpdatedEvent) =>
       handlersRef.current.onDriverLocationUpdated?.(e);
     const planningInvalidated = (e: PlanningInvalidatedEvent) =>
@@ -112,6 +123,7 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
     hub.on("RecommendationGenerated", recommendationGenerated);
     hub.on("TripChainingSuggestionsGenerated", tripChainingSuggestionsGenerated);
     hub.on("ShipmentRequestSubmitted", shipmentRequestSubmitted);
+    hub.on("BookingFinanceChanged", bookingFinanceChanged);
     hub.on("DriverLocationUpdated", driverLocationUpdated);
     hub.on("PlanningInvalidated", planningInvalidated);
     void startDispatchHub().catch((error) => {
@@ -125,6 +137,7 @@ export function useDispatchHub(handlers: DispatchHubHandlers): void {
       hub.off("RecommendationGenerated", recommendationGenerated);
       hub.off("TripChainingSuggestionsGenerated", tripChainingSuggestionsGenerated);
       hub.off("ShipmentRequestSubmitted", shipmentRequestSubmitted);
+      hub.off("BookingFinanceChanged", bookingFinanceChanged);
       hub.off("DriverLocationUpdated", driverLocationUpdated);
       hub.off("PlanningInvalidated", planningInvalidated);
       void stopDispatchHub().catch(() => undefined);

@@ -39,6 +39,18 @@ public sealed class DispatchTripQueryBuilder
         return status.HasValue ? query.Where(t => t.Status == status.Value) : query;
     }
 
+    public IQueryable<Trip> FilterRecordScope(IQueryable<Trip> query, DispatchTripRecordScope scope)
+    {
+        return scope switch
+        {
+            DispatchTripRecordScope.History => query.Where(t =>
+                t.Status == TripStatus.Closed || t.Status == TripStatus.Cancelled),
+            DispatchTripRecordScope.All => query,
+            _ => query.Where(t =>
+                t.Status != TripStatus.Closed && t.Status != TripStatus.Cancelled)
+        };
+    }
+
     public IQueryable<Trip> FilterDriver(IQueryable<Trip> query, Guid? driverUserId)
     {
         return driverUserId.HasValue ? query.Where(t => t.DriverUserId == driverUserId.Value) : query;

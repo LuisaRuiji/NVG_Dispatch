@@ -163,6 +163,30 @@ public sealed class ReportQueryServiceAuditTests
         Assert.Equal(DriverId, entry.ActorUserId);
     }
 
+    [Fact]
+    public async Task GetAuditLogsAsync_CapsOversizedPagesAtOneHundredRows()
+    {
+        using var dbContext = CreateDbContext();
+        await SeedAuditLogsAsync(dbContext);
+        dbContext.AuditLogs.AddRange(Enumerable.Range(0, 120).Select(index =>
+            Audit($"BULK_ACTION_{index}", EntityTypes.DispatchTrip, Guid.NewGuid(), AdminId)));
+        await dbContext.SaveChangesAsync();
+
+        var service = new ReportQueryService(dbContext);
+        var result = await service.GetAuditLogsAsync(
+            action: null,
+            entityType: null,
+            entityId: null,
+            fromUtc: null,
+            toUtc: null,
+            user: Principal(AdminId, RoleNames.Admin),
+            page: 1,
+            pageSize: 10_000);
+
+        Assert.Equal(128, result.TotalCount);
+        Assert.Equal(100, result.Items.Count);
+    }
+
     private static async Task SeedAuditLogsAsync(InventoryDbContext dbContext)
     {
         dbContext.Roles.AddRange(

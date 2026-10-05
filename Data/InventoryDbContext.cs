@@ -68,6 +68,11 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<ShipmentRequestDocument> ShipmentRequestDocuments => Set<ShipmentRequestDocument>();
     public DbSet<LocationTrackingSession> LocationTrackingSessions => Set<LocationTrackingSession>();
     public DbSet<DriverLocationUpdate> DriverLocationUpdates => Set<DriverLocationUpdate>();
+    public DbSet<CustomerAccountHistory> CustomerAccountHistories => Set<CustomerAccountHistory>();
+    public DbSet<BookingFinanceHistory> BookingFinanceHistories => Set<BookingFinanceHistory>();
+    public DbSet<TripOperationalEvent> DispatchTripOperationalEvents => Set<TripOperationalEvent>();
+    public DbSet<ContainerQualityInspection> ContainerQualityInspections => Set<ContainerQualityInspection>();
+    public DbSet<DispatchDocumentRule> DispatchDocumentRules => Set<DispatchDocumentRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -118,6 +123,11 @@ public sealed class InventoryDbContext : DbContext
         modelBuilder.ApplyConfiguration(new LocationTrackingSessionConfiguration());
         modelBuilder.ApplyConfiguration(new DriverLocationUpdateConfiguration());
         modelBuilder.ApplyConfiguration(new AuditLogConfiguration());
+        modelBuilder.ApplyConfiguration(new CustomerAccountHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new BookingFinanceHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new TripOperationalEventConfiguration());
+        modelBuilder.ApplyConfiguration(new ContainerQualityInspectionConfiguration());
+        modelBuilder.ApplyConfiguration(new DispatchDocumentRuleConfiguration());
 
         modelBuilder.Entity<Role>().HasData(SeedData.Roles);
         modelBuilder.Entity<Workflow>().HasData(SeedData.Workflows);
@@ -1170,8 +1180,39 @@ public sealed class InventoryDbContext : DbContext
                 .HasColumnName("phone_encrypted")
                 .HasConversion(sensitiveStringConverter)
                 .HasMaxLength(512);
+            entity.Property(customer => customer.AccountStatus)
+                .HasColumnName("account_status")
+                .HasConversion<string>()
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(customer => customer.AccountRequestedAt).HasColumnName("account_requested_at");
+            entity.Property(customer => customer.AccountReviewedByUserId).HasColumnName("account_reviewed_by_user_id");
+            entity.Property(customer => customer.AccountReviewedAt).HasColumnName("account_reviewed_at");
+            entity.Property(customer => customer.AccountStatusReason).HasColumnName("account_status_reason").HasMaxLength(1000);
+            entity.Property(customer => customer.CreditStatus)
+                .HasColumnName("credit_status")
+                .HasConversion<string>()
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.Property(customer => customer.CreditLimit)
+                .HasColumnName("credit_limit_encrypted")
+                .HasConversion(SensitiveFieldValueConverters.CreateNullableSensitiveDecimalConverter())
+                .HasMaxLength(512);
+            entity.Property(customer => customer.OutstandingBalance)
+                .HasColumnName("outstanding_balance_encrypted")
+                .HasConversion(SensitiveFieldValueConverters.CreateRequiredSensitiveDecimalConverter())
+                .HasMaxLength(512);
+            entity.Property(customer => customer.HasOverdueBalance).HasColumnName("has_overdue_balance").HasDefaultValue(false);
+            entity.Property(customer => customer.CreditReviewedByUserId).HasColumnName("credit_reviewed_by_user_id");
+            entity.Property(customer => customer.CreditReviewedAt).HasColumnName("credit_reviewed_at");
+            entity.Property(customer => customer.CreditTermsReason).HasColumnName("credit_terms_reason").HasMaxLength(1000);
             entity.Property(customer => customer.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.Property(customer => customer.RowVersion).HasColumnName("row_version").IsRowVersion();
+            entity.HasOne(customer => customer.AccountReviewedByUser).WithMany().HasForeignKey(customer => customer.AccountReviewedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(customer => customer.CreditReviewedByUser).WithMany().HasForeignKey(customer => customer.CreditReviewedByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(customer => customer.Name);
+            entity.HasIndex(customer => customer.AccountStatus);
+            entity.HasIndex(customer => customer.CreditStatus);
         });
 
     }

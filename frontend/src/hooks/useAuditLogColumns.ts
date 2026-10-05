@@ -22,7 +22,6 @@ export type AuditLogColumnConfig = {
 export type AuditLogLayoutConfig = {
   columns: AuditLogColumnConfig[];
   filters: AuditLogFilterKey[];
-  showRawMetadataTooltip: boolean;
 };
 
 export function useAuditLogColumns(role: string): AuditLogLayoutConfig {
@@ -30,54 +29,52 @@ export function useAuditLogColumns(role: string): AuditLogLayoutConfig {
     if (role === "SuperAdmin" || role === "Admin") {
       return {
         columns: [
-          { key: "time", label: "Time" },
-          { key: "action", label: "Action" },
-          { key: "entityType", label: "Entity Type" },
-          { key: "entityId", label: "Entity Id" },
-          { key: "actor", label: "Actor" },
-          { key: "actorRole", label: "Actor Role" },
-          { key: "metadata", label: "Metadata" }
+          { key: "time", label: "Date & time" },
+          { key: "action", label: "Activity" },
+          { key: "entityType", label: "Record type" },
+          { key: "entityId", label: "Record ID" },
+          { key: "actor", label: "Performed by" },
+          { key: "actorRole", label: "Role" },
+          { key: "metadata", label: "Details" }
         ],
-        filters: ["action", "entityType", "entityId", "dateRange"],
-        showRawMetadataTooltip: role === "SuperAdmin"
+        filters: ["action", "entityType", "entityId", "dateRange"]
       };
     }
 
     if (role === "InventoryOfficer") {
       return {
         columns: [
-          { key: "time", label: "Time" },
-          { key: "action", label: "Action" },
+          { key: "time", label: "Date & time" },
+          { key: "action", label: "Activity" },
           { key: "item", label: "Item" },
-          { key: "metadata", label: "Metadata" }
+          { key: "metadata", label: "Details" },
+          { key: "actor", label: "Performed by" }
         ],
-        filters: ["action", "dateRange"],
-        showRawMetadataTooltip: false
+        filters: ["action", "dateRange"]
       };
     }
 
     if (role === "Driver") {
       return {
         columns: [
-          { key: "time", label: "Time" },
-          { key: "action", label: "Action" },
+          { key: "time", label: "Date & time" },
+          { key: "action", label: "Activity" },
           { key: "trip", label: "Trip" },
-          { key: "metadata", label: "Metadata" }
+          { key: "metadata", label: "Details" }
         ],
-        filters: ["dateRange"],
-        showRawMetadataTooltip: false
+        filters: ["dateRange"]
       };
     }
 
     return {
       columns: [
-        { key: "time", label: "Time" },
-        { key: "action", label: "Action" },
-        { key: "entity", label: "Entity" },
-        { key: "metadata", label: "Metadata" }
+        { key: "time", label: "Date & time" },
+        { key: "action", label: "Activity" },
+        { key: "entity", label: "Record" },
+        { key: "metadata", label: "Details" },
+        { key: "actor", label: "Performed by" }
       ],
-      filters: ["action", "dateRange"],
-      showRawMetadataTooltip: false
+      filters: ["action", "dateRange"]
     };
   }, [role]);
 }

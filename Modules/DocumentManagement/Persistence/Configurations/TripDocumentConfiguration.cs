@@ -18,6 +18,10 @@ public sealed class TripDocumentConfiguration : IEntityTypeConfiguration<TripDoc
                 value == TripDocumentType.Eir ? "EIR" :
                 value == TripDocumentType.GatePass ? "GATE_PASS" :
                 value == TripDocumentType.Dr ? "DR" :
+                value == TripDocumentType.Dtr ? "DTR" :
+                value == TripDocumentType.GateEvidence ? "GATE_EVIDENCE" :
+                value == TripDocumentType.ReturnEvidence ? "RETURN_EVIDENCE" :
+                value == TripDocumentType.ContainerInspectionPhoto ? "CONTAINER_INSPECTION_PHOTO" :
                 "WAYBILL",
             value =>
                 value == "WAYBILL" ? TripDocumentType.Waybill :
@@ -26,6 +30,10 @@ public sealed class TripDocumentConfiguration : IEntityTypeConfiguration<TripDoc
                 value == "EIR" ? TripDocumentType.Eir :
                 value == "GATE_PASS" ? TripDocumentType.GatePass :
                 value == "DR" ? TripDocumentType.Dr :
+                value == "DTR" ? TripDocumentType.Dtr :
+                value == "GATE_EVIDENCE" ? TripDocumentType.GateEvidence :
+                value == "RETURN_EVIDENCE" ? TripDocumentType.ReturnEvidence :
+                value == "CONTAINER_INSPECTION_PHOTO" ? TripDocumentType.ContainerInspectionPhoto :
                 TripDocumentType.Waybill);
 
         var docStateConverter = new ValueConverter<TripDocumentState, string>(
@@ -59,6 +67,17 @@ public sealed class TripDocumentConfiguration : IEntityTypeConfiguration<TripDoc
         entity.Property(doc => doc.SupersedesDocumentId).HasColumnName("supersedes_document_id");
         entity.Property(doc => doc.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
         entity.Property(doc => doc.StorageKey).HasColumnName("storage_key").HasMaxLength(500).IsRequired();
+        entity.Property(doc => doc.OriginalFileName).HasColumnName("original_file_name").HasMaxLength(255);
+        entity.Property(doc => doc.ContentType).HasColumnName("content_type").HasMaxLength(100);
+        entity.Property(doc => doc.SizeBytes).HasColumnName("size_bytes");
+        entity.Property(doc => doc.ReferenceNumber).HasColumnName("reference_number").HasMaxLength(120);
+        entity.Property(doc => doc.ExpiryDate).HasColumnName("expiry_date");
+        entity.Property(doc => doc.Carrier).HasColumnName("carrier").HasMaxLength(160);
+        entity.Property(doc => doc.TerminalOrDepot).HasColumnName("terminal_or_depot").HasMaxLength(200);
+        entity.Property(doc => doc.Direction).HasColumnName("direction").HasConversion<string>().HasMaxLength(20);
+        entity.Property(doc => doc.DocumentEventAt).HasColumnName("document_event_at");
+        entity.Property(doc => doc.ContainerCondition).HasColumnName("container_condition").HasMaxLength(500);
+        entity.Property(doc => doc.IsProofOfDelivery).HasColumnName("is_proof_of_delivery").HasDefaultValue(false).IsRequired();
         entity.Property(doc => doc.UploadedByUserId).HasColumnName("uploaded_by_user_id");
         entity.Property(doc => doc.VerifiedByUserId).HasColumnName("verified_by_user_id");
         entity.Property(doc => doc.RejectedByUserId).HasColumnName("rejected_by_user_id");

@@ -33,7 +33,10 @@ public sealed record CustomerListItemResponse(
     string? ContactPerson,
     string? ContactEmail,
     string? Phone,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    CustomerAccountStatus AccountStatus = CustomerAccountStatus.PendingReview,
+    CustomerCreditStatus CreditStatus = CustomerCreditStatus.NotGranted,
+    bool HasOverdueBalance = false);
 
 public sealed record CreateCustomerRequest(
     string Name,
@@ -870,7 +873,15 @@ public sealed record DispatchTripStopResponse(
 
 public sealed record DispatchTripDocumentUploadRequest(
     TripDocumentType Type,
-    string StorageKey);
+    string StorageKey,
+    string? ReferenceNumber = null,
+    DateTime? ExpiryDate = null,
+    string? Carrier = null,
+    string? TerminalOrDepot = null,
+    DocumentDirection Direction = DocumentDirection.NotApplicable,
+    DateTime? DocumentEventAt = null,
+    string? ContainerCondition = null,
+    bool IsProofOfDelivery = false);
 
 public sealed record DispatchTripDocumentRejectRequest(string Remarks);
 
@@ -888,7 +899,18 @@ public sealed record DispatchTripDocumentResponse(
     string? Remarks,
     DateTime UploadedAt,
     DateTime? VerifiedAt,
-    DateTime? RejectedAt);
+    DateTime? RejectedAt,
+    string? OriginalFileName = null,
+    string? ContentType = null,
+    long? SizeBytes = null,
+    string? ReferenceNumber = null,
+    DateTime? ExpiryDate = null,
+    string? Carrier = null,
+    string? TerminalOrDepot = null,
+    DocumentDirection Direction = DocumentDirection.NotApplicable,
+    DateTime? DocumentEventAt = null,
+    string? ContainerCondition = null,
+    bool IsProofOfDelivery = false);
 
 public sealed record DispatchTripDocumentChecklistResponse(
     TripDocumentType Type,
@@ -913,6 +935,12 @@ public sealed record DispatchTripDocumentVersionResponse(
     Guid? SupersedesDocumentId);
 
 public sealed record DispatchTripDocumentLinkResponse(string StorageKey);
+
+public sealed record DispatchLifecycleReadinessResponse(
+    bool PreDispatchReady,
+    IReadOnlyCollection<string> PreDispatchBlockers,
+    bool OperationalCloseReady,
+    IReadOnlyCollection<string> OperationalCloseBlockers);
 
 public sealed record GeneratedWaybillResponse(
     Guid Id,
@@ -1159,7 +1187,16 @@ public sealed record ShipmentRequestDocumentResponse(
     string StorageKey,
     Guid UploadedByUserId,
     string? UploadedByUsername,
-    DateTime UploadedAt);
+    DateTime UploadedAt,
+    TripDocumentState VerificationState = TripDocumentState.Uploaded,
+    string? OriginalFileName = null,
+    string? ContentType = null,
+    long? SizeBytes = null,
+    DateTime? ExpiryDate = null,
+    string? Carrier = null,
+    string? TerminalOrDepot = null,
+    string? ReferenceNumber = null,
+    string? RejectionReason = null);
 
 public sealed record ShipmentRequestDocumentUploadRequest(
     ShipmentRequestDocumentType DocumentType,
@@ -1224,7 +1261,10 @@ public sealed record DispatchShipmentRequestQueueItemResponse(
     DateTime CreatedAt,
     string Status,
     string Priority,
-    string? ReviewRemarks);
+    string? ReviewRemarks,
+    BookingFinanceClearanceStatus FinanceClearanceStatus,
+    CustomerAccountStatus CustomerAccountStatus,
+    bool HasOverdueBalance);
 
 public sealed record DispatchShipmentRequestDocumentResponse(
     Guid Id,
@@ -1237,7 +1277,13 @@ public sealed record DispatchShipmentRequestDocumentResponse(
     decimal? ExtractionConfidence,
     Guid UploadedByUserId,
     string? UploadedByUsername,
-    DateTime UploadedAt);
+    DateTime UploadedAt,
+    TripDocumentState VerificationState = TripDocumentState.Uploaded,
+    DateTime? ExpiryDate = null,
+    string? Carrier = null,
+    string? TerminalOrDepot = null,
+    string? ReferenceNumber = null,
+    string? RejectionReason = null);
 
 public sealed record DispatchShipmentRequestActivityResponse(
     string Action,
@@ -1279,7 +1325,10 @@ public sealed record DispatchShipmentRequestDetailResponse(
     Guid? ConvertedTripId,
     IReadOnlyCollection<DispatchShipmentRequestDocumentResponse> Documents,
     IReadOnlyCollection<DispatchShipmentRequestActivityResponse> Activity,
-    DispatchShipmentRequestAssignmentResponse? Assignment);
+    DispatchShipmentRequestAssignmentResponse? Assignment,
+    BookingFinanceClearanceStatus FinanceClearanceStatus,
+    CustomerAccountStatus CustomerAccountStatus,
+    bool HasOverdueBalance);
 
 public sealed record ShipmentRequestConversionResponse(
     Guid RequestId,

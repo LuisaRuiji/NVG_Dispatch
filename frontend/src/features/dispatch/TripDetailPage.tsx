@@ -10,17 +10,18 @@ import { LocationMap } from "@/components/ui/LocationMap";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/useToast";
-import { ApiRequestError, api, apiOptional } from "@/lib/api";
+import { ApiRequestError, api, apiOptional, previewFile, uploadFile } from "@/lib/api";
 import type { PagedResult } from "@/lib/paging";
 import { getMe } from "@/features/auth/authStore";
 import { useDispatchHub } from "@/hooks/useDispatchHub";
+import TripReceiptPanel from "./components/TripReceiptPanel";
 import type {
   DispatchTripDetail,
   DispatchTripDocument,
-  DispatchTripDocumentLink,
   DispatchTripDocumentVersion,
   DispatchTripHistory,
   DispatchTripSummary,
+  DispatchLifecycleReadiness,
   GeneratedWaybill,
   TripDocumentType,
   TripStatus
@@ -82,12 +83,20 @@ type ActionModal =
   | { type: "FAILED"; remarks: string; eventAt: string }
   | { type: "RESOLVE_FAILED"; remarks: string; eventAt: string }
   | { type: "CANCEL"; remarks: string; eventAt: string }
-  | { type: "CLOSE" }
-  | { type: "DOC_UPLOAD"; docType: TripDocumentType; storageKey: string }
+  | { type: "CLOSE"; remarks: string }
+  | { type: "DOC_UPLOAD"; docType: TripDocumentType; file: File | null }
   | { type: "DOC_REJECT"; docId: string; remarks: string }
   | null;
 
-const docTypes: TripDocumentType[] = ["ATW", "EIR", "GATE_PASS", "DR", "POD", "WAYBILL"];
+function getTripDocumentTypes(tripType?: string | null): TripDocumentType[] {
+  switch (tripType) {
+    case "EXPORT_EMPTY_PICKUP": return ["ATW", "EIR", "DTR", "CONTAINER_INSPECTION_PHOTO", "DR", "POD", "WAYBILL"];
+    case "EXPORT_LADEN_TO_TERMINAL": return ["EIR", "DTR", "GATE_EVIDENCE", "WAYBILL"];
+    case "IMPORT_LADEN_DELIVERY": return ["EIR", "DTR", "DR", "POD", "WAYBILL"];
+    case "EMPTY_RETURN": return ["EIR", "DTR", "RETURN_EVIDENCE", "WAYBILL"];
+    default: return ["ATW", "EIR", "DTR", "GATE_PASS", "DR", "POD", "WAYBILL"];
+  }
+}
 const failedAttemptEligible: TripStatus[] = [
   "ENROUTE_PICKUP",
   "AT_PICKUP",
@@ -204,6 +213,7 @@ export default function TripDetailPage() {
   const [documents, setDocuments] = useState<DispatchTripDocument[]>([]);
   const [generatedWaybill, setGeneratedWaybill] = useState<GeneratedWaybill | null>(null);
   const [timeline, setTimeline] = useState<DispatchTripHistory[]>([]);
+  const [readiness, setReadiness] = useState<DispatchLifecycleReadiness | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [modal, setModal] = useState<ActionModal>(null);
   const [scheduleSaving, setScheduleSaving] = useState(false);
@@ -270,6 +280,9 @@ export default function TripDetailPage() {
       setSummary(summaryData);
       setDocuments(docs ?? []);
       setTimeline(history ?? []);
+      if (isManager || isDispatcher || isFinance || isAdmin) {
+        setReadiness(await apiOptional<DispatchLifecycleReadiness>(`/api/dispatch/trips/${id}/readiness`, { method: "GET" }));
+      }
       const waybill = await apiOptional<GeneratedWaybill>(`/api/dispatch/trips/${id}/waybill`, { method: "GET" });
       setGeneratedWaybill(waybill);
       setAssignmentConflict(null);
@@ -409,7 +422,7 @@ export default function TripDetailPage() {
     if (!timeline.length) return { pickup: null, dropoff: null, delivered: null };
     const pickup = timeline.find((entry) => entry.toStatus === "AT_PICKUP")?.eventAt ?? null;
     const dropoff = timeline.find((entry) => entry.toStatus === "AT_DROPOFF")?.eventAt ?? null;
-    const delivered = timeline.find((entry) => entry.toStatus === "DELIVERED")?.eventAt ?? null;
+    const delivered = timeline.find((entry) => entry.toStatus === "DELIVERY_COMPLETED" || entry.toStatus === "DELIVERED")?.eventAt ?? null;
     return { pickup, dropoff, delivered };
   }, [timeline]);
 
@@ -557,7 +570,7 @@ export default function TripDetailPage() {
       scheduleForm.driverUserId !== (summary?.driverUserId ?? trip?.driverUserId ?? "") ||
       scheduleForm.truckAssetId !== (summary?.truckAssetId ?? trip?.truckAssetId ?? "");
     const loadedOrLater = currentStatus
-      ? ["LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF", "DELIVERED"].includes(currentStatus)
+      ? ["LOADED", "ENROUTE_DROPOFF", "AT_DROPOFF", "DELIVERY_COMPLETED", "DOCUMENTS_PENDING", "OPERATIONALLY_CLOSED", "DELIVERED", "CLOSED"].includes(currentStatus)
       : false;
     if (assignmentChanged && loadedOrLater && isManager && !scheduleForm.changeRemarks.trim()) {
       return "Remarks are required to reassign after loading.";
@@ -738,13 +751,18 @@ export default function TripDetailPage() {
     }
   };
 
-  const handleUploadDoc = async (docType: TripDocumentType, storageKey: string) => {
-    if (!tripId) return;
+  const handleUploadDoc = async (docType: TripDocumentType, file: File) => {
+    if (!tripId || !trip) return;
     try {
       setActionLoading(true);
-      await api(`/api/dispatch/trips/${tripId}/documents`, {
-        method: "POST",
-        body: JSON.stringify({ type: docType, storageKey })
+      const direction = docType === "EIR"
+        ? (["EXPORT_EMPTY_PICKUP", "IMPORT_LADEN_DELIVERY"].includes(trip.tripType ?? "") ? "GateOut" : "GateIn")
+        : "NotApplicable";
+      await uploadFile(`/api/dispatch/trips/${tripId}/documents/upload`, file, "file", {
+        type: docType,
+        direction,
+        documentEventAt: new Date().toISOString(),
+        isProofOfDelivery: docType === "DR" ? "true" : "false"
       });
       show("Document uploaded.", "success");
       await fetchTrip();
@@ -855,16 +873,7 @@ export default function TripDetailPage() {
   const handleOpenDocument = async (docId: string) => {
     if (!tripId) return;
     try {
-      const result = await api<DispatchTripDocumentLink>(
-        `/api/dispatch/trips/${tripId}/documents/${docId}/link`,
-        { method: "GET" }
-      );
-      const key = result.storageKey;
-      if (/^https?:\/\//i.test(key)) {
-        window.open(key, "_blank", "noopener,noreferrer");
-        return;
-      }
-      setLinkKey(key);
+      await previewFile(`/api/dispatch/trips/${tripId}/documents/${docId}/content`);
     } catch (e: any) {
       console.error(e);
       show(e?.message ?? "Failed to open document.", "error");
@@ -891,7 +900,7 @@ export default function TripDetailPage() {
     return <EmptyState title="Trip not found" description="The trip detail could not be loaded." />;
   }
 
-  const isDraft = currentStatus === "DRAFT";
+  const isDraft = currentStatus === "DRAFT" || currentStatus === "PLANNING" || currentStatus === "ASSIGNED";
   const canEditCustomer = isManager || isDraft;
   const canEditLocations = isManager || isDraft;
   const dispatcherReassignLocked =
@@ -901,10 +910,12 @@ export default function TripDetailPage() {
     !["DISPATCHED", "ENROUTE_PICKUP"].includes(currentStatus ?? "");
   const canCorrectStatus =
     (isManager || isDispatcher) &&
+    currentStatus !== "OPERATIONALLY_CLOSED" &&
     currentStatus !== "CLOSED" &&
     currentStatus !== "CANCELLED" &&
     currentStatus !== "DRAFT";
   const versionTotalPages = Math.max(1, Math.ceil(versionTotal / versionPageSize));
+  const docTypes = getTripDocumentTypes(trip.tripType);
 
   return (
     <div className="space-y-6">
@@ -938,6 +949,13 @@ export default function TripDetailPage() {
           </div>
         }
       />
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Controlled dispatch lifecycle">
+        <LifecycleLane label="Account & booking" state={readiness?.preDispatchReady ? "Cleared" : "Guarded"} detail={readiness?.preDispatchBlockers[0] ?? "Customer and booking controls passed"} ready={Boolean(readiness?.preDispatchReady)} />
+        <LifecycleLane label="Operational" state={currentStatus ? statusLabels[currentStatus] : "Unknown"} detail="Assignment, movement, and exception state" ready={["DELIVERY_COMPLETED", "DOCUMENTS_PENDING", "OPERATIONALLY_CLOSED", "DELIVERED", "CLOSED"].includes(currentStatus ?? "")} />
+        <LifecycleLane label="Documents" state={readiness?.operationalCloseReady ? "Complete" : "Pending"} detail={readiness?.operationalCloseBlockers[0] ?? "Trip-type closeout rules passed"} ready={Boolean(readiness?.operationalCloseReady)} />
+        <LifecycleLane label="Receipt" state={trip.financials?.officialReceiptNumber ? "Generated" : trip.financials?.rate ? "Ready" : "Rate needed"} detail={trip.financials?.officialReceiptNumber ? `Receipt ${trip.financials.officialReceiptNumber}` : "Calculate after delivery completion"} ready={Boolean(trip.financials?.officialReceiptNumber)} />
+      </section>
 
       <div className="sticky top-0 z-40 -mx-6 border-b border-border/60 bg-background/95 px-6 py-4 backdrop-blur">
         <div className="surface-card p-5">
@@ -1003,12 +1021,12 @@ export default function TripDetailPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {canEditSchedule && isDraft ? (
+              {canEditSchedule && currentStatus === "READY_FOR_DISPATCH" ? (
                 <Button onClick={handleDispatch} disabled={scheduleSaving || dispatching}>
                   {dispatching ? "Dispatching..." : "Dispatch"}
                 </Button>
               ) : null}
-              {(isManager || isDispatcher) && currentStatus && !["CLOSED", "CANCELLED", "ON_HOLD"].includes(currentStatus) ? (
+              {(isManager || isDispatcher) && currentStatus && !["OPERATIONALLY_CLOSED", "CLOSED", "CANCELLED", "ON_HOLD"].includes(currentStatus) ? (
                 <Button
                   variant="outline"
                   onClick={() =>
@@ -1056,10 +1074,10 @@ export default function TripDetailPage() {
                   Resolve Failed Attempt
                 </Button>
               ) : null}
-              {isManager && currentStatus === "DELIVERED" ? (
-                <Button onClick={() => setModal({ type: "CLOSE" })}>Close Trip</Button>
+              {(isManager || isDispatcher) && ["DELIVERY_COMPLETED", "DOCUMENTS_PENDING", "DELIVERED"].includes(currentStatus ?? "") ? (
+                <Button onClick={() => setModal({ type: "CLOSE", remarks: "" })}>Operational Close</Button>
               ) : null}
-              {isManager && currentStatus && !["CLOSED", "CANCELLED"].includes(currentStatus) ? (
+              {isManager && currentStatus && !["OPERATIONALLY_CLOSED", "CLOSED", "CANCELLED"].includes(currentStatus) ? (
                 <Button
                   variant="destructive"
                   onClick={() =>
@@ -1093,7 +1111,9 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-            <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      <TripReceiptPanel trip={trip} canGenerate={isFinance || isAdmin} />
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <div className="surface-card p-6" id="trip-timeline">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Trip Timeline</h3>
@@ -1359,7 +1379,7 @@ export default function TripDetailPage() {
                                 size="sm"
                                 disabled={actionLoading}
                                 onClick={() =>
-                                  setModal({ type: "DOC_UPLOAD", docType: type, storageKey: "" })
+                                  setModal({ type: "DOC_UPLOAD", docType: type, file: null })
                                 }
                               >
                                 {documentUploadLabel(type, doc)}
@@ -1906,17 +1926,20 @@ export default function TripDetailPage() {
 
             {modal.type === "DOC_UPLOAD" ? (
               <div className="mt-5 space-y-2 text-sm">
-                <label className="text-xs uppercase text-slate-500">Storage Key / URL</label>
+                <label className="text-xs uppercase text-slate-500" htmlFor="trip-document-file">PDF or image file</label>
                 <input
-                  value={modal.storageKey}
-                  onChange={(e) => setModal({ ...modal, storageKey: e.target.value })}
-                  className="mt-2 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                  placeholder="docs/waybill.pdf"
+                  id="trip-document-file"
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  onChange={(e) => setModal({ ...modal, file: e.target.files?.[0] ?? null })}
+                  className="mt-2 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
             ) : modal.type === "CLOSE" ? (
-              <div className="mt-5 text-sm text-slate-600">
-                Closing a trip is irreversible. Make sure POD rules are satisfied before proceeding.
+              <div className="mt-5 space-y-3 text-sm text-slate-600">
+                <p>Operational closure is separate from invoicing. All trip-type documents must be verified; only a Manager can record a documented exception.</p>
+                <label className="block text-xs uppercase text-slate-500" htmlFor="close-remarks">Exception reason or closeout note</label>
+                <textarea id="close-remarks" value={modal.remarks} onChange={(e) => setModal({ ...modal, remarks: e.target.value })} className="min-h-[90px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Required for a Manager document exception" />
               </div>
             ) : (
               <div className="mt-5 space-y-4 text-sm">
@@ -1953,11 +1976,11 @@ export default function TripDetailPage() {
                 onClick={() => {
                   if (!modal || !trip) return;
                   if (modal.type === "DOC_UPLOAD") {
-                    if (!modal.storageKey.trim()) {
-                      show("Storage key is required.", "error");
+                    if (!modal.file) {
+                      show("Choose a PDF, JPG, or PNG file.", "error");
                       return;
                     }
-                    handleUploadDoc(modal.docType, modal.storageKey.trim());
+                    handleUploadDoc(modal.docType, modal.file);
                     setModal(null);
                   } else if (modal.type === "DOC_REJECT") {
                     if (!modal.remarks.trim()) {
@@ -2000,7 +2023,7 @@ export default function TripDetailPage() {
                     handleStatusChange("CANCELLED", remarks, null, eventAt);
                     setModal(null);
                   } else if (modal.type === "CLOSE") {
-                    handleStatusChange("CLOSED");
+                    handleStatusChange("OPERATIONALLY_CLOSED", modal.remarks.trim() || null);
                     setModal(null);
                   }
                 }}
@@ -2012,6 +2035,19 @@ export default function TripDetailPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function LifecycleLane({ label, state, detail, ready }: { label: string; state: string; detail: string; ready: boolean }) {
+  return (
+    <article className={`rounded-2xl border p-4 ${ready ? "border-emerald-500/25 bg-emerald-500/5" : "border-border bg-card"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+        <span className={`h-2.5 w-2.5 rounded-full ${ready ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden="true" />
+      </div>
+      <p className="mt-2 text-sm font-semibold capitalize text-foreground">{state.toLowerCase()}</p>
+      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={detail}>{detail}</p>
+    </article>
   );
 }
 

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/useToast";
-import { api, fetchPreviewFile } from "@/lib/api";
+import { api, fetchPreviewFile, uploadFile } from "@/lib/api";
 import type {
   ContainerSize,
   ShipmentRequestDocument,
@@ -38,7 +38,11 @@ type FormState = {
 
 type UploadModal = {
   docType: ShipmentRequestDocumentType;
-  storageKey: string;
+  file: File | null;
+  referenceNumber: string;
+  expiryDate: string;
+  carrier: string;
+  terminalOrDepot: string;
 } | null;
 
 type DocumentPreview = {
@@ -52,10 +56,21 @@ const docTypes: ShipmentRequestDocumentType[] = [
   "INVOICE",
   "CARGO_MANIFEST",
   "DELIVERY_INSTRUCTIONS",
+  "BOOKING_CONFIRMATION",
+  "RELEASE_CONFIRMATION",
+  "TERMINAL_AUTHORIZATION",
+  "BILL_OF_LADING",
+  "SEA_WAYBILL",
+  "DELIVERY_ORDER",
+  "CRO",
+  "WEB_CRO",
+  "RETURN_DEPOT_AUTHORIZATION",
+  "RETURN_INSTRUCTION",
   "OTHER"
 ];
 const containerSizeOptions = Object.entries(containerSizeLabels) as [ContainerSize, string][];
-const tripTypeOptions = Object.entries(tripTypeLabels) as [TripType, string][];
+const supportedTripTypes: TripType[] = ["EXPORT_EMPTY_PICKUP", "EXPORT_LADEN_TO_TERMINAL", "IMPORT_LADEN_DELIVERY", "EMPTY_RETURN"];
+const tripTypeOptions = (Object.entries(tripTypeLabels) as [TripType, string][]).filter(([value]) => supportedTripTypes.includes(value));
 
 const toLocalInput = (iso?: string | null) => {
   if (!iso) return "";
@@ -80,7 +95,7 @@ export default function PortalRequestDetailPage() {
     dropoffLocation: "",
     requestedPickupTime: "",
     containerSize: "TWENTY_FT",
-    tripType: "PORT_PICKUP",
+    tripType: "EXPORT_EMPTY_PICKUP",
     containerNumber: "",
     shippingLine: "",
     bookingNumber: "",
@@ -108,7 +123,7 @@ export default function PortalRequestDetailPage() {
         dropoffLocation: detail.dropoffLocation ?? "",
         requestedPickupTime: toLocalInput(detail.requestedPickupTime),
         containerSize: detail.containerSize ?? "TWENTY_FT",
-        tripType: detail.tripType ?? "PORT_PICKUP",
+        tripType: detail.tripType ?? "EXPORT_EMPTY_PICKUP",
         containerNumber: detail.containerNumber ?? "",
         shippingLine: detail.shippingLine ?? "",
         bookingNumber: detail.bookingNumber ?? "",
@@ -191,19 +206,18 @@ export default function PortalRequestDetailPage() {
 
   const handleUpload = async () => {
     if (!id || !uploadModal) return;
-    if (!uploadModal.storageKey.trim()) {
-      show("Storage key is required.", "error");
+    if (!uploadModal.file) {
+      show("Choose a PDF, JPG, or PNG file.", "error");
       return;
     }
     try {
       setSaving(true);
-      await api(`/api/portal/requests/${id}/documents`, {
-        method: "POST",
-        body: JSON.stringify({
-          documentType: uploadModal.docType,
-          storageKey: uploadModal.storageKey.trim()
-        })
-      });
+      const fields: Record<string, string> = { documentType: uploadModal.docType };
+      if (uploadModal.referenceNumber.trim()) fields.referenceNumber = uploadModal.referenceNumber.trim();
+      if (uploadModal.expiryDate) fields.expiryDate = new Date(uploadModal.expiryDate).toISOString();
+      if (uploadModal.carrier.trim()) fields.carrier = uploadModal.carrier.trim();
+      if (uploadModal.terminalOrDepot.trim()) fields.terminalOrDepot = uploadModal.terminalOrDepot.trim();
+      await uploadFile(`/api/portal/requests/${id}/documents/upload`, uploadModal.file, "file", fields);
       show("Document uploaded.", "success");
       setUploadModal(null);
       await loadRequest();
@@ -460,7 +474,7 @@ export default function PortalRequestDetailPage() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setUploadModal({ docType: "INVOICE", storageKey: "" })}
+            onClick={() => setUploadModal({ docType: "BOOKING_CONFIRMATION", file: null, referenceNumber: "", expiryDate: "", carrier: "", terminalOrDepot: "" })}
             disabled={!canUpload}
           >
             Upload Document
@@ -584,13 +598,17 @@ export default function PortalRequestDetailPage() {
                 </select>
               </div>
               <div>
-                <Label>Storage Key / URL</Label>
+                <Label htmlFor="booking-document-file">PDF or image file</Label>
                 <Input
-                  value={uploadModal.storageKey}
-                  onChange={(e) => setUploadModal({ ...uploadModal, storageKey: e.target.value })}
-                  placeholder="docs/invoice.pdf"
+                  id="booking-document-file"
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  onChange={(e) => setUploadModal({ ...uploadModal, file: e.target.files?.[0] ?? null })}
                 />
               </div>
+              <div><Label>Reference number</Label><Input value={uploadModal.referenceNumber} onChange={(e) => setUploadModal({ ...uploadModal, referenceNumber: e.target.value })} /></div>
+              <div className="grid gap-3 sm:grid-cols-2"><div><Label>Carrier</Label><Input value={uploadModal.carrier} onChange={(e) => setUploadModal({ ...uploadModal, carrier: e.target.value })} /></div><div><Label>Terminal / depot</Label><Input value={uploadModal.terminalOrDepot} onChange={(e) => setUploadModal({ ...uploadModal, terminalOrDepot: e.target.value })} /></div></div>
+              <div><Label>Expiry date</Label><Input type="date" value={uploadModal.expiryDate} onChange={(e) => setUploadModal({ ...uploadModal, expiryDate: e.target.value })} /></div>
             </div>
 
             <div className="mt-6 flex justify-end gap-3">

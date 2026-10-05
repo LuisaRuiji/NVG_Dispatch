@@ -43,4 +43,6 @@ public sealed class Trip
     public List<TripStatusHistory> StatusHistory { get; set; } = [];
     public List<TripDocument> Documents { get; set; } = [];
     public List<GeneratedWaybill> GeneratedWaybills { get; set; } = [];
+    public List<TripOperationalEvent> OperationalEvents { get; set; } = [];
+    public ContainerQualityInspection? ContainerInspection { get; set; }
 }

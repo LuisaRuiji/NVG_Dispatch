@@ -20,4 +20,10 @@ public static class EntityTypes
     public const string OptimizationWeightSettings = "optimization_weight_settings";
     public const string DispatchOptimizationPlan = "dispatch_optimization_plan";
     public const string LocationTrackingSession = "location_tracking_session";
+    public const string CustomerAccount = "customer_account";
+    public const string BookingFinanceClearance = "booking_finance_clearance";
+    public const string TripReceipt = "trip_receipt";
+    public const string TripOperationalEvent = "trip_operational_event";
+    public const string ContainerInspection = "container_inspection";
+    public const string DispatchDocumentRule = "dispatch_document_rule";
 }
