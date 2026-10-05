@@ -90,6 +90,10 @@ export default function BookingFinancePage() {
     <div className="space-y-6">
       <ToastHost toasts={toasts} />
       <PageHeader title="Booking Finance Clearance" description="Verify prepaid funds or credit eligibility before a booking enters dispatch planning." actions={<Button variant="outline" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>} />
+      <section className="surface-card border-l-4 border-l-primary p-4" aria-label="Payment clearance policy">
+        <h2 className="text-sm font-semibold text-foreground">Payment clearance policy</h2>
+        <ul className="mt-2 space-y-1 text-sm text-muted-foreground"><li>New customers require full payment or an approved deposit before dispatch planning.</li><li>Approved credit customers require available credit and no overdue balance.</li><li>After delivery, Finance records any unpaid final balance; future credit bookings are blocked until resolved. Managers can place the account on hold or suspend it with a reason.</li></ul>
+      </section>
 
       {loading && items.length === 0 ? <LoadingSkeleton rows={6} /> : items.length === 0 ? <EmptyState title="Finance queue is clear" description="Approved bookings awaiting payment or credit review will appear here." /> : (
         <div className="grid gap-4 xl:grid-cols-2">

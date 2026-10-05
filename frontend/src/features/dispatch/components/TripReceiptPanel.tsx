@@ -22,7 +22,7 @@ function optionalAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export default function TripReceiptPanel({ trip, canGenerate }: { trip: DispatchTripDetail; canGenerate: boolean }) {
+export default function TripReceiptPanel({ trip, canGenerate, canRecordOverdue }: { trip: DispatchTripDetail; canGenerate: boolean; canRecordOverdue: boolean }) {
   const [receiptNumber, setReceiptNumber] = useState(trip.financials?.officialReceiptNumber ?? "");
   const [baseCharge, setBaseCharge] = useState(trip.financials?.rate?.toString() ?? "");
   const [charges, setCharges] = useState<ChargeDraft[]>([]);
@@ -34,6 +34,7 @@ export default function TripReceiptPanel({ trip, canGenerate }: { trip: Dispatch
   const [paymentReference, setPaymentReference] = useState("");
   const [notes, setNotes] = useState("");
   const [receipt, setReceipt] = useState<TripReceipt | null>(null);
+  const [receiptHistory, setReceiptHistory] = useState<TripReceipt[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +42,19 @@ export default function TripReceiptPanel({ trip, canGenerate }: { trip: Dispatch
     setReceiptNumber(trip.financials?.officialReceiptNumber ?? "");
     setBaseCharge(trip.financials?.rate?.toString() ?? "");
   }, [trip.id, trip.financials?.officialReceiptNumber, trip.financials?.rate]);
+
+  // Reload immutable receipts whenever this trip changes so a refresh never loses the ledger.
+  useEffect(() => {
+    if (!canGenerate) return;
+    void api<TripReceipt[]>(`/api/dispatch/trips/${trip.id}/receipt/history`)
+      .then((items) => {
+        const history = items ?? [];
+        const reversedIds = new Set(history.filter((item) => item.isReversal && item.reversesReceiptId).map((item) => item.reversesReceiptId));
+        setReceiptHistory(history);
+        setReceipt(history.find((item) => !item.isReversal && !reversedIds.has(item.id)) ?? null);
+      })
+      .catch(() => setReceiptHistory([]));
+  }, [trip.id, canGenerate]);
 
   const liveTotals = useMemo(() => {
     const base = amount(baseCharge);
@@ -97,8 +111,30 @@ export default function TripReceiptPanel({ trip, canGenerate }: { trip: Dispatch
         body: JSON.stringify(payload)
       });
       setReceipt(generated);
+      setReceiptHistory((items) => [generated, ...items]);
     } catch (requestError: any) {
       setError(requestError?.message ?? "Receipt generation failed. Review the amounts and try again.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // Preserve issued records by creating a server-side reversal with a required reason.
+  const reverseReceipt = async (receiptToReverse: TripReceipt) => {
+    const reason = window.prompt(`Reason for reversing ${receiptToReverse.receiptNumber}:`)?.trim();
+    if (!reason) return;
+    setError(null);
+    setPending(true);
+    try {
+      const reversal = await api<TripReceipt>(`/api/dispatch/trips/${trip.id}/receipt/${receiptToReverse.id}/reverse`, {
+        method: "POST",
+        body: JSON.stringify({ reason })
+      });
+      setReceiptHistory((items) => [reversal, ...items]);
+      setReceipt(null);
+      setReceiptNumber("");
+    } catch (requestError: any) {
+      setError(requestError?.message ?? "Receipt reversal failed.");
     } finally {
       setPending(false);
     }
@@ -108,6 +144,24 @@ export default function TripReceiptPanel({ trip, canGenerate }: { trip: Dispatch
     document.body.classList.add("printing-trip-receipt");
     window.print();
     document.body.classList.remove("printing-trip-receipt");
+  };
+
+  // Finance records a delivered unpaid balance here; the server blocks future credit bookings.
+  const recordOverdueBalance = async () => {
+    const latestIssued = receiptHistory.find((item) => !item.isReversal);
+    const enteredAmount = window.prompt("Unpaid final balance:", latestIssued ? String(latestIssued.total) : "");
+    const unpaidFinalBalance = Number(enteredAmount);
+    const reason = window.prompt("Reason for overdue balance:")?.trim();
+    if (!Number.isFinite(unpaidFinalBalance) || unpaidFinalBalance <= 0 || !reason) return;
+    setPending(true);
+    setError(null);
+    try {
+      await api(`/api/dispatch/trips/${trip.id}/payment-status/overdue-balance`, { method: "POST", body: JSON.stringify({ unpaidFinalBalance, reason }) });
+    } catch (requestError: any) {
+      setError(requestError?.message ?? "Unable to record overdue balance.");
+    } finally {
+      setPending(false);
+    }
   };
 
   if (!canGenerate) return null;
@@ -207,10 +261,13 @@ export default function TripReceiptPanel({ trip, canGenerate }: { trip: Dispatch
           </dl>
           <Button className="mt-5 w-full" disabled={pending || !eligible} onClick={() => void generateReceipt()}>{pending ? "Generating…" : "Generate receipt"}</Button>
           <p className="mt-2 text-xs text-muted-foreground">Amounts are recalculated and validated by the server.</p>
+          {canRecordOverdue ? <Button className="mt-3 w-full" variant="outline" disabled={pending || !eligible} onClick={() => void recordOverdueBalance()}>Record unpaid final balance</Button> : null}
+          {canRecordOverdue ? <p className="mt-2 text-xs text-muted-foreground">This marks the customer overdue and blocks new credit bookings.</p> : null}
         </aside>
       </div>
 
       {receipt ? <ReceiptPreview receipt={receipt} onPrint={printReceipt} /> : null}
+      {receiptHistory.length > 0 ? <ReceiptHistory receipts={receiptHistory} pending={pending} onReverse={reverseReceipt} /> : null}
     </section>
   );
 }
@@ -267,4 +324,14 @@ function ReceiptPreview({ receipt, onPrint }: { receipt: TripReceipt; onPrint: (
 function ReceiptField({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
   if (!value) return null;
   return <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt><dd className={`mt-1 font-medium ${mono ? "font-mono" : ""}`}>{value}</dd></div>;
+}
+
+function ReceiptHistory({ receipts, pending, onReverse }: { receipts: TripReceipt[]; pending: boolean; onReverse: (receipt: TripReceipt) => void }) {
+  const reversedIds = new Set(receipts.filter((receipt) => receipt.isReversal && receipt.reversesReceiptId).map((receipt) => receipt.reversesReceiptId));
+  return <section className="border-t border-border bg-muted/20 px-5 py-4" aria-label="Receipt history">
+    <div className="flex items-baseline justify-between gap-3"><div><h3 className="text-sm font-semibold text-foreground">Receipt history</h3><p className="text-xs text-muted-foreground">Issued receipts are immutable. Corrections are retained as linked reversals.</p></div><span className="text-xs font-medium text-muted-foreground">{receipts.length} record{receipts.length === 1 ? "" : "s"}</span></div>
+    <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-background">
+      {receipts.map((item) => <div key={item.id} className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-mono font-semibold text-foreground">{item.receiptNumber} <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${item.isReversal ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>{item.isReversal ? "Reversal" : "Issued"}</span></p><p className="mt-1 text-xs text-muted-foreground">{new Date(item.generatedAt).toLocaleString()}{item.correctionReason ? ` · ${item.correctionReason}` : ""}</p></div><div className="flex items-center gap-3"><span className="font-semibold tabular-nums text-foreground">{money.format(item.total)}</span>{!item.isReversal && !reversedIds.has(item.id) ? <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => onReverse(item)}>Reverse</Button> : null}</div></div>)}
+    </div>
+  </section>;
 }

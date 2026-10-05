@@ -59,6 +59,9 @@ public sealed class InventoryDbContext : DbContext
     public DbSet<TripStatusHistory> DispatchTripStatusHistories => Set<TripStatusHistory>();
     public DbSet<TripDocument> DispatchTripDocuments => Set<TripDocument>();
     public DbSet<GeneratedWaybill> GeneratedWaybills => Set<GeneratedWaybill>();
+    public DbSet<TripReceipt> TripReceipts => Set<TripReceipt>();
+    public DbSet<TripReceiptCharge> TripReceiptCharges => Set<TripReceiptCharge>();
+    public DbSet<TripOverdueBalanceRecord> TripOverdueBalanceRecords => Set<TripOverdueBalanceRecord>();
     public DbSet<DispatchRecommendation> DispatchRecommendations => Set<DispatchRecommendation>();
     public DbSet<OptimizationWeightSettings> OptimizationWeightSettings => Set<OptimizationWeightSettings>();
     public DbSet<DispatchOptimizationPlan> DispatchOptimizationPlans => Set<DispatchOptimizationPlan>();
@@ -111,6 +114,9 @@ public sealed class InventoryDbContext : DbContext
         modelBuilder.ApplyConfiguration(new TripConfiguration());
         modelBuilder.ApplyConfiguration(new DispatchRecommendationConfiguration());
         modelBuilder.ApplyConfiguration(new GeneratedWaybillConfiguration());
+        modelBuilder.ApplyConfiguration(new TripReceiptConfiguration());
+        modelBuilder.ApplyConfiguration(new TripReceiptChargeConfiguration());
+        modelBuilder.ApplyConfiguration(new TripOverdueBalanceRecordConfiguration());
         modelBuilder.ApplyConfiguration(new TripStopConfiguration());
         modelBuilder.ApplyConfiguration(new TripLocationPingConfiguration());
         modelBuilder.ApplyConfiguration(new TripStatusHistoryConfiguration());

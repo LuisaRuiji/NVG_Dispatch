@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NVGInventory.Contracts;
 using NVGInventory.Data;
 using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Entities;
@@ -18,12 +19,14 @@ using NVGInventory.Domain.Services;
 using NVGInventory.Modules.Dispatching;
 using NVGInventory.Modules.Dispatching.Contracts;
 using NVGInventory.Modules.Dispatching.Controllers;
+using NVGInventory.Modules.Customers.Controllers;
 using NVGInventory.Modules.Dispatching.Entities;
 using NVGInventory.Modules.Dispatching.Enums;
 using NVGInventory.Modules.Dispatching.Services;
 using NVGInventory.Modules.ShipmentRequests.Entities;
 using NVGInventory.Modules.ShipmentRequests.Enums;
 using NVGInventory.Modules.ShipmentRequests.Services;
+using NVGInventory.Modules.ShipmentRequests;
 using Xunit;
 
 namespace NVGInventory.Tests;
@@ -220,6 +223,22 @@ public sealed class ControlledDispatchLifecycleTests
         Assert.Equal(10_500m, result.Total);
         Assert.Equal("OR-2026-0142", trip.OfficialReceiptNumber);
         Assert.Contains(audit.Entries, item => item.Action == AuditActions.TripReceiptGenerated);
+
+        var history = await service.GetHistoryAsync(trip.Id, Actor(finance: true));
+        Assert.Single(history);
+        Assert.Equal(2, history.Single().AdditionalCharges.Count);
+        Assert.Equal("Davao Container Services", history.Single().CustomerName);
+
+        var reversal = await service.ReverseAsync(trip.Id, result.Id, "Incorrect toll entry.", Actor(finance: true));
+        Assert.True(reversal.IsReversal);
+        Assert.Equal(result.Id, reversal.ReversesReceiptId);
+        Assert.Equal(-10_500m, reversal.Total);
+        Assert.Equal(2, (await service.GetHistoryAsync(trip.Id, Actor(finance: true))).Count);
+
+        var corrected = await service.GenerateAsync(trip.Id, new GenerateTripReceiptCommand("OR-2026-0142-C", 10_000m, null, null, null, null, null, null, null, null), Actor(finance: true));
+        Assert.Equal(10_000m, corrected.Total);
+        Assert.Equal(10_500m, (await service.GetHistoryAsync(trip.Id, Actor(finance: true))).Single(item => item.Id == result.Id).Total);
+        Assert.Contains(audit.Entries, item => item.Action == AuditActions.TripReceiptReversed && item.Reason == "Incorrect toll entry.");
     }
 
     [Fact]
@@ -238,6 +257,8 @@ public sealed class ControlledDispatchLifecycleTests
             Actor(finance: true));
         Assert.Equal(100m, result.DiscountAmount);
         Assert.Equal(899.99m, result.Total);
+
+        await service.ReverseAsync(trip.Id, result.Id, "Prepare validation test.", Actor(finance: true));
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() => service.GenerateAsync(
             trip.Id,
@@ -261,6 +282,62 @@ public sealed class ControlledDispatchLifecycleTests
         Assert.Equal(CustomerAccountStatus.ActivePrepaid, customer.AccountStatus);
         Assert.Contains(db.CustomerAccountHistories, item => item.Reason == "Manager verified company documents.");
         Assert.Contains(audit.Entries, item => item.ActorRole == RoleNames.Manager && item.Reason == "Manager verified company documents.");
+    }
+
+    [Fact]
+    public async Task PendingCustomer_CannotReceivePortalUserUntilAccountIsApproved()
+    {
+        await using var db = CreateDbContext();
+        var customer = new Customer { Id = Guid.NewGuid(), Name = "Awaiting approval", AccountStatus = CustomerAccountStatus.PendingReview, CreatedAt = DateTime.UtcNow };
+        db.DispatchCustomers.Add(customer);
+        await db.SaveChangesAsync();
+        var controller = new CustomersController(db, new UserService(db));
+
+        await Assert.ThrowsAsync<ConflictDomainException>(() => controller.CreateCustomerUser(
+            customer.Id, new CreateCustomerUserRequest("portal@example.com", "AValidTemporaryPassword1!"), CancellationToken.None));
+        Assert.Empty(db.Users);
+    }
+
+    [Fact]
+    public async Task FinanceRecordedOverdueBalance_BlocksNewCreditBookings()
+    {
+        await using var db = CreateDbContext();
+        var customer = new Customer { Id = Guid.NewGuid(), Name = "Credit customer", AccountStatus = CustomerAccountStatus.ActiveCredit, CreditStatus = CustomerCreditStatus.Approved, CreditLimit = 100_000m, CreatedAt = DateTime.UtcNow };
+        var trip = new Trip { Id = Guid.NewGuid(), CustomerId = customer.Id, Customer = customer, Status = TripStatus.DeliveryCompleted, CreatedAt = DateTime.UtcNow };
+        db.DispatchTrips.Add(trip);
+        await db.SaveChangesAsync();
+        var audit = new RecordingAuditService();
+        var service = new CustomerAccountService(db, audit);
+
+        await service.RecordOverdueTripBalanceAsync(trip.Id, 7_500m, "Customer did not settle the final delivery balance.", Actor(finance: true));
+
+        Assert.True(customer.HasOverdueBalance);
+        Assert.Equal(7_500m, customer.OutstandingBalance);
+        Assert.Single(db.TripOverdueBalanceRecords);
+        Assert.Throws<ConflictDomainException>(() => CustomerAccountService.EnsureCanSubmitBooking(customer));
+        Assert.Contains(audit.Entries, item => item.Action == AuditActions.CustomerOverdueBalanceRecorded);
+    }
+
+    [Fact]
+    public async Task FinanceClearanceEndpoint_AllowsOnlyClearedBookingToConvertToTrip()
+    {
+        await using var db = CreateDbContext();
+        var request = CreateBooking(CustomerAccountStatus.ActivePrepaid, BookingFinanceClearanceStatus.AwaitingPayment);
+        request.QuotedAmount = 5_000m;
+        db.ShipmentRequests.Add(request);
+        await db.SaveChangesAsync();
+        var controller = new BookingFinanceController(new BookingFinanceService(db, new RecordingAuditService()), db)
+        {
+            ControllerContext = new ControllerContext { HttpContext = HttpContext(Guid.NewGuid(), RoleNames.HeadOfFinance) }
+        };
+
+        var response = await controller.VerifyPayment(request.Id, new VerifyBookingPaymentRequest(5_000m, false, false, "BANK_TRANSFER", "PAY-001", "Full payment verified."), CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(response.Result);
+        Assert.Equal(BookingFinanceClearanceStatus.Cleared, request.FinanceClearanceStatus);
+        var gateway = new RecordingTripGateway();
+        await new ShipmentRequestTripCreationService(db, gateway).CreateDraftTripFromApprovedRequestAsync(new CreateTripFromShipmentRequestCommand(request.Id), Actor(dispatcher: true));
+        Assert.Equal(1, gateway.Calls);
     }
 
     [Fact]

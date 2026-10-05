@@ -1111,7 +1111,7 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-      <TripReceiptPanel trip={trip} canGenerate={isFinance || isAdmin} />
+      <TripReceiptPanel trip={trip} canGenerate={isFinance || isAdmin} canRecordOverdue={isFinance} />
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
         <div className="surface-card p-6" id="trip-timeline">

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NVGInventory.Data;
 
@@ -11,9 +12,11 @@ using NVGInventory.Data;
 namespace NVGInventory.Data.Migrations
 {
     [DbContext(typeof(InventoryDbContext))]
-    partial class InventoryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261005040929_AddImmutableTripReceipts")]
+    partial class AddImmutableTripReceipts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3116,53 +3119,6 @@ namespace NVGInventory.Data.Migrations
                     b.ToTable("dispatch_trip_operational_events", "dbo");
                 });
 
-            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.TripOverdueBalanceRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)")
-                        .HasColumnName("amount");
-
-                    b.Property<Guid>("CustomerId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("customer_id");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(600)
-                        .HasColumnType("nvarchar(600)")
-                        .HasColumnName("reason");
-
-                    b.Property<DateTime>("RecordedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasColumnName("recorded_at")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
-
-                    b.Property<Guid>("RecordedByUserId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("recorded_by_user_id");
-
-                    b.Property<Guid>("TripId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("trip_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RecordedByUserId");
-
-                    b.HasIndex("TripId")
-                        .IsUnique();
-
-                    b.HasIndex("CustomerId", "RecordedAt");
-
-                    b.ToTable("dispatch_trip_overdue_balance_records", "dbo");
-                });
-
             modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.TripReceipt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4666,25 +4622,6 @@ namespace NVGInventory.Data.Migrations
                     b.Navigation("Trip");
                 });
 
-            modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.TripOverdueBalanceRecord", b =>
-                {
-                    b.HasOne("NVGInventory.Domain.Entities.User", "RecordedByUser")
-                        .WithMany()
-                        .HasForeignKey("RecordedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("NVGInventory.Modules.Dispatching.Entities.Trip", "Trip")
-                        .WithMany("OverdueBalanceRecords")
-                        .HasForeignKey("TripId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("RecordedByUser");
-
-                    b.Navigation("Trip");
-                });
-
             modelBuilder.Entity("NVGInventory.Modules.Dispatching.Entities.TripReceipt", b =>
                 {
                     b.HasOne("NVGInventory.Domain.Entities.User", "GeneratedByUser")
@@ -4961,8 +4898,6 @@ namespace NVGInventory.Data.Migrations
                     b.Navigation("LocationPings");
 
                     b.Navigation("OperationalEvents");
-
-                    b.Navigation("OverdueBalanceRecords");
 
                     b.Navigation("Receipts");
 

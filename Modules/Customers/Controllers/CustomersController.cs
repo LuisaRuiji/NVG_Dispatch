@@ -7,6 +7,7 @@ using NVGInventory.Domain.Constants;
 using NVGInventory.Domain.Exceptions;
 using NVGInventory.Domain.Services;
 using NVGInventory.Modules.Dispatching.Entities;
+using NVGInventory.Modules.Dispatching.Enums;
 
 namespace NVGInventory.Modules.Customers.Controllers;
 
@@ -108,6 +109,12 @@ public sealed class CustomersController : ControllerBase
         if (customer is null)
         {
             throw new NotFoundException("Customer not found.");
+        }
+
+        // Portal credentials must never make an unapproved customer operational.
+        if (customer.AccountStatus is not (CustomerAccountStatus.ActivePrepaid or CustomerAccountStatus.ActiveCredit))
+        {
+            throw new ConflictDomainException("A customer portal user can be created only after the customer account is approved as active prepaid or active credit.");
         }
 
         var email = request.Email.Trim();

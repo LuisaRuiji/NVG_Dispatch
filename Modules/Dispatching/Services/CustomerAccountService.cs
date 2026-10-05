@@ -179,6 +179,44 @@ public sealed class CustomerAccountService
         return customer;
     }
 
+    /// <summary>
+    /// Records an unpaid final balance against a delivered trip and immediately
+    /// blocks subsequent credit bookings for that customer.
+    /// </summary>
+    public async Task<Customer> RecordOverdueTripBalanceAsync(
+        Guid tripId,
+        decimal unpaidFinalBalance,
+        string reason,
+        DispatchActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        if (!actor.IsFinance) throw new ForbiddenDomainException("Only Finance can record an unpaid final balance.");
+        if (unpaidFinalBalance <= 0) throw new BusinessRuleViolationException("Unpaid final balance must be greater than zero.");
+        RequireReason(reason);
+        var trip = await _dbContext.DispatchTrips.Include(item => item.Customer)
+            .FirstOrDefaultAsync(item => item.Id == tripId, cancellationToken)
+            ?? throw new NotFoundException("Trip not found.");
+        if (trip.Status is not (TripStatus.DeliveryCompleted or TripStatus.DocumentsPending or TripStatus.OperationallyClosed or TripStatus.Delivered or TripStatus.Closed))
+            throw new ConflictDomainException("An unpaid final balance can be recorded only after delivery.");
+        if (await _dbContext.TripOverdueBalanceRecords.AnyAsync(record => record.TripId == tripId, cancellationToken))
+            throw new ConflictDomainException("An unpaid final balance has already been recorded for this trip.");
+
+        var customer = trip.Customer ?? throw new NotFoundException("Trip customer not found.");
+        var before = new { customer.OutstandingBalance, customer.HasOverdueBalance };
+        customer.OutstandingBalance += unpaidFinalBalance;
+        customer.HasOverdueBalance = true;
+        _dbContext.TripOverdueBalanceRecords.Add(new TripOverdueBalanceRecord
+        {
+            Id = Guid.NewGuid(), TripId = trip.Id, CustomerId = customer.Id, Amount = unpaidFinalBalance,
+            Reason = reason.Trim(), RecordedByUserId = actor.UserId, RecordedAt = DateTime.UtcNow
+        });
+        _auditService.AddEntry(actor.UserId, AuditActions.CustomerOverdueBalanceRecorded, EntityTypes.CustomerAccount, customer.Id,
+            before, new { customer.OutstandingBalance, customer.HasOverdueBalance, TripId = trip.Id, UnpaidFinalBalance = unpaidFinalBalance },
+            actorRole: RoleNames.HeadOfFinance, tripId: trip.Id, reason: reason);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return customer;
+    }
+
     private async Task<Customer> ChangeAccountStatusAsync(
         Guid customerId,
         CustomerAccountStatus target,
@@ -254,6 +292,10 @@ public sealed class CustomerAccountService
         if (customer.AccountStatus is not (CustomerAccountStatus.ActivePrepaid or CustomerAccountStatus.ActiveCredit))
         {
             throw new ForbiddenDomainException("Only active prepaid or active credit customers can submit bookings.");
+        }
+        if (customer.AccountStatus == CustomerAccountStatus.ActiveCredit && customer.HasOverdueBalance)
+        {
+            throw new ConflictDomainException("This credit customer has an overdue balance and cannot create a new booking.");
         }
     }
 

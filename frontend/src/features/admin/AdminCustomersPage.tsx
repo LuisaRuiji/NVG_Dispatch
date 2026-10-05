@@ -157,7 +157,7 @@ export default function AdminCustomersPage() {
       <ToastHost toasts={toasts} />
       <PageHeader
         title="Customer Management"
-        description="Create customers and provision portal accounts."
+        description="Create customers and provision portal accounts after approval. Managers can place overdue accounts on hold with a documented reason."
         actions={
           <Button onClick={() => setCreateOpen(true)} disabled={loading}>
             Create Customer
@@ -201,7 +201,7 @@ export default function AdminCustomersPage() {
                           View
                         </Button>
                         {isManager && customer.accountStatus === "PENDING_REVIEW" ? <><Button size="sm" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "approve")}>Approve prepaid</Button><Button size="sm" variant="destructive" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "reject")}>Reject</Button></> : null}
-                        {isManager && ["ACTIVE_PREPAID", "ACTIVE_CREDIT"].includes(customer.accountStatus) ? <Button size="sm" variant="outline" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "hold")}>Place on hold</Button> : null}
+                        {isManager && ["ACTIVE_PREPAID", "ACTIVE_CREDIT"].includes(customer.accountStatus) ? <><Button size="sm" variant="outline" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "hold")}>Place on hold</Button><Button size="sm" variant="destructive" disabled={decisionLoading === customer.id} onClick={() => void handleAccountDecision(customer, "suspend")}>Suspend</Button></> : null}
                         <Button size="sm" onClick={() => openCreateUser(customer)} disabled={!customer.accountStatus.startsWith("ACTIVE_")}>
                           Create Portal User
                         </Button>

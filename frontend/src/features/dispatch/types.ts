@@ -70,6 +70,7 @@ export type GenerateTripReceiptPayload = {
 };
 
 export type TripReceipt = {
+  id: string;
   tripId: string;
   receiptNumber: string;
   generatedAt: string;
@@ -90,6 +91,10 @@ export type TripReceipt = {
   paymentMethod?: string | null;
   paymentReference?: string | null;
   notes?: string | null;
+  isReversal: boolean;
+  reversesReceiptId?: string | null;
+  correctionReason?: string | null;
+  generatedByUserId: string;
 };
 
 export type DispatchCustomerSummary = {

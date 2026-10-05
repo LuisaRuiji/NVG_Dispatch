@@ -60,6 +60,8 @@ public static class AuditActions
     public const string TripOperationalEventRecorded = "TRIP_OPERATIONAL_EVENT_RECORDED";
     public const string ContainerInspectionRecorded = "CONTAINER_INSPECTION_RECORDED";
     public const string TripReceiptGenerated = "TRIP_RECEIPT_GENERATED";
+    public const string TripReceiptReversed = "TRIP_RECEIPT_REVERSED";
+    public const string CustomerOverdueBalanceRecorded = "CUSTOMER_OVERDUE_BALANCE_RECORDED";
     public const string DispatchDocumentRuleChanged = "DISPATCH_DOCUMENT_RULE_CHANGED";
 
     public const string ModuleSettingUpdated = "MODULE_SETTING_UPDATED";

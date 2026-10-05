@@ -19,6 +19,7 @@ public sealed class TripReceiptController : ControllerBase
     }
 
     [HttpPost]
+    /// <summary>Persists the completed trip's immutable receipt snapshot.</summary>
     public async Task<ActionResult<TripReceiptResponse>> Generate(
         Guid tripId,
         GenerateTripReceiptRequest request,
@@ -43,6 +44,22 @@ public sealed class TripReceiptController : ControllerBase
         return Ok(Map(result));
     }
 
+    [HttpGet("history")]
+    /// <summary>Returns the immutable receipt and correction ledger for this trip.</summary>
+    public async Task<ActionResult<IReadOnlyCollection<TripReceiptResponse>>> GetHistory(
+        Guid tripId,
+        CancellationToken cancellationToken) =>
+        Ok((await _service.GetHistoryAsync(tripId, BuildActor(), cancellationToken)).Select(Map).ToList());
+
+    [HttpPost("{receiptId:guid}/reverse")]
+    /// <summary>Creates an auditable reversal rather than altering a previously issued receipt.</summary>
+    public async Task<ActionResult<TripReceiptResponse>> Reverse(
+        Guid tripId,
+        Guid receiptId,
+        ReverseTripReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(Map(await _service.ReverseAsync(tripId, receiptId, request.Reason, BuildActor(), cancellationToken)));
+
     private DispatchActorContext BuildActor() => new(
         User.GetUserId(),
         false,
@@ -53,6 +70,7 @@ public sealed class TripReceiptController : ControllerBase
         User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.SuperAdmin));
 
     private static TripReceiptResponse Map(TripReceiptResult result) => new(
+        result.Id,
         result.TripId,
         result.ReceiptNumber,
         result.GeneratedAt,
@@ -72,7 +90,11 @@ public sealed class TripReceiptController : ControllerBase
         result.Total,
         result.PaymentMethod,
         result.PaymentReference,
-        result.Notes);
+        result.Notes,
+        result.IsReversal,
+        result.ReversesReceiptId,
+        result.CorrectionReason,
+        result.GeneratedByUserId);
 }
 
 public sealed record TripReceiptChargeRequest(string Description, decimal Amount);
@@ -89,9 +111,12 @@ public sealed record GenerateTripReceiptRequest(
     string? PaymentReference,
     string? Notes);
 
+public sealed record ReverseTripReceiptRequest(string Reason);
+
 public sealed record TripReceiptChargeResponse(string Description, decimal Amount);
 
 public sealed record TripReceiptResponse(
+    Guid Id,
     Guid TripId,
     string ReceiptNumber,
     DateTime GeneratedAt,
@@ -111,4 +136,8 @@ public sealed record TripReceiptResponse(
     decimal Total,
     string? PaymentMethod,
     string? PaymentReference,
-    string? Notes);
+    string? Notes,
+    bool IsReversal,
+    Guid? ReversesReceiptId,
+    string? CorrectionReason,
+    Guid GeneratedByUserId);
